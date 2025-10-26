@@ -3,7 +3,30 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
+// Validate JWT_SECRET before starting the application
+function validateJWTSecret() {
+  const jwtSecret = process.env.JWT_SECRET;
+  
+  if (!jwtSecret) {
+    throw new Error('❌ JWT_SECRET environment variable is not set! Application cannot start.');
+  }
+  
+  if (jwtSecret.length < 32) {
+    throw new Error(`❌ JWT_SECRET is too weak! Must be at least 32 characters. Current length: ${jwtSecret.length}`);
+  }
+  
+  if (jwtSecret === 'your-secret-key-change-in-production' || 
+      jwtSecret === 'your-super-secret-jwt-key-change-in-production') {
+    throw new Error('❌ JWT_SECRET is using default value! Change it to a strong, unique secret.');
+  }
+  
+  console.log('✅ JWT_SECRET validation passed');
+}
+
 async function bootstrap() {
+  // Validate critical environment variables
+  validateJWTSecret();
+  
   const app = await NestFactory.create(AppModule);
 
   // Enable CORS for all origins (including serveo, ngrok, etc.)
