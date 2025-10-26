@@ -110,12 +110,21 @@ export class BotService {
   }
 
   private async createUser(from: any, refBy?: string) {
+    // Find referrer by tg_id if provided
+    let referrerId: string | undefined;
+    if (refBy) {
+      const referrer = await this.userRepo.findOne({ where: { tg_id: refBy } });
+      if (referrer) {
+        referrerId = referrer.id;
+      }
+    }
+
     const user = this.userRepo.create({
       tg_id: from.id.toString(),
       username: from.username,
       first_name: from.first_name,
       last_name: from.last_name,
-      referred_by: refBy || undefined,
+      referred_by: referrerId || undefined,
       status: 'active',
       balance_usdt: 0,
     });
@@ -406,7 +415,7 @@ export class BotService {
 
   private async sendProfile(chatId: string, user: User) {
     const refCount = await this.userRepo.count({
-      where: { referred_by: user.tg_id },
+      where: { referred_by: user.id },
     });
 
     const text =
@@ -453,7 +462,7 @@ export class BotService {
 
   private async sendReferralInfo(chatId: string, user: User) {
     const refCount = await this.userRepo.count({
-      where: { referred_by: user.tg_id },
+      where: { referred_by: user.id },
     });
 
     const refBonus = await this.settingsService.getValue('ref_bonus', '10');
