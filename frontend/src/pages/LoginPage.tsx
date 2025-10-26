@@ -3,17 +3,6 @@ import { authApi, api, API_URL } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
 
-declare global {
-  interface Window {
-    Telegram?: {
-      WebApp?: {
-        initData: string;
-        ready: () => void;
-      };
-    };
-  }
-}
-
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const { login } = useAuthStore();

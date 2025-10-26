@@ -4,26 +4,6 @@ import { tasksApi, authApi } from '../api/client';
 import { Coins, Trophy, Users, Gift } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// Telegram Web App types
-declare global {
-  interface Window {
-    Telegram?: {
-      WebApp: {
-        initData: string;
-        initDataUnsafe: any;
-        ready: () => void;
-        expand: () => void;
-        MainButton: {
-          text: string;
-          show: () => void;
-          hide: () => void;
-          onClick: (callback: () => void) => void;
-        };
-      };
-    };
-  }
-}
-
 interface Task {
   id: string;
   title: string;
@@ -32,6 +12,7 @@ interface Task {
   reward_max: number;
   action_url?: string;
   max_per_user: number;
+  active: boolean;
 }
 
 interface UserStats {
