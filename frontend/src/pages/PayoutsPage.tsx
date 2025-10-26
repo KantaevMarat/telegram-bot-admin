@@ -571,54 +571,33 @@ export default function PayoutsPage() {
 
       {/* Decline Modal */}
       {showDeclineModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          padding: '20px'
-        }}
-        onClick={() => setShowDeclineModal(false)}
-        >
-          <div 
-            style={{
-              background: '#1a1a1a',
-              borderRadius: '16px',
-              maxWidth: '500px',
-              width: '100%',
-              border: '1px solid rgba(248, 113, 113, 0.2)'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{
-              padding: '24px',
-              borderBottom: '1px solid rgba(255,255,255,0.05)',
-            }}>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Причина отклонения</h2>
+        <div className="modal-overlay" onClick={() => setShowDeclineModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal__header">
+              <h2 className="modal__title">Причина отклонения</h2>
+              <button
+                onClick={() => setShowDeclineModal(false)}
+                className="btn btn--secondary btn--icon btn--sm"
+              >
+                <X size={16} />
+              </button>
             </div>
-            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <textarea
-                value={declineReason}
-                onChange={(e) => setDeclineReason(e.target.value)}
-                placeholder="Укажите причину..."
-                rows={4}
-              />
+            <div className="modal__body">
+              <div className="form-group">
+                <label className="form-label">Укажите причину отклонения</label>
+                <textarea
+                  className="form-textarea"
+                  value={declineReason}
+                  onChange={(e) => setDeclineReason(e.target.value)}
+                  placeholder="Укажите причину..."
+                  rows={4}
+                />
+              </div>
             </div>
-            <div style={{
-              padding: '24px',
-              borderTop: '1px solid rgba(255,255,255,0.05)',
-              display: 'flex',
-              gap: '12px'
-            }}>
+            <div className="modal__footer">
               <button
                 onClick={handleConfirmDecline}
-                className="danger"
+                className="btn btn--danger"
                 style={{ flex: 1 }}
                 disabled={declineMutation.isPending}
               >
@@ -626,7 +605,7 @@ export default function PayoutsPage() {
               </button>
               <button
                 onClick={() => setShowDeclineModal(false)}
-                className="secondary"
+                className="btn btn--secondary"
               >
                 Отмена
               </button>
@@ -637,113 +616,66 @@ export default function PayoutsPage() {
 
       {/* Payout Details Modal */}
       {showPayoutDetails && selectedPayout && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          padding: '20px'
-        }}
-        onClick={() => setShowPayoutDetails(false)}
-        >
-          <div 
-            style={{
-              background: '#1a1a1a',
-              borderRadius: '20px',
-              maxWidth: '600px',
-              width: '100%',
-              border: '1px solid rgba(255,255,255,0.1)',
-              maxHeight: '90vh',
-              overflowY: 'auto'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{
-              padding: '32px',
-              borderBottom: '1px solid rgba(255,255,255,0.05)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Детали заявки</h2>
+        <div className="modal-overlay" onClick={() => setShowPayoutDetails(false)}>
+          <div className="modal" style={{ maxWidth: '600px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal__header">
+              <h2 className="modal__title">Детали заявки</h2>
               <button
                 onClick={() => setShowPayoutDetails(false)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#888',
-                  fontSize: '1.5rem',
-                  cursor: 'pointer'
-                }}
+                className="btn btn--secondary btn--icon btn--sm"
               >
-                ×
+                <X size={16} />
               </button>
             </div>
             
-            <div style={{ padding: '32px' }}>
-              <div style={{ display: 'grid', gap: '24px' }}>
+            <div className="modal__body">
+              <div className="payout-details">
                 {/* User Info */}
-                <div style={{
-                  background: 'rgba(255,255,255,0.02)',
-                  padding: '20px',
-                  borderRadius: '12px',
-                  border: '1px solid rgba(255,255,255,0.05)'
-                }}>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '16px', color: '#fff' }}>
+                <div className="payout-details__section">
+                  <h3 className="payout-details__section-title">
                     👤 Информация о пользователе
                   </h3>
-                  <div style={{ display: 'grid', gap: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#888' }}>Имя:</span>
-                      <span style={{ color: '#fff' }}>{selectedPayout.user?.first_name || 'Не указано'}</span>
+                  <div className="payout-details__grid">
+                    <div className="payout-details__row">
+                      <span className="payout-details__label">Имя:</span>
+                      <span className="payout-details__value">{selectedPayout.user?.first_name || 'Не указано'}</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#888' }}>Username:</span>
-                      <span style={{ color: '#fff' }}>@{selectedPayout.user?.username || 'Не указано'}</span>
+                    <div className="payout-details__row">
+                      <span className="payout-details__label">Username:</span>
+                      <span className="payout-details__value">@{selectedPayout.user?.username || 'Не указано'}</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#888' }}>Telegram ID:</span>
-                      <span style={{ color: '#fff', fontFamily: 'monospace' }}>{selectedPayout.user?.tg_id}</span>
+                    <div className="payout-details__row">
+                      <span className="payout-details__label">Telegram ID:</span>
+                      <span className="payout-details__value payout-details__value--mono">{selectedPayout.user?.tg_id}</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Payout Info */}
-                <div style={{
-                  background: 'rgba(255,255,255,0.02)',
-                  padding: '20px',
-                  borderRadius: '12px',
-                  border: '1px solid rgba(255,255,255,0.05)'
-                }}>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '16px', color: '#fff' }}>
+                <div className="payout-details__section">
+                  <h3 className="payout-details__section-title">
                     💰 Информация о выплате
                   </h3>
-                  <div style={{ display: 'grid', gap: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#888' }}>Сумма:</span>
-                      <span style={{ color: '#facc15', fontWeight: 700, fontSize: '1.2rem' }}>
+                  <div className="payout-details__grid">
+                    <div className="payout-details__row">
+                      <span className="payout-details__label">Сумма:</span>
+                      <span className="payout-details__value payout-details__value--highlight">
                         ${parseFloat(selectedPayout.amount).toFixed(2)}
                       </span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#888' }}>Метод:</span>
-                      <span style={{ color: '#fff' }}>{selectedPayout.method}</span>
+                    <div className="payout-details__row">
+                      <span className="payout-details__label">Метод:</span>
+                      <span className="payout-details__value">{selectedPayout.method}</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#888' }}>Реквизиты:</span>
-                      <span style={{ color: '#fff', fontFamily: 'monospace', fontSize: '0.9rem' }}>
+                    <div className="payout-details__row">
+                      <span className="payout-details__label">Реквизиты:</span>
+                      <span className="payout-details__value payout-details__value--mono">
                         {selectedPayout.wallet_address || selectedPayout.method_details}
                       </span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#888' }}>Статус:</span>
-                      <span className={`badge ${getStatusBadge(selectedPayout.status)}`}>
+                    <div className="payout-details__row">
+                      <span className="payout-details__label">Статус:</span>
+                      <span className={`badge badge--${getStatusBadge(selectedPayout.status)}`}>
                         {getStatusText(selectedPayout.status)}
                       </span>
                     </div>
@@ -751,32 +683,27 @@ export default function PayoutsPage() {
                 </div>
 
                 {/* Timestamps */}
-                <div style={{
-                  background: 'rgba(255,255,255,0.02)',
-                  padding: '20px',
-                  borderRadius: '12px',
-                  border: '1px solid rgba(255,255,255,0.05)'
-                }}>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '16px', color: '#fff' }}>
+                <div className="payout-details__section">
+                  <h3 className="payout-details__section-title">
                     ⏰ Временные метки
                   </h3>
-                  <div style={{ display: 'grid', gap: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#888' }}>Создана:</span>
-                      <span style={{ color: '#fff' }}>
+                  <div className="payout-details__grid">
+                    <div className="payout-details__row">
+                      <span className="payout-details__label">Создана:</span>
+                      <span className="payout-details__value">
                         {new Date(selectedPayout.created_at).toLocaleString('ru-RU')}
                       </span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#888' }}>Обновлена:</span>
-                      <span style={{ color: '#fff' }}>
+                    <div className="payout-details__row">
+                      <span className="payout-details__label">Обновлена:</span>
+                      <span className="payout-details__value">
                         {new Date(selectedPayout.updated_at).toLocaleString('ru-RU')}
                       </span>
                     </div>
                     {selectedPayout.processed_by_admin_tg_id && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: '#888' }}>Обработана админом:</span>
-                        <span style={{ color: '#fff', fontFamily: 'monospace' }}>
+                      <div className="payout-details__row">
+                        <span className="payout-details__label">Обработана админом:</span>
+                        <span className="payout-details__value payout-details__value--mono">
                           {selectedPayout.processed_by_admin_tg_id}
                         </span>
                       </div>
@@ -786,16 +713,11 @@ export default function PayoutsPage() {
 
                 {/* Decline Reason */}
                 {selectedPayout.reason_if_declined && (
-                  <div style={{
-                    background: 'rgba(239, 68, 68, 0.1)',
-                    padding: '20px',
-                    borderRadius: '12px',
-                    border: '1px solid rgba(239, 68, 68, 0.2)'
-                  }}>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '16px', color: '#ef4444' }}>
+                  <div className="payout-details__section payout-details__section--error">
+                    <h3 className="payout-details__section-title">
                       ❌ Причина отклонения
                     </h3>
-                    <p style={{ color: '#fff', lineHeight: 1.6 }}>
+                    <p className="payout-details__text">
                       {selectedPayout.reason_if_declined}
                     </p>
                   </div>
@@ -808,67 +730,38 @@ export default function PayoutsPage() {
 
       {/* Bulk Decline Modal */}
       {showBulkActions && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          padding: '20px'
-        }}
-        onClick={() => setShowBulkActions(false)}
-        >
-          <div 
-            style={{
-              background: '#1a1a1a',
-              borderRadius: '16px',
-              maxWidth: '500px',
-              width: '100%',
-              border: '1px solid rgba(248, 113, 113, 0.2)'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{
-              padding: '24px',
-              borderBottom: '1px solid rgba(255,255,255,0.05)',
-            }}>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Массовое отклонение</h2>
-              <p style={{ color: '#888', marginTop: '8px' }}>
-                Отклонить {selectedPayouts.length} заявок
-              </p>
+        <div className="modal-overlay" onClick={() => setShowBulkActions(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal__header">
+              <div>
+                <h2 className="modal__title">Массовое отклонение</h2>
+                <p className="modal__subtitle">
+                  Отклонить {selectedPayouts.length} заявок
+                </p>
+              </div>
+              <button
+                onClick={() => setShowBulkActions(false)}
+                className="btn btn--secondary btn--icon btn--sm"
+              >
+                <X size={16} />
+              </button>
             </div>
-            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <textarea
-                value={declineReason}
-                onChange={(e) => setDeclineReason(e.target.value)}
-                placeholder="Укажите причину отклонения для всех выбранных заявок..."
-                rows={4}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '8px',
-                  color: '#fff',
-                  fontSize: '0.9rem',
-                  resize: 'vertical'
-                }}
-              />
+            <div className="modal__body">
+              <div className="form-group">
+                <label className="form-label">Причина отклонения</label>
+                <textarea
+                  className="form-textarea"
+                  value={declineReason}
+                  onChange={(e) => setDeclineReason(e.target.value)}
+                  placeholder="Укажите причину отклонения для всех выбранных заявок..."
+                  rows={4}
+                />
+              </div>
             </div>
-            <div style={{
-              padding: '24px',
-              borderTop: '1px solid rgba(255,255,255,0.05)',
-              display: 'flex',
-              gap: '12px'
-            }}>
+            <div className="modal__footer">
               <button
                 onClick={handleBulkDecline}
-                className="danger"
+                className="btn btn--danger"
                 style={{ flex: 1 }}
                 disabled={declineMutation.isPending}
               >
@@ -876,7 +769,7 @@ export default function PayoutsPage() {
               </button>
               <button
                 onClick={() => setShowBulkActions(false)}
-                className="secondary"
+                className="btn btn--secondary"
               >
                 Отмена
               </button>

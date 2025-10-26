@@ -189,7 +189,7 @@ export default function ScenariosPage() {
                     </div>
                   </td>
                   <td>
-                    <span className={`badge ${scenario.is_active ? 'badge--success' : 'badge--secondary'}`}>
+                    <span className={`badge ${scenario.is_active ? 'badge--success' : 'badge--error'}`}>
                       {scenario.is_active ? 'Активен' : 'Отключён'}
                     </span>
                   </td>
@@ -199,14 +199,14 @@ export default function ScenariosPage() {
                   <td>
                     <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                       <button
-                        className="btn btn--icon"
+                        className="btn btn--secondary btn--icon btn--sm"
                         onClick={() => handleOpenModal(scenario)}
                         title="Редактировать"
                       >
                         <Edit2 size={16} />
                       </button>
                       <button
-                        className="btn btn--icon btn--danger"
+                        className="btn btn--danger btn--icon btn--sm"
                         onClick={() => handleDelete(scenario.id)}
                         title="Удалить"
                       >
@@ -224,21 +224,25 @@ export default function ScenariosPage() {
       {/* Модальное окно */}
       {showModal && (
         <div className="modal-overlay" onClick={handleCloseModal}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal__header">
+              <h2 className="modal__title">
                 {editingScenario ? 'Редактировать сценарий' : 'Добавить сценарий'}
               </h2>
-              <button className="modal-close" onClick={handleCloseModal}>
-                <X size={20} />
+              <button 
+                className="btn btn--secondary btn--icon btn--sm" 
+                onClick={handleCloseModal}
+                type="button"
+              >
+                <X size={16} />
               </button>
             </div>
 
             <form onSubmit={handleSubmit}>
-              <div className="modal-body">
+              <div className="modal__body">
                 <div className="form-group">
                   <label className="form-label" htmlFor="name">
-                    Название <span className="form-required">*</span>
+                    Название <span style={{ color: 'var(--error)' }}>*</span>
                   </label>
                   <input
                     id="name"
@@ -253,7 +257,7 @@ export default function ScenariosPage() {
 
                 <div className="form-group">
                   <label className="form-label" htmlFor="trigger">
-                    Триггер <span className="form-required">*</span>
+                    Триггер <span style={{ color: 'var(--error)' }}>*</span>
                   </label>
                   <input
                     id="trigger"
@@ -264,16 +268,22 @@ export default function ScenariosPage() {
                     onChange={(e) => setFormData({ ...formData, trigger: e.target.value })}
                     required
                   />
-                  <p className="form-hint">Слово или команда, на которую будет срабатывать сценарий</p>
+                  <p style={{ 
+                    margin: '4px 0 0 0', 
+                    fontSize: 'var(--font-size-xs)', 
+                    color: 'var(--text-tertiary)' 
+                  }}>
+                    Слово или команда, на которую будет срабатывать сценарий
+                  </p>
                 </div>
 
                 <div className="form-group">
                   <label className="form-label" htmlFor="response">
-                    Ответ <span className="form-required">*</span>
+                    Ответ <span style={{ color: 'var(--error)' }}>*</span>
                   </label>
                   <textarea
                     id="response"
-                    className="form-input"
+                    className="form-textarea"
                     placeholder="Текст автоматического ответа"
                     value={formData.response}
                     onChange={(e) => setFormData({ ...formData, response: e.target.value })}
@@ -283,18 +293,21 @@ export default function ScenariosPage() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-checkbox">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)', cursor: 'pointer' }}>
                     <input
                       type="checkbox"
+                      className="checkbox"
                       checked={formData.is_active}
                       onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                     />
-                    <span>Активен</span>
+                    <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-primary)' }}>
+                      Активен
+                    </span>
                   </label>
                 </div>
               </div>
 
-              <div className="modal-footer">
+              <div className="modal__footer">
                 <button
                   type="button"
                   className="btn btn--secondary"
