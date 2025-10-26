@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tasksApi } from '../api/client';
-import { CheckSquare, Plus, Edit, Trash2, X, Upload, TrendingUp, DollarSign } from 'lucide-react';
+import { CheckSquare, Plus, Edit, Trash2, X, Upload, TrendingUp, DollarSign, Check, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface Task {
@@ -320,8 +320,8 @@ export default function TasksPage() {
                     </div>
                   </td>
                   <td className="table__cell table__cell--center">
-                    <span className={`badge ${task.active ? 'badge--success' : 'badge--error'}`}>
-                      {task.active ? 'Активно' : 'Неактивно'}
+                    <span className={`badge ${task.active ? 'badge--success' : 'badge--danger'}`}>
+                      {task.active ? <><Check size={14} /> Активно</> : <><XCircle size={14} /> Неактивно</>}
                     </span>
                   </td>
                   <td className="table__cell table__cell--center">

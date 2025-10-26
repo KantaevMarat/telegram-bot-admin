@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { scenariosApi } from '../api/client';
-import { MessageCircle, Plus, Edit2, Trash2, X } from 'lucide-react';
+import { MessageCircle, Plus, Edit2, Trash2, X, Check, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface Scenario {
@@ -189,8 +189,8 @@ export default function ScenariosPage() {
                     </div>
                   </td>
                   <td>
-                    <span className={`badge ${scenario.is_active ? 'badge--success' : 'badge--error'}`}>
-                      {scenario.is_active ? 'Активен' : 'Отключён'}
+                    <span className={`badge ${scenario.is_active ? 'badge--success' : 'badge--danger'}`}>
+                      {scenario.is_active ? <><Check size={14} /> Активен</> : <><XCircle size={14} /> Отключён</>}
                     </span>
                   </td>
                   <td>

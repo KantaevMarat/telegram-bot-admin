@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usersApi, balanceApi } from '../api/client';
-import { Search, Filter, Eye, DollarSign, TrendingUp, Users, X, Plus, Minus, ChevronLeft, ChevronRight, User, LayoutGrid, LayoutList, Lock, Unlock, ShieldOff, Shield, Download } from 'lucide-react';
+import { Search, Filter, Eye, DollarSign, TrendingUp, Users, X, Plus, Minus, ChevronLeft, ChevronRight, User, LayoutGrid, LayoutList, Lock, Unlock, ShieldOff, Shield, Download, Check, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function UsersPage() {
@@ -534,8 +534,8 @@ export default function UsersPage() {
                       <span className="tasks-count">{user.tasks_completed || 0}</span>
                     </td>
                     <td className="users-table__cell users-table__cell--status">
-                      <span className={`badge ${user.status === 'active' ? 'badge--success' : 'badge--error'}`}>
-                        {user.status === 'active' ? 'Активен' : 'Заблокирован'}
+                      <span className={`badge ${user.status === 'active' ? 'badge--success' : 'badge--danger'}`}>
+                        {user.status === 'active' ? <><Check size={14} /> Активен</> : <><XCircle size={14} /> Заблокирован</>}
                       </span>
                     </td>
                     <td className="users-table__cell users-table__cell--date">
