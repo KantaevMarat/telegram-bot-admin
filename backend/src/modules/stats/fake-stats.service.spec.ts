@@ -14,6 +14,11 @@ describe('FakeStatsService', () => {
     find: jest.fn(),
     create: jest.fn(),
     save: jest.fn(),
+    createQueryBuilder: jest.fn(() => ({
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(null),
+    })),
   };
 
   const mockRealStatsRepository = {
@@ -75,12 +80,17 @@ describe('FakeStatsService', () => {
         calculated_at: new Date(),
       };
 
-      mockFakeStatsRepository.findOne.mockResolvedValue(mockStats);
+      // Mock createQueryBuilder to return mockStats
+      mockFakeStatsRepository.createQueryBuilder.mockReturnValue({
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(mockStats),
+      });
 
       const result = await service.getLatestFakeStats();
 
       expect(result).toEqual(mockStats);
-      expect(mockFakeStatsRepository.findOne).toHaveBeenCalled();
+      expect(mockFakeStatsRepository.createQueryBuilder).toHaveBeenCalled();
     });
   });
 
