@@ -2,7 +2,35 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payoutsApi } from '../api/client';
 import toast from 'react-hot-toast';
-import { FileText, Check, X, Filter, Search, Download, Eye, DollarSign, Clock, CheckCircle, XCircle, Calendar, Wallet, Users, TrendingUp, AlertCircle } from 'lucide-react';
+import { FileText, Check, X, Filter, Search, Download, Eye, DollarSign, Clock, CheckCircle, XCircle, Calendar, Wallet, Users, TrendingUp, AlertCircle, LayoutGrid, LayoutList, User, CreditCard } from 'lucide-react';
+
+// Status Badge Component
+const StatusBadge = ({ status }: { status: string }) => {
+  const getStatusConfig = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return { label: 'Ожидает', icon: Clock, className: 'badge--warning' };
+      case 'approved':
+        return { label: 'Одобрено', icon: CheckCircle, className: 'badge--success' };
+      case 'declined':
+        return { label: 'Отклонено', icon: XCircle, className: 'badge--danger' };
+      case 'completed':
+        return { label: 'Выполнено', icon: Check, className: 'badge--info' };
+      default:
+        return { label: status, icon: FileText, className: 'badge--default' };
+    }
+  };
+
+  const config = getStatusConfig(status);
+  const Icon = config.icon;
+
+  return (
+    <span className={`badge ${config.className}`}>
+      <Icon size={14} />
+      {config.label}
+    </span>
+  );
+};
 
 export default function PayoutsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
@@ -16,6 +44,7 @@ export default function PayoutsPage() {
   const [amountFilter, setAmountFilter] = useState('all');
   const [selectedPayouts, setSelectedPayouts] = useState<string[]>([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
   const queryClient = useQueryClient();
 
@@ -225,109 +254,106 @@ export default function PayoutsPage() {
     return matchesSearch && matchesStatus && matchesDate && matchesAmount;
   });
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'pending': return 'warning';
-      case 'approved': return 'success';
-      case 'declined': return 'error';
-      default: return 'info';
-    }
-  };
-  
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending': return '⏳ В ожидании';
-      case 'approved': return '✓ Одобрено';
-      case 'declined': return '✕ Отклонено';
-      default: return status;
-    }
-  }
 
   return (
-    <div className="fade-in payouts-page">
+    <div className="page">
       {/* Page Header */}
-      <header className="payouts-page__header">
-        <div className="payouts-page__title-section">
-          <h1 className="payouts-page__title">Заявки на вывод</h1>
-          <p className="payouts-page__subtitle">Управление запросами на выплаты от пользователей</p>
+      <header className="page-header">
+        <div className="page-title-section">
+          <h1 className="page-title">Заявки на вывод</h1>
+          <p className="page-subtitle">Управление запросами на выплаты от пользователей</p>
         </div>
-        <div className="payouts-page__actions">
+        <div className="page-actions">
+          <div className="view-mode-toggle">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`view-mode-toggle__btn ${viewMode === 'table' ? 'view-mode-toggle__btn--active' : ''}`}
+              title="Режим таблицы"
+            >
+              <LayoutList size={16} />
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              className={`view-mode-toggle__btn ${viewMode === 'cards' ? 'view-mode-toggle__btn--active' : ''}`}
+              title="Режим карточек"
+            >
+              <LayoutGrid size={16} />
+            </button>
+          </div>
           <button
             onClick={handleExportPayouts}
             className="btn btn--secondary btn--sm"
             title="Экспортировать заявки"
           >
-            <Download size={18} />
+            <Download size={16} />
             Экспорт
           </button>
         </div>
       </header>
 
       {/* Statistics Cards */}
-      <section className="payouts-page__stats">
-        <div className="payouts-stats-grid">
-          <div className="payout-stat-card payout-stat-card--primary">
-            <div className="payout-stat-card__icon">
-              <FileText size={24} />
-            </div>
-            <div className="payout-stat-card__content">
-              <div className="payout-stat-card__value">{stats.total}</div>
-              <div className="payout-stat-card__label">Всего заявок</div>
-            </div>
+      <section className="stats-grid">
+        <div className="stat-card stat-card--info">
+          <div className="stat-card__icon">
+            <FileText size={24} />
           </div>
-
-          <div className="payout-stat-card payout-stat-card--warning">
-            <div className="payout-stat-card__icon">
-              <Clock size={24} />
-            </div>
-            <div className="payout-stat-card__content">
-              <div className="payout-stat-card__value">{stats.pending}</div>
-              <div className="payout-stat-card__label">В ожидании</div>
-            </div>
+          <div className="stat-card__content">
+            <div className="stat-card__value">{stats.total}</div>
+            <div className="stat-card__label">Всего заявок</div>
           </div>
+        </div>
 
-          <div className="payout-stat-card payout-stat-card--success">
-            <div className="payout-stat-card__icon">
-              <CheckCircle size={24} />
-            </div>
-            <div className="payout-stat-card__content">
-              <div className="payout-stat-card__value">{stats.approved}</div>
-              <div className="payout-stat-card__label">Одобрено</div>
-            </div>
+        <div className="stat-card stat-card--warning">
+          <div className="stat-card__icon">
+            <Clock size={24} />
           </div>
-
-          <div className="payout-stat-card payout-stat-card--error">
-            <div className="payout-stat-card__icon">
-              <XCircle size={24} />
-            </div>
-            <div className="payout-stat-card__content">
-              <div className="payout-stat-card__value">{stats.declined}</div>
-              <div className="payout-stat-card__label">Отклонено</div>
-            </div>
+          <div className="stat-card__content">
+            <div className="stat-card__value">{stats.pending}</div>
+            <div className="stat-card__label">В ожидании</div>
           </div>
+        </div>
 
-          <div className="payout-stat-card payout-stat-card--info">
-            <div className="payout-stat-card__icon">
-              <DollarSign size={24} />
-            </div>
-            <div className="payout-stat-card__content">
-              <div className="payout-stat-card__value">
-                ${stats.totalAmount.toFixed(2)}
-              </div>
-              <div className="payout-stat-card__label">Общая сумма</div>
-            </div>
+        <div className="stat-card stat-card--success">
+          <div className="stat-card__icon">
+            <CheckCircle size={24} />
           </div>
+          <div className="stat-card__content">
+            <div className="stat-card__value">{stats.approved}</div>
+            <div className="stat-card__label">Одобрено</div>
+          </div>
+        </div>
 
-          <div className="payout-stat-card payout-stat-card--warning">
-            <div className="payout-stat-card__icon">
-              <AlertCircle size={24} />
+        <div className="stat-card stat-card--error">
+          <div className="stat-card__icon">
+            <XCircle size={24} />
+          </div>
+          <div className="stat-card__content">
+            <div className="stat-card__value">{stats.declined}</div>
+            <div className="stat-card__label">Отклонено</div>
+          </div>
+        </div>
+
+        <div className="stat-card stat-card--primary">
+          <div className="stat-card__icon">
+            <DollarSign size={24} />
+          </div>
+          <div className="stat-card__content">
+            <div className="stat-card__value">
+              ${stats.totalAmount.toFixed(2)}
             </div>
-            <div className="payout-stat-card__content">
-              <div className="payout-stat-card__value">
-                ${stats.pendingAmount.toFixed(2)}
-              </div>
-              <div className="payout-stat-card__label">В ожидании</div>
+            <div className="stat-card__label">Общая сумма</div>
+          </div>
+        </div>
+
+        <div className="stat-card stat-card--info">
+          <div className="stat-card__icon">
+            <AlertCircle size={24} />
+          </div>
+          <div className="stat-card__content">
+            <div className="stat-card__value">
+              ${stats.pendingAmount.toFixed(2)}
             </div>
+            <div className="stat-card__label">В ожидании (сумма)</div>
           </div>
         </div>
       </section>
@@ -442,12 +468,116 @@ export default function PayoutsPage() {
         </section>
       )}
 
-      {/* Payouts Table */}
+      {/* Payouts Table or Cards */}
       <section className="payouts-page__table">
         {isLoading ? (
           <div className="payouts-loading">
             <div className="loading-skeleton"></div>
             <p className="payouts-loading__text">Загрузка заявок...</p>
+          </div>
+        ) : viewMode === 'cards' ? (
+          <div className="cards-grid">
+            {filteredPayouts.length === 0 ? (
+              <div className="empty-state">
+                <p>Заявки не найдены</p>
+              </div>
+            ) : (
+              filteredPayouts.map((payout: any) => (
+                <div key={payout.id} className="payout-card">
+                  {/* Header */}
+                  <div className="payout-card__header">
+                    <div className="payout-card__user">
+                      <div className="payout-card__avatar">
+                        <User size={24} />
+                      </div>
+                      <div className="payout-card__user-info">
+                        <div className="payout-card__name">
+                          {payout.user?.first_name || payout.user?.username || 'Аноним'}
+                        </div>
+                        <div className="payout-card__id">
+                          ID: {payout.user?.tg_id}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="payout-card__amount">
+                      ${parseFloat(payout.amount).toFixed(2)}
+                    </div>
+                  </div>
+
+                  {/* Details */}
+                  <div className="payout-card__details">
+                    <div className="payout-card__detail">
+                      <div className="payout-card__label">Метод</div>
+                      <div className="payout-card__value">{payout.method}</div>
+                    </div>
+                    <div className="payout-card__detail">
+                      <div className="payout-card__label">Статус</div>
+                      <div className="payout-card__value">
+                        <StatusBadge status={payout.status} />
+                      </div>
+                    </div>
+                    <div className="payout-card__detail">
+                      <div className="payout-card__label">Реквизиты</div>
+                      <div className="payout-card__value payout-card__value--mono" title={payout.wallet_address}>
+                        {payout.wallet_address?.length > 20 
+                          ? `${payout.wallet_address.slice(0, 10)}...${payout.wallet_address.slice(-8)}`
+                          : payout.wallet_address}
+                      </div>
+                    </div>
+                    <div className="payout-card__detail">
+                      <div className="payout-card__label">Дата создания</div>
+                      <div className="payout-card__value">
+                        {new Date(payout.created_at).toLocaleString('ru-RU', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div className="payout-card__footer">
+                    <div className="payout-card__date">
+                      <Calendar size={14} />
+                      {new Date(payout.created_at).toLocaleDateString('ru-RU')}
+                    </div>
+                    <div className="payout-card__actions">
+                      <button
+                        onClick={() => handleViewDetails(payout)}
+                        className="btn btn--secondary btn--sm"
+                        title="Просмотреть детали"
+                      >
+                        <Eye size={14} />
+                        Детали
+                      </button>
+                      {payout.status === 'pending' && (
+                        <>
+                          <button
+                            onClick={() => approveMutation.mutate(payout.id)}
+                            className="btn btn--success btn--sm"
+                            title="Одобрить"
+                          >
+                            <Check size={14} />
+                            Одобрить
+                          </button>
+                          <button
+                            onClick={() => handleDeclineClick(payout.id)}
+                            className="btn btn--danger btn--sm"
+                            title="Отклонить"
+                          >
+                            <X size={14} />
+                            Отклонить
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         ) : (
           <div className="table-container">
@@ -518,9 +648,7 @@ export default function PayoutsPage() {
                         </span>
                       </td>
                       <td className="payouts-table__cell payouts-table__cell--status">
-                        <span className={`badge badge--${getStatusBadge(payout.status)}`}>
-                          {getStatusText(payout.status)}
-                        </span>
+                        <StatusBadge status={payout.status} />
                       </td>
                       <td className="payouts-table__cell payouts-table__cell--date">
                         <span className="payout-date">
@@ -675,9 +803,7 @@ export default function PayoutsPage() {
                     </div>
                     <div className="payout-details__row">
                       <span className="payout-details__label">Статус:</span>
-                      <span className={`badge badge--${getStatusBadge(selectedPayout.status)}`}>
-                        {getStatusText(selectedPayout.status)}
-                      </span>
+                      <StatusBadge status={selectedPayout.status} />
                     </div>
                   </div>
                 </div>
