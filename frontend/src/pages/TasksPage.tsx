@@ -12,6 +12,8 @@ interface Task {
   reward_max: number;
   action_url?: string;
   media_url?: string;
+  channel_id?: string;
+  task_type?: string;
   active: boolean;
   completions_count: number;
 }
@@ -27,6 +29,8 @@ export default function TasksPage() {
     reward_max: 0,
     action_url: '',
     media_url: '',
+    channel_id: '',
+    task_type: 'subscription',
     active: true,
   });
 
@@ -75,6 +79,8 @@ export default function TasksPage() {
       reward_max: 0,
       action_url: '',
       media_url: '',
+      channel_id: '',
+      task_type: 'subscription',
       active: true,
     });
     setShowModal(true);
@@ -89,6 +95,8 @@ export default function TasksPage() {
       reward_max: task.reward_max,
       action_url: task.action_url || '',
       media_url: task.media_url || '',
+      channel_id: task.channel_id || '',
+      task_type: task.task_type || 'subscription',
       active: task.active,
     });
     setShowModal(true);
@@ -104,6 +112,8 @@ export default function TasksPage() {
       reward_max: 0,
       action_url: '',
       media_url: '',
+      channel_id: '',
+      task_type: 'subscription',
       active: true,
     });
   };
@@ -434,6 +444,35 @@ export default function TasksPage() {
                       onChange={(e) => setFormData(prev => ({ ...prev, media_url: e.target.value }))}
                       placeholder="https://example.com/image.jpg"
                     />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div className="form-group">
+                    <label className="form-label">ID канала Telegram</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={formData.channel_id}
+                      onChange={(e) => setFormData(prev => ({ ...prev, channel_id: e.target.value }))}
+                      placeholder="@channel или -1001234567890"
+                    />
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                      Для проверки подписки. Бот должен быть админом канала!
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Тип задания</label>
+                    <select
+                      className="form-input"
+                      value={formData.task_type}
+                      onChange={(e) => setFormData(prev => ({ ...prev, task_type: e.target.value }))}
+                    >
+                      <option value="subscription">Подписка на канал</option>
+                      <option value="action">Действие (без проверки)</option>
+                      <option value="manual">Ручная проверка</option>
+                    </select>
                   </div>
                 </div>
 

@@ -37,6 +37,12 @@ export class Task {
   @Column({ type: 'varchar', nullable: true })
   action_url: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  channel_id: string; // Telegram channel ID or @username for subscription check
+
+  @Column({ type: 'varchar', default: 'subscription' })
+  task_type: string; // subscription, action, manual
+
   @Column({ type: 'int', default: 0 })
   cooldown_hours: number;
 

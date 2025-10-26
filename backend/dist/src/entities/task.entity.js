@@ -52,6 +52,14 @@ __decorate([
     __metadata("design:type", String)
 ], Task.prototype, "action_url", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', nullable: true }),
+    __metadata("design:type", String)
+], Task.prototype, "channel_id", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', default: 'subscription' }),
+    __metadata("design:type", String)
+], Task.prototype, "task_type", void 0);
+__decorate([
     (0, typeorm_1.Column)({ type: 'int', default: 0 }),
     __metadata("design:type", Number)
 ], Task.prototype, "cooldown_hours", void 0);

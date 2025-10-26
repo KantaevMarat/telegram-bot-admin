@@ -685,6 +685,31 @@ export class BotService {
       return;
     }
 
+    // ✅ ПРОВЕРКА ПОДПИСКИ НА КАНАЛ (если указан channel_id)
+    if (task.task_type === 'subscription' && task.channel_id) {
+      const isSubscribed = await this.checkChannelSubscription(user.tg_id, task.channel_id);
+
+      if (!isSubscribed) {
+        await this.sendMessage(
+          chatId,
+          `❌ *Подписка не найдена!*\n\n` +
+          `Для получения награды необходимо:\n` +
+          `1️⃣ Подписаться на канал\n` +
+          `2️⃣ Нажать "Проверить подписку"`,
+          {
+            inline_keyboard: [
+              [{ text: '📢 Подписаться на канал', url: `https://t.me/${task.channel_id.replace('@', '')}` }],
+              [{ text: '🔄 Проверить подписку', callback_data: `submit_task_${taskId}` }],
+              [{ text: '🔙 К заданиям', callback_data: 'tasks' }],
+            ],
+          },
+        );
+        return;
+      }
+
+      this.logger.log(`✅ Subscription verified: user ${user.tg_id}, channel ${task.channel_id}`);
+    }
+
     // Calculate reward
     const reward =
       Math.floor(Math.random() * (task.reward_max - task.reward_min + 1)) + task.reward_min;
@@ -1124,6 +1149,47 @@ export class BotService {
     } catch (error) {
       this.logger.error(`Error executing scenario "${scenario.name}":`, error);
       await this.sendMessage(chatId, 'Произошла ошибка. Попробуйте позже.');
+    }
+  }
+
+  /**
+   * Check if user is subscribed to a Telegram channel
+   * @param userId Telegram user ID (without chatId prefix)
+   * @param channelId Channel ID (e.g. @channel_name or -1001234567890)
+   * @returns true if subscribed, false otherwise
+   */
+  private async checkChannelSubscription(userId: string, channelId: string): Promise<boolean> {
+    try {
+      const response = await axios.get(
+        `https://api.telegram.org/bot${this.botToken}/getChatMember`,
+        {
+          params: {
+            chat_id: channelId,
+            user_id: userId,
+          },
+        },
+      );
+
+      if (response.data.ok) {
+        const status = response.data.result.status;
+        // User is subscribed if status is: creator, administrator, or member
+        const isSubscribed = ['creator', 'administrator', 'member'].includes(status);
+        
+        this.logger.log(
+          `Subscription check: user ${userId}, channel ${channelId}, status ${status}, subscribed: ${isSubscribed}`,
+        );
+        
+        return isSubscribed;
+      }
+
+      this.logger.warn(
+        `Failed to check subscription: ${response.data.description || 'Unknown error'}`,
+      );
+      return false;
+    } catch (error) {
+      this.logger.error(`Error checking channel subscription:`, error.response?.data || error.message);
+      // In case of error (e.g. bot is not admin in channel), return false
+      return false;
     }
   }
 }

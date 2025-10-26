@@ -51,4 +51,5 @@ export declare class BotService {
     private handleWithdrawalRequest;
     private findMatchingScenario;
     private handleScenario;
+    private checkChannelSubscription;
 }
