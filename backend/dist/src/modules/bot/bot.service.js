@@ -206,21 +206,53 @@ let BotService = BotService_1 = class BotService {
     async sendAvailableTasks(chatId, user) {
         const tasks = await this.taskRepo.find({ where: { active: true } });
         if (tasks.length === 0) {
-            await this.sendMessage(chatId, 'На данный момент нет доступных заданий.');
+            await this.sendMessage(chatId, 'На данный момент нет доступных заданий.', {
+                inline_keyboard: [[{ text: '🔙 Главное меню', callback_data: 'menu' }]],
+            });
             return;
         }
-        let message = '📋 Доступные задания:\n\n';
+        const completedTotal = await this.userTaskRepo.count({
+            where: { user_id: user.id, status: 'completed' },
+        });
+        let message = `📋 *Доступные задания*\n\n` +
+            `✅ Выполнено: ${completedTotal} заданий\n` +
+            `💰 Заработано: ${user.total_earned} USDT\n\n` +
+            `Выберите задание:`;
+        const keyboard = [];
         for (const task of tasks) {
-            const completed = await this.userTaskRepo.count({
-                where: { user_id: user.id, task_id: task.id },
+            const completedCount = await this.userTaskRepo.count({
+                where: { user_id: user.id, task_id: task.id, status: 'completed' },
             });
-            if (completed < task.max_per_user) {
-                message += `🔹 ${task.title}\n`;
-                message += `   ${task.description}\n`;
-                message += `   💰 Награда: ${task.reward_min}-${task.reward_max} USDT\n\n`;
+            const canDo = completedCount < task.max_per_user;
+            if (canDo) {
+                const inProgress = await this.userTaskRepo.findOne({
+                    where: { user_id: user.id, task_id: task.id, status: 'in_progress' },
+                });
+                const submitted = await this.userTaskRepo.findOne({
+                    where: { user_id: user.id, task_id: task.id, status: 'submitted' },
+                });
+                let badge = '🆕';
+                if (submitted) {
+                    badge = '⏳';
+                }
+                else if (inProgress) {
+                    badge = '▶️';
+                }
+                else if (completedCount > 0 && completedCount < task.max_per_user) {
+                    badge = '🔄';
+                }
+                const progress = task.max_per_user > 1 ? ` (${completedCount}/${task.max_per_user})` : '';
+                keyboard.push([{
+                        text: `${badge} ${task.title} ${progress}`,
+                        callback_data: `task_${task.id}`,
+                    }]);
             }
         }
-        await this.sendMessage(chatId, message);
+        keyboard.push([
+            { text: '📚 Мои задания', callback_data: 'my_tasks' },
+            { text: '🔙 Главное меню', callback_data: 'menu' },
+        ]);
+        await this.sendMessage(chatId, message, { inline_keyboard: keyboard });
     }
     async handleCallbackQuery(callback) {
         const chatId = callback.message.chat.id.toString();
@@ -234,6 +266,9 @@ let BotService = BotService_1 = class BotService {
         }
         if (data === 'tasks') {
             await this.sendAvailableTasks(chatId, user);
+        }
+        else if (data === 'my_tasks') {
+            await this.showMyTasks(chatId, user);
         }
         else if (data === 'balance') {
             await this.sendBalance(chatId, user);
@@ -249,6 +284,18 @@ let BotService = BotService_1 = class BotService {
         }
         else if (data.startsWith('task_')) {
             await this.handleTaskAction(chatId, user, data);
+        }
+        else if (data.startsWith('start_task_')) {
+            await this.startTask(chatId, user, data);
+        }
+        else if (data.startsWith('submit_task_')) {
+            await this.submitTask(chatId, user, data);
+        }
+        else if (data.startsWith('cancel_task_')) {
+            await this.cancelTask(chatId, user, data);
+        }
+        else if (data === 'noop') {
+            return;
         }
         else if (data.startsWith('verify_')) {
             await this.handleTaskVerification(chatId, user, data);
@@ -422,41 +469,204 @@ let BotService = BotService_1 = class BotService {
         const taskId = data.replace('task_', '');
         const task = await this.taskRepo.findOne({ where: { id: taskId } });
         if (!task || !task.active) {
+            await this.sendMessage(chatId, '❌ Задание недоступно', {
+                inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
+            });
+            return;
+        }
+        const completedCount = await this.userTaskRepo.count({
+            where: { user_id: user.id, task_id: task.id, status: 'completed' },
+        });
+        if (completedCount >= task.max_per_user) {
+            await this.sendMessage(chatId, '✅ Вы уже выполнили это задание максимальное количество раз', {
+                inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
+            });
+            return;
+        }
+        const existingTask = await this.userTaskRepo.findOne({
+            where: { user_id: user.id, task_id: task.id, status: 'in_progress' },
+        });
+        const submittedTask = await this.userTaskRepo.findOne({
+            where: { user_id: user.id, task_id: task.id, status: 'submitted' },
+        });
+        let text = `📋 *${task.title}*\n`;
+        text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+        text += `📝 *Описание:*\n${task.description}\n\n`;
+        text += `💰 *Награда:* ${task.reward_min}`;
+        if (task.reward_max > task.reward_min) {
+            text += `-${task.reward_max}`;
+        }
+        text += ` USDT\n\n`;
+        text += `📊 *Прогресс:* ${completedCount}/${task.max_per_user} выполнено\n\n`;
+        if (task.action_url) {
+            text += `🔗 *Ссылка:* ${task.action_url}\n\n`;
+        }
+        if (submittedTask) {
+            text += `⏳ *Статус:* Ожидает проверки администратором\n`;
+        }
+        else if (existingTask) {
+            text += `▶️ *Статус:* Задание в процессе выполнения\n`;
+        }
+        else {
+            text += `🆕 *Статус:* Готово к выполнению\n`;
+        }
+        const keyboard = [];
+        if (submittedTask) {
+            keyboard.push([{ text: '⏳ Ожидает проверки...', callback_data: 'noop' }]);
+        }
+        else if (existingTask) {
+            keyboard.push([{ text: '✅ Я выполнил задание', callback_data: `submit_task_${task.id}` }]);
+            keyboard.push([{ text: '❌ Отменить', callback_data: `cancel_task_${task.id}` }]);
+        }
+        else {
+            keyboard.push([{ text: '▶️ Начать задание', callback_data: `start_task_${task.id}` }]);
+        }
+        keyboard.push([{ text: '🔙 К заданиям', callback_data: 'tasks' }]);
+        await this.sendMessage(chatId, text, { inline_keyboard: keyboard });
+    }
+    async startTask(chatId, user, data) {
+        const taskId = data.replace('start_task_', '');
+        const task = await this.taskRepo.findOne({ where: { id: taskId } });
+        if (!task || !task.active) {
             await this.sendMessage(chatId, '❌ Задание недоступно');
             return;
         }
-        const existingUserTask = await this.userTaskRepo.findOne({
-            where: { user_id: user.id, task_id: task.id },
+        const userTask = this.userTaskRepo.create({
+            user_id: user.id,
+            task_id: task.id,
+            status: 'in_progress',
+            started_at: new Date(),
         });
-        if (existingUserTask && existingUserTask.status === 'completed') {
-            const completedCount = await this.userTaskRepo.count({
-                where: { user_id: user.id, task_id: task.id, status: 'completed' },
-            });
-            if (completedCount >= task.max_per_user) {
-                await this.sendMessage(chatId, '✅ Вы уже выполнили это задание максимальное количество раз');
-                return;
-            }
+        await this.userTaskRepo.save(userTask);
+        let text = `▶️ *Задание начато!*\n\n`;
+        text += `📋 ${task.title}\n\n`;
+        text += `📝 *Инструкция:*\n${task.description}\n\n`;
+        if (task.action_url) {
+            text += `🔗 *Перейдите по ссылке и выполните задание:*\n${task.action_url}\n\n`;
         }
-        const completedCount = await this.userTaskRepo.count({
-            where: { user_id: user.id, task_id: task.id },
+        text += `После выполнения нажмите кнопку "Я выполнил задание"`;
+        await this.sendMessage(chatId, text, {
+            inline_keyboard: [
+                [{ text: '✅ Я выполнил задание', callback_data: `submit_task_${task.id}` }],
+                [{ text: '🔙 К заданиям', callback_data: 'tasks' }],
+            ],
         });
-        if (completedCount >= task.max_per_user) {
-            await this.sendMessage(chatId, '✅ Вы уже выполнили это задание максимальное количество раз');
+    }
+    async submitTask(chatId, user, data) {
+        const taskId = data.replace('submit_task_', '');
+        const task = await this.taskRepo.findOne({ where: { id: taskId } });
+        if (!task || !task.active) {
+            await this.sendMessage(chatId, '❌ Задание недоступно');
+            return;
+        }
+        const userTask = await this.userTaskRepo.findOne({
+            where: { user_id: user.id, task_id: task.id, status: 'in_progress' },
+        });
+        if (!userTask) {
+            await this.sendMessage(chatId, '❌ Задание не найдено. Начните его выполнение заново.');
             return;
         }
         const reward = Math.floor(Math.random() * (task.reward_max - task.reward_min + 1)) + task.reward_min;
-        const text = `📋 *${task.title}*\n\n` +
-            `${task.description}\n\n` +
-            `💰 Награда: ${reward} USDT\n\n` +
-            `${task.action_url ? `🔗 Ссылка: ${task.action_url}\n\n` : ''}` +
-            `Выполните задание и нажмите кнопку ниже для проверки.`;
-        const keyboard = {
+        const requiresManualReview = task.reward_max > 50;
+        if (requiresManualReview) {
+            userTask.status = 'submitted';
+            userTask.reward = reward;
+            userTask.submitted_at = new Date();
+            await this.userTaskRepo.save(userTask);
+            await this.sendMessage(chatId, `⏳ *Задание отправлено на проверку!*\n\n` +
+                `📋 ${task.title}\n` +
+                `💰 Потенциальная награда: ${reward} USDT\n\n` +
+                `Администратор проверит выполнение в ближайшее время. ` +
+                `Вы получите уведомление о результатах проверки.`, {
+                inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
+            });
+        }
+        else {
+            userTask.status = 'completed';
+            userTask.reward = reward;
+            userTask.completed_at = new Date();
+            await this.userTaskRepo.save(userTask);
+            user.balance_usdt += reward;
+            user.total_earned += reward;
+            user.tasks_completed += 1;
+            await this.userRepo.save(user);
+            await this.sendMessage(chatId, `✅ *Задание выполнено!*\n\n` +
+                `📋 ${task.title}\n` +
+                `💰 Получено: +${reward} USDT\n\n` +
+                `Ваш баланс: ${user.balance_usdt} USDT`, {
+                inline_keyboard: [
+                    [{ text: '📋 Другие задания', callback_data: 'tasks' }],
+                    [{ text: '💰 Мой баланс', callback_data: 'balance' }],
+                ],
+            });
+        }
+    }
+    async cancelTask(chatId, user, data) {
+        const taskId = data.replace('cancel_task_', '');
+        const userTask = await this.userTaskRepo.findOne({
+            where: { user_id: user.id, task_id: taskId, status: 'in_progress' },
+        });
+        if (userTask) {
+            await this.userTaskRepo.remove(userTask);
+            await this.sendMessage(chatId, '❌ Задание отменено', {
+                inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
+            });
+        }
+        else {
+            await this.sendMessage(chatId, 'Задание не найдено', {
+                inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
+            });
+        }
+    }
+    async showMyTasks(chatId, user) {
+        const inProgressTasks = await this.userTaskRepo.find({
+            where: { user_id: user.id, status: 'in_progress' },
+            relations: ['task'],
+        });
+        const submittedTasks = await this.userTaskRepo.find({
+            where: { user_id: user.id, status: 'submitted' },
+            relations: ['task'],
+        });
+        const completedTasks = await this.userTaskRepo.find({
+            where: { user_id: user.id, status: 'completed' },
+            relations: ['task'],
+            order: { completed_at: 'DESC' },
+            take: 10,
+        });
+        let text = `📚 *МОИ ЗАДАНИЯ*\n\n`;
+        if (inProgressTasks.length > 0 || submittedTasks.length > 0) {
+            text += `🟢 *АКТИВНЫЕ (${inProgressTasks.length + submittedTasks.length})*\n`;
+            for (const userTask of inProgressTasks) {
+                if (userTask.task) {
+                    text += `├─ ▶️ ${userTask.task.title} (в процессе)\n`;
+                }
+            }
+            for (const userTask of submittedTasks) {
+                if (userTask.task) {
+                    text += `├─ ⏳ ${userTask.task.title} (на проверке)\n`;
+                }
+            }
+            text += `\n`;
+        }
+        if (completedTasks.length > 0) {
+            text += `✅ *ЗАВЕРШЁННЫЕ (последние 10)*\n`;
+            for (const userTask of completedTasks.slice(0, 5)) {
+                if (userTask.task) {
+                    const date = userTask.completed_at?.toLocaleDateString('ru-RU') || 'N/A';
+                    text += `├─ ${userTask.task.title} (+${userTask.reward} USDT) - ${date}\n`;
+                }
+            }
+            text += `\n`;
+        }
+        text += `📊 *СТАТИСТИКА*\n`;
+        text += `✅ Всего выполнено: ${user.tasks_completed} заданий\n`;
+        text += `💰 Всего заработано: ${user.total_earned} USDT\n`;
+        await this.sendMessage(chatId, text, {
             inline_keyboard: [
-                [{ text: '✅ Я выполнил задание', callback_data: `verify_${task.id}_${reward}` }],
-                [{ text: '🔙 К заданиям', callback_data: 'tasks' }],
+                [{ text: '📋 Доступные задания', callback_data: 'tasks' }],
+                [{ text: '🔙 Главное меню', callback_data: 'menu' }],
             ],
-        };
-        await this.sendMessage(chatId, text, keyboard);
+        });
     }
     async handleCustomButton(chatId, user, button) {
         let text = 'Информация';

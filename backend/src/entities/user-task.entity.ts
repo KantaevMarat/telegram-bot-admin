@@ -28,12 +28,24 @@ export class UserTask {
   @JoinColumn({ name: 'task_id' })
   task: Task;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  reward: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   reward_received: number;
 
-  @Column({ type: 'varchar', default: 'completed' })
-  status: string; // completed, verified
+  @Column({ type: 'varchar', default: 'pending' })
+  status: string; // pending, in_progress, submitted, completed, rejected
 
   @CreateDateColumn()
+  created_at: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  started_at: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  submitted_at: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
   completed_at: Date;
 }

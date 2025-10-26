@@ -42,6 +42,10 @@ export declare class BotService {
     private sendWithdrawInfo;
     private sendReferralInfo;
     private handleTaskAction;
+    private startTask;
+    private submitTask;
+    private cancelTask;
+    private showMyTasks;
     private handleCustomButton;
     private handleTaskVerification;
     private handleWithdrawalRequest;

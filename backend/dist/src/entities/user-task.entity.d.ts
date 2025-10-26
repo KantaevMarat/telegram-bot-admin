@@ -6,7 +6,11 @@ export declare class UserTask {
     user: User;
     task_id: string;
     task: Task;
+    reward: number;
     reward_received: number;
     status: string;
+    created_at: Date;
+    started_at: Date;
+    submitted_at: Date;
     completed_at: Date;
 }

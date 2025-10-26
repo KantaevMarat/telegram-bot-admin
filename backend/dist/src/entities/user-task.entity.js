@@ -39,15 +39,31 @@ __decorate([
     __metadata("design:type", task_entity_1.Task)
 ], UserTask.prototype, "task", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'decimal', precision: 10, scale: 2 }),
+    (0, typeorm_1.Column)({ type: 'decimal', precision: 10, scale: 2, nullable: true }),
+    __metadata("design:type", Number)
+], UserTask.prototype, "reward", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'decimal', precision: 10, scale: 2, nullable: true }),
     __metadata("design:type", Number)
 ], UserTask.prototype, "reward_received", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'varchar', default: 'completed' }),
+    (0, typeorm_1.Column)({ type: 'varchar', default: 'pending' }),
     __metadata("design:type", String)
 ], UserTask.prototype, "status", void 0);
 __decorate([
     (0, typeorm_1.CreateDateColumn)(),
+    __metadata("design:type", Date)
+], UserTask.prototype, "created_at", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'timestamp', nullable: true }),
+    __metadata("design:type", Date)
+], UserTask.prototype, "started_at", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'timestamp', nullable: true }),
+    __metadata("design:type", Date)
+], UserTask.prototype, "submitted_at", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'timestamp', nullable: true }),
     __metadata("design:type", Date)
 ], UserTask.prototype, "completed_at", void 0);
 exports.UserTask = UserTask = __decorate([
