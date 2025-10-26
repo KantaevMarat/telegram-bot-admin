@@ -264,22 +264,6 @@ export default function PayoutsPage() {
           <p className="page-subtitle">Управление запросами на выплаты от пользователей</p>
         </div>
         <div className="page-actions">
-          <div className="view-mode-toggle">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`view-mode-toggle__btn ${viewMode === 'table' ? 'view-mode-toggle__btn--active' : ''}`}
-              title="Режим таблицы"
-            >
-              <LayoutList size={16} />
-            </button>
-            <button
-              onClick={() => setViewMode('cards')}
-              className={`view-mode-toggle__btn ${viewMode === 'cards' ? 'view-mode-toggle__btn--active' : ''}`}
-              title="Режим карточек"
-            >
-              <LayoutGrid size={16} />
-            </button>
-          </div>
           <button
             onClick={handleExportPayouts}
             className="btn btn--secondary btn--sm"
@@ -364,6 +348,22 @@ export default function PayoutsPage() {
           <div className="payouts-filters__title">
             <Filter size={20} className="payouts-filters__icon" />
             <h3 className="payouts-filters__heading">Фильтры и поиск</h3>
+          </div>
+          <div className="view-mode-toggle">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`view-mode-toggle__btn ${viewMode === 'table' ? 'view-mode-toggle__btn--active' : ''}`}
+              title="Режим таблицы"
+            >
+              <LayoutList size={16} />
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              className={`view-mode-toggle__btn ${viewMode === 'cards' ? 'view-mode-toggle__btn--active' : ''}`}
+              title="Режим карточек"
+            >
+              <LayoutGrid size={16} />
+            </button>
           </div>
         </div>
         

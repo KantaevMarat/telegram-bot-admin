@@ -299,43 +299,35 @@ export default function SettingsPage() {
       </section>
 
       {/* Settings Content */}
-      <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '24px' }}>
+      <div className="settings-layout">
         {/* Sidebar */}
-        <div className="card" style={{ padding: '0', height: 'fit-content' }}>
-          <div style={{ padding: '20px', borderBottom: '1px solid var(--border)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' }}>
+        <div className="card settings-sidebar">
+          <div className="settings-sidebar__header">
+            <h3 className="settings-sidebar__title">
               Категории
             </h3>
-      </div>
-          <div style={{ padding: '0' }}>
-            {filteredGroups.map((group) => {
-          const Icon = group.icon;
-          return (
-            <button
-              key={group.id}
-              onClick={() => setActiveTab(group.id)}
-                  className={`btn ${activeTab === group.id ? 'btn--active' : ''}`}
-              style={{
-                    width: '100%',
-                    justifyContent: 'flex-start',
-                    borderRadius: '0',
-                border: 'none',
-                    borderBottom: '1px solid var(--border)',
-                    padding: '16px 20px',
-                    textAlign: 'left'
-              }}
-            >
-              <Icon size={18} />
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
-                    <span style={{ fontWeight: 'var(--font-weight-medium)' }}>{group.name}</span>
-                    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)' }}>
-                      {group.settings.length} настроек
-              </span>
-                  </div>
-            </button>
-          );
-        })}
           </div>
+          <ul className="settings-sidebar__list">
+            {filteredGroups.map((group) => {
+              const Icon = group.icon;
+              return (
+                <li key={group.id} className="settings-sidebar__item">
+                  <button
+                    onClick={() => setActiveTab(group.id)}
+                    className={`settings-sidebar__btn ${activeTab === group.id ? 'settings-sidebar__btn--active' : ''}`}
+                  >
+                    <Icon size={18} className="settings-sidebar__icon" />
+                    <div className="settings-sidebar__content">
+                      <div className="settings-sidebar__name">{group.name}</div>
+                      <div className="settings-sidebar__desc">
+                        {group.settings.length} настроек
+                      </div>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </div>
 
         {/* Main Content */}
@@ -344,44 +336,45 @@ export default function SettingsPage() {
             if (group.id !== activeTab) return null;
             
             const Icon = group.icon;
-              return (
-              <div key={group.id} className="card">
-                <div className="card-header">
-                  <Icon size={24} style={{ color: 'var(--accent)' }} />
-                  <div>
-                    <h2 className="card-title">{group.name}</h2>
-                    <p style={{ margin: '0', color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+            return (
+              <div key={group.id} className="settings-section">
+                <div className="settings-section__header">
+                  <div className="settings-section__icon">
+                    <Icon size={20} />
+                  </div>
+                  <div className="settings-section__title-wrapper">
+                    <h2 className="settings-section__title">{group.name}</h2>
+                    <p className="settings-section__desc">
                       {group.description}
                     </p>
                   </div>
+                  <span className="settings-section__count">
+                    {group.settings.length}
+                  </span>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div className="settings-group">
                   {group.settings.map((setting) => (
-                    <div key={setting.key} className="form-group">
-                      <label className="form-label">
+                    <div key={setting.key} className="setting-row">
+                      <label className="setting-row__label">
                         {setting.key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                </label>
+                      </label>
+                      {setting.description && (
+                        <p className="setting-row__desc">
+                          {setting.description}
+                        </p>
+                      )}
                       <input
                         type="text"
-                        className="form-input"
+                        className="setting-row__input"
                         value={localValues[setting.key] !== undefined ? localValues[setting.key] : setting.value}
                         onChange={(e) => handleValueChange(setting.key, e.target.value)}
                         placeholder={`Введите значение для ${setting.key}`}
                       />
-                      {setting.description && (
-                <p style={{
-                          margin: '4px 0 0 0', 
-                          fontSize: 'var(--font-size-xs)', 
-                          color: 'var(--text-tertiary)' 
-                }}>
-                  {setting.description}
-                </p>
-                      )}
-            </div>
-          ))}
+                    </div>
+                  ))}
                 </div>
-            </div>
+              </div>
             );
           })}
         </div>

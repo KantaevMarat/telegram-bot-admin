@@ -14,82 +14,71 @@ export default function BalancePage() {
   });
 
   return (
-    <div className="fade-in balance-page">
+    <div className="page">
       {/* Page Header */}
-      <header className="balance-page__header">
-        <div className="balance-page__title-section">
-          <h1 className="balance-page__title">Балансы</h1>
-          <p className="balance-page__subtitle">Обзор финансовых потоков и логирование</p>
+      <header className="page-header">
+        <div className="page-title-section">
+          <h1 className="page-title">Балансы</h1>
+          <p className="page-subtitle">Обзор финансовых потоков и логирование</p>
         </div>
       </header>
 
       {/* Overview Cards */}
-      <section className="balance-page__stats">
-        <div className="balance-stats-grid">
-          <div className="balance-stat-card balance-stat-card--primary">
-            <div className="balance-stat-card__icon">
-              <Wallet size={24} />
-            </div>
-            <div className="balance-stat-card__content">
-              <div 
-                className="balance-stat-card__value"
-                data-large={(overview?.total_balance || 0) > 999999 ? "true" : "false"}
-              >
-                ${(overview?.total_balance || 0) > 999999999 
-                  ? (overview?.total_balance || 0).toExponential(2)
-                  : (overview?.total_balance || 0).toLocaleString()
-                }
-              </div>
-              <div className="balance-stat-card__label">Общий баланс</div>
-            </div>
+      <section className="stats-grid">
+        <div className="stat-card stat-card--primary">
+          <div className="stat-card__icon">
+            <Wallet size={24} />
           </div>
-
-          <div className="balance-stat-card balance-stat-card--success">
-            <div className="balance-stat-card__icon">
-              <TrendingUp size={24} />
+          <div className="stat-card__content">
+            <div className="stat-card__value">
+              ${(overview?.total_balance || 0) > 999999999 
+                ? (overview?.total_balance || 0).toExponential(2)
+                : (overview?.total_balance || 0).toLocaleString()
+              }
             </div>
-            <div className="balance-stat-card__content">
-              <div 
-                className="balance-stat-card__value"
-                data-large={(overview?.total_earned || 0) > 999999 ? "true" : "false"}
-              >
-                ${(overview?.total_earned || 0) > 999999999 
-                  ? (overview?.total_earned || 0).toExponential(2)
-                  : (overview?.total_earned || 0).toLocaleString()
-                }
-              </div>
-              <div className="balance-stat-card__label">Всего заработано</div>
-            </div>
+            <div className="stat-card__label">Общий баланс</div>
           </div>
+        </div>
 
-          <div className="balance-stat-card balance-stat-card--info">
-            <div className="balance-stat-card__icon">
-              <BarChart3 size={24} />
-            </div>
-            <div className="balance-stat-card__content">
-              <div className="balance-stat-card__value">
-                {overview?.total_users || 0}
-              </div>
-              <div className="balance-stat-card__label">Активных пользователей</div>
-            </div>
+        <div className="stat-card stat-card--success">
+          <div className="stat-card__icon">
+            <TrendingUp size={24} />
           </div>
+          <div className="stat-card__content">
+            <div className="stat-card__value">
+              ${(overview?.total_earned || 0) > 999999999 
+                ? (overview?.total_earned || 0).toExponential(2)
+                : (overview?.total_earned || 0).toLocaleString()
+              }
+            </div>
+            <div className="stat-card__label">Всего заработано</div>
+          </div>
+        </div>
 
-          <div className="balance-stat-card balance-stat-card--warning">
-            <div className="balance-stat-card__icon">
-              <CreditCard size={24} />
+        <div className="stat-card stat-card--info">
+          <div className="stat-card__icon">
+            <BarChart3 size={24} />
+          </div>
+          <div className="stat-card__content">
+            <div className="stat-card__value">
+              {overview?.total_users || 0}
             </div>
-            <div className="balance-stat-card__content">
-              <div 
-                className="balance-stat-card__value"
-                data-large={(overview?.total_payouts || 0) > 999999 ? "true" : "false"}
-              >
-                ${(overview?.total_payouts || 0) > 999999999 
-                  ? (overview?.total_payouts || 0).toExponential(2)
-                  : (overview?.total_payouts || 0).toLocaleString()
-                }
-              </div>
-              <div className="balance-stat-card__label">Выплачено</div>
+            <div className="stat-card__label">Активных пользователей</div>
+          </div>
+        </div>
+
+        <div className="stat-card stat-card--warning">
+          <div className="stat-card__icon">
+            <CreditCard size={24} />
+          </div>
+          <div className="stat-card__content">
+            <div className="stat-card__value">
+              ${(overview?.total_payouts || 0) > 999999999 
+                ? (overview?.total_payouts || 0).toExponential(2)
+                : (overview?.total_payouts || 0).toLocaleString()
+              }
             </div>
+            <div className="stat-card__label">Выплачено</div>
           </div>
         </div>
       </section>
