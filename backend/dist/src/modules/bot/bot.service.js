@@ -603,9 +603,9 @@ let BotService = BotService_1 = class BotService {
             userTask.reward = reward;
             userTask.completed_at = new Date();
             await this.userTaskRepo.save(userTask);
-            user.balance_usdt += reward;
-            user.total_earned += reward;
-            user.tasks_completed += 1;
+            user.balance_usdt = parseFloat(user.balance_usdt.toString()) + reward;
+            user.total_earned = parseFloat(user.total_earned.toString()) + reward;
+            user.tasks_completed = user.tasks_completed + 1;
             await this.userRepo.save(user);
             await this.sendMessage(chatId, `✅ *Задание выполнено!*\n\n` +
                 `📋 ${task.title}\n` +

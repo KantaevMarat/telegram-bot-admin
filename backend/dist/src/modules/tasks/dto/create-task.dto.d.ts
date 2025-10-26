@@ -7,6 +7,8 @@ export declare class CreateTaskDto {
     media_type?: string;
     max_per_user?: number;
     action_url?: string;
+    channel_id?: string;
+    task_type?: string;
     cooldown_hours?: number;
     active?: boolean;
 }

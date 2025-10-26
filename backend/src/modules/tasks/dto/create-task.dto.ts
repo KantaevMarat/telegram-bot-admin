@@ -40,6 +40,16 @@ export class CreateTaskDto {
   @IsString()
   action_url?: string;
 
+  @ApiProperty({ description: 'Telegram channel ID for subscription check', required: false })
+  @IsOptional()
+  @IsString()
+  channel_id?: string;
+
+  @ApiProperty({ description: 'Task type: subscription, action, manual', required: false })
+  @IsOptional()
+  @IsString()
+  task_type?: string;
+
   @ApiProperty({ description: 'Cooldown in hours', required: false })
   @IsOptional()
   @IsNumber()

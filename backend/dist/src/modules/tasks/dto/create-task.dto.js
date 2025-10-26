@@ -62,6 +62,18 @@ __decorate([
     __metadata("design:type", String)
 ], CreateTaskDto.prototype, "action_url", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Telegram channel ID for subscription check', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateTaskDto.prototype, "channel_id", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Task type: subscription, action, manual', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateTaskDto.prototype, "task_type", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ description: 'Cooldown in hours', required: false }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsNumber)(),

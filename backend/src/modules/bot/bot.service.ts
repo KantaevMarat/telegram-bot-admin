@@ -744,10 +744,10 @@ export class BotService {
       userTask.completed_at = new Date();
       await this.userTaskRepo.save(userTask);
 
-      // Update user balance and stats
-      user.balance_usdt += reward;
-      user.total_earned += reward;
-      user.tasks_completed += 1;
+      // Update user balance and stats (convert to number to avoid string concatenation)
+      user.balance_usdt = parseFloat(user.balance_usdt.toString()) + reward;
+      user.total_earned = parseFloat(user.total_earned.toString()) + reward;
+      user.tasks_completed = user.tasks_completed + 1;
       await this.userRepo.save(user);
 
       await this.sendMessage(
