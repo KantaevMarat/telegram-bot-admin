@@ -17,7 +17,7 @@ exports.UpdateAdminDto = UpdateAdminDto;
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsIn)(['admin', 'superadmin'], {
-        message: 'role must be either admin or superadmin'
+        message: 'role must be either admin or superadmin',
     }),
     __metadata("design:type", String)
 ], UpdateAdminDto.prototype, "role", void 0);

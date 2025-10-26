@@ -4,7 +4,22 @@ const core_1 = require("@nestjs/core");
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const app_module_1 = require("./app.module");
+function validateJWTSecret() {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+        throw new Error('❌ JWT_SECRET environment variable is not set! Application cannot start.');
+    }
+    if (jwtSecret.length < 32) {
+        throw new Error(`❌ JWT_SECRET is too weak! Must be at least 32 characters. Current length: ${jwtSecret.length}`);
+    }
+    if (jwtSecret === 'your-secret-key-change-in-production' ||
+        jwtSecret === 'your-super-secret-jwt-key-change-in-production') {
+        throw new Error('❌ JWT_SECRET is using default value! Change it to a strong, unique secret.');
+    }
+    console.log('✅ JWT_SECRET validation passed');
+}
 async function bootstrap() {
+    validateJWTSecret();
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     app.enableCors({
         origin: (origin, callback) => {
@@ -13,8 +28,10 @@ async function bootstrap() {
             if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
                 return callback(null, true);
             }
-            if (origin.includes('serveo.net') || origin.includes('ngrok.io') ||
-                origin.includes('trycloudflare.com') || origin.includes('loca.lt') ||
+            if (origin.includes('serveo.net') ||
+                origin.includes('ngrok.io') ||
+                origin.includes('trycloudflare.com') ||
+                origin.includes('loca.lt') ||
                 origin.includes('telegram.org')) {
                 return callback(null, true);
             }

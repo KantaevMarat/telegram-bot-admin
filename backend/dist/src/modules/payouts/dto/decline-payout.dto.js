@@ -16,7 +16,10 @@ class DeclinePayoutDto {
 }
 exports.DeclinePayoutDto = DeclinePayoutDto;
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Reason for declining the payout', example: 'Invalid payment details' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'Reason for declining the payout',
+        example: 'Invalid payment details',
+    }),
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.IsNotEmpty)(),
     __metadata("design:type", String)

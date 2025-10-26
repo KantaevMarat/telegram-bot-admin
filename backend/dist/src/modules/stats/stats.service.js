@@ -52,7 +52,7 @@ let StatsService = class StatsService {
             .getRawOne();
         const activeUsers24h = await this.userRepo
             .createQueryBuilder('user')
-            .where('user.updated_at > NOW() - INTERVAL \'24 hours\'')
+            .where("user.updated_at > NOW() - INTERVAL '24 hours'")
             .getCount();
         const totalPayouts = await this.payoutRepo
             .createQueryBuilder('payout')

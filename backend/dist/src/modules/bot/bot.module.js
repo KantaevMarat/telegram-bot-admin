@@ -29,7 +29,16 @@ exports.BotModule = BotModule;
 exports.BotModule = BotModule = __decorate([
     (0, common_1.Module)({
         imports: [
-            typeorm_1.TypeOrmModule.forFeature([user_entity_1.User, button_entity_1.Button, task_entity_1.Task, user_task_entity_1.UserTask, message_entity_1.Message, scenario_entity_1.Scenario, fake_stats_entity_1.FakeStats, settings_entity_1.Settings]),
+            typeorm_1.TypeOrmModule.forFeature([
+                user_entity_1.User,
+                button_entity_1.Button,
+                task_entity_1.Task,
+                user_task_entity_1.UserTask,
+                message_entity_1.Message,
+                scenario_entity_1.Scenario,
+                fake_stats_entity_1.FakeStats,
+                settings_entity_1.Settings,
+            ]),
             users_module_1.UsersModule,
             stats_module_1.StatsModule,
             settings_module_1.SettingsModule,

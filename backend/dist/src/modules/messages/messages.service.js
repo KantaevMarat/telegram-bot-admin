@@ -47,12 +47,12 @@ let MessagesService = class MessagesService {
             order: { created_at: 'ASC' },
             take: limit,
         });
-        await this.messageRepo
+        (await this.messageRepo
             .createQueryBuilder()
             .update(message_entity_1.Message)
             .set({ is_read: true })
             .where('user_id = :userId AND from_admin_tg_id IS NULL AND is_read = false', { userId })
-            .execute();
+            .execute());
         return messages;
     }
     async sendMessage(userId, text, adminTgId, mediaUrl) {

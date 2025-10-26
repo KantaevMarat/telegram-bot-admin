@@ -100,7 +100,7 @@ let SettingsService = class SettingsService {
     }
     async getSettingsByCategory(category) {
         const settings = await this.findAll();
-        return settings.filter(setting => this.getSettingCategory(setting.key) === category);
+        return settings.filter((setting) => this.getSettingCategory(setting.key) === category);
     }
     async validateSettings(settings) {
         const validationResults = [];
@@ -108,24 +108,34 @@ let SettingsService = class SettingsService {
             const result = {
                 key: setting.key,
                 valid: true,
-                errors: []
+                errors: [],
             };
-            if (setting.key.includes('enabled') || setting.key.includes('_mode') ||
-                setting.key.startsWith('registration_') || setting.key.startsWith('log_') ||
-                setting.key.startsWith('alert_') || setting.key.startsWith('monitoring_') ||
-                setting.key.startsWith('performance_') || setting.key.startsWith('auto_') ||
-                setting.key.startsWith('anti_') || setting.key.startsWith('username_filter_') ||
-                setting.key.startsWith('rate_limiting_') || setting.key.startsWith('two_factor_') ||
+            if (setting.key.includes('enabled') ||
+                setting.key.includes('_mode') ||
+                setting.key.startsWith('registration_') ||
+                setting.key.startsWith('log_') ||
+                setting.key.startsWith('alert_') ||
+                setting.key.startsWith('monitoring_') ||
+                setting.key.startsWith('performance_') ||
+                setting.key.startsWith('auto_') ||
+                setting.key.startsWith('anti_') ||
+                setting.key.startsWith('username_filter_') ||
+                setting.key.startsWith('rate_limiting_') ||
+                setting.key.startsWith('two_factor_') ||
                 setting.key.startsWith('suspicious_')) {
                 if (!['true', 'false'].includes(setting.value)) {
                     result.valid = false;
                     result.errors.push('Должно быть true или false');
                 }
             }
-            if (setting.key.includes('timeout') || setting.key.includes('cooldown') ||
-                setting.key.includes('interval') || setting.key.includes('_sec') ||
-                setting.key.includes('_hours') || setting.key.includes('limit') ||
-                setting.key.includes('min_') || setting.key.includes('max_') ||
+            if (setting.key.includes('timeout') ||
+                setting.key.includes('cooldown') ||
+                setting.key.includes('interval') ||
+                setting.key.includes('_sec') ||
+                setting.key.includes('_hours') ||
+                setting.key.includes('limit') ||
+                setting.key.includes('min_') ||
+                setting.key.includes('max_') ||
                 setting.key.includes('_per_')) {
                 const numValue = parseFloat(setting.value);
                 if (isNaN(numValue) || numValue < 0) {
@@ -143,8 +153,8 @@ let SettingsService = class SettingsService {
             validationResults.push(result);
         }
         return {
-            valid: validationResults.every(r => r.valid),
-            results: validationResults
+            valid: validationResults.every((r) => r.valid),
+            results: validationResults,
         };
     }
     async exportSettings() {
@@ -152,11 +162,11 @@ let SettingsService = class SettingsService {
         return {
             exportDate: new Date().toISOString(),
             totalSettings: settings.length,
-            settings: settings.map(s => ({
+            settings: settings.map((s) => ({
                 key: s.key,
                 value: s.value,
-                description: s.description
-            }))
+                description: s.description,
+            })),
         };
     }
     async importSettings(settings, adminTgId, adminUsername, adminFirstName, changeReason, ipAddress, userAgent) {
@@ -174,7 +184,7 @@ let SettingsService = class SettingsService {
             total: settings.length,
             successful: results.filter((r) => r.success).length,
             failed: results.filter((r) => !r.success).length,
-            results
+            results,
         };
     }
     async resetSettings(categories, adminTgId, adminUsername, adminFirstName, changeReason, ipAddress, userAgent) {
@@ -191,7 +201,7 @@ let SettingsService = class SettingsService {
         for (const defaultSetting of defaultSettings) {
             try {
                 const currentSetting = await this.settingsRepository.findOne({
-                    where: { key: defaultSetting.key }
+                    where: { key: defaultSetting.key },
                 });
                 const oldValue = currentSetting?.value || '';
                 const newValue = defaultSetting.value;
@@ -201,7 +211,7 @@ let SettingsService = class SettingsService {
                         key: defaultSetting.key,
                         oldValue,
                         newValue,
-                        reset: true
+                        reset: true,
                     });
                     successCount++;
                 }
@@ -215,7 +225,7 @@ let SettingsService = class SettingsService {
                     key: defaultSetting.key,
                     oldValue: '',
                     newValue: defaultSetting.value,
-                    reset: false
+                    reset: false,
                 });
             }
         }
@@ -225,13 +235,13 @@ let SettingsService = class SettingsService {
             totalSettings: defaultSettings.length,
             resetCount: successCount,
             skippedCount: skippedCount,
-            failedCount: resetResults.filter(r => !r.reset && r.oldValue === '').length,
+            failedCount: resetResults.filter((r) => !r.reset && r.oldValue === '').length,
             categories: categories && categories.length > 0 ? categories : ['all'],
             resetBy: adminTgId,
             adminUsername,
             adminFirstName,
             timestamp: new Date().toISOString(),
-            details: resetResults.filter(r => r.reset)
+            details: resetResults.filter((r) => r.reset),
         };
     }
     async getSettingsHistory(limit = 50, offset = 0) {
@@ -244,16 +254,16 @@ let SettingsService = class SettingsService {
             total,
             limit,
             offset,
-            changes
+            changes,
         };
     }
     async searchSettings(query, category) {
         const settings = await this.findAll();
         let filteredSettings = settings;
         if (category) {
-            filteredSettings = filteredSettings.filter(setting => this.getSettingCategory(setting.key) === category);
+            filteredSettings = filteredSettings.filter((setting) => this.getSettingCategory(setting.key) === category);
         }
-        filteredSettings = filteredSettings.filter(setting => setting.key.toLowerCase().includes(query.toLowerCase()) ||
+        filteredSettings = filteredSettings.filter((setting) => setting.key.toLowerCase().includes(query.toLowerCase()) ||
             setting.description.toLowerCase().includes(query.toLowerCase()) ||
             setting.value.toLowerCase().includes(query.toLowerCase()));
         return filteredSettings;
@@ -263,7 +273,7 @@ let SettingsService = class SettingsService {
         if (!validation.valid) {
             return {
                 success: false,
-                errors: validation.results.filter((r) => !r.valid)
+                errors: validation.results.filter((r) => !r.valid),
             };
         }
         const updatedSettings = [];
@@ -274,46 +284,80 @@ let SettingsService = class SettingsService {
         return {
             success: true,
             updated: updatedSettings.length,
-            settings: updatedSettings
+            settings: updatedSettings,
         };
     }
     getSettingCategory(key) {
-        if (key.startsWith('bot_') || key.startsWith('webhook_') || key.startsWith('max_users_') ||
-            key.startsWith('max_messages_') || key.startsWith('anti_spam_') || key.startsWith('auto_reply_') ||
-            key.startsWith('maintenance_') || key.startsWith('registration_')) {
+        if (key.startsWith('bot_') ||
+            key.startsWith('webhook_') ||
+            key.startsWith('max_users_') ||
+            key.startsWith('max_messages_') ||
+            key.startsWith('anti_spam_') ||
+            key.startsWith('auto_reply_') ||
+            key.startsWith('maintenance_') ||
+            key.startsWith('registration_')) {
             return 'bot';
         }
-        if (key.startsWith('min_user_') || key.startsWith('max_username_') || key.startsWith('username_filter_') ||
-            key.startsWith('banned_') || key.startsWith('auto_ban_') || key.startsWith('user_session_')) {
+        if (key.startsWith('min_user_') ||
+            key.startsWith('max_username_') ||
+            key.startsWith('username_filter_') ||
+            key.startsWith('banned_') ||
+            key.startsWith('auto_ban_') ||
+            key.startsWith('user_session_')) {
             return 'users';
         }
-        if (key.startsWith('min_deposit') || key.startsWith('max_deposit') || key.startsWith('min_withdraw') ||
-            key.startsWith('max_withdraw') || key.startsWith('daily_withdraw_') || key.startsWith('weekly_withdraw_') ||
-            key.startsWith('monthly_withdraw_') || key.startsWith('withdraw_fee_') || key.startsWith('ref_bonus') ||
-            key.startsWith('currency') || key.startsWith('payment_')) {
+        if (key.startsWith('min_deposit') ||
+            key.startsWith('max_deposit') ||
+            key.startsWith('min_withdraw') ||
+            key.startsWith('max_withdraw') ||
+            key.startsWith('daily_withdraw_') ||
+            key.startsWith('weekly_withdraw_') ||
+            key.startsWith('monthly_withdraw_') ||
+            key.startsWith('withdraw_fee_') ||
+            key.startsWith('ref_bonus') ||
+            key.startsWith('currency') ||
+            key.startsWith('payment_')) {
             return 'financial';
         }
-        if (key.startsWith('two_factor_') || key.startsWith('password_') || key.startsWith('login_') ||
-            key.startsWith('suspicious_') || key.startsWith('ip_') || key.startsWith('rate_limiting_') ||
+        if (key.startsWith('two_factor_') ||
+            key.startsWith('password_') ||
+            key.startsWith('login_') ||
+            key.startsWith('suspicious_') ||
+            key.startsWith('ip_') ||
+            key.startsWith('rate_limiting_') ||
             key.startsWith('requests_per_')) {
             return 'security';
         }
-        if (key.startsWith('log_') || key.startsWith('alert_') || key.startsWith('monitoring_') ||
+        if (key.startsWith('log_') ||
+            key.startsWith('alert_') ||
+            key.startsWith('monitoring_') ||
             key.startsWith('performance_')) {
             return 'monitoring';
         }
-        if (key.startsWith('welcome_') || key.startsWith('help_') || key.startsWith('support_') ||
-            key.startsWith('greeting_') || key.startsWith('language') || key.startsWith('timezone') ||
+        if (key.startsWith('welcome_') ||
+            key.startsWith('help_') ||
+            key.startsWith('support_') ||
+            key.startsWith('greeting_') ||
+            key.startsWith('language') ||
+            key.startsWith('timezone') ||
             key.startsWith('date_format')) {
             return 'content';
         }
-        if (key.startsWith('api_rate_') || key.startsWith('backup_') || key.startsWith('notification_service') ||
+        if (key.startsWith('api_rate_') ||
+            key.startsWith('backup_') ||
+            key.startsWith('notification_service') ||
             key.startsWith('analytics_')) {
             return 'integrations';
         }
-        if (key.startsWith('fake_') || key.startsWith('task_') || key.startsWith('work_') ||
-            key.startsWith('min_reward') || key.startsWith('max_reward') || key.startsWith('task_completion_') ||
-            key.startsWith('daily_task_') || key.startsWith('task_timeout') || key.startsWith('auto_create_')) {
+        if (key.startsWith('fake_') ||
+            key.startsWith('task_') ||
+            key.startsWith('work_') ||
+            key.startsWith('min_reward') ||
+            key.startsWith('max_reward') ||
+            key.startsWith('task_completion_') ||
+            key.startsWith('daily_task_') ||
+            key.startsWith('task_timeout') ||
+            key.startsWith('auto_create_')) {
             return 'fake';
         }
         return 'bot';
@@ -327,9 +371,9 @@ let SettingsService = class SettingsService {
             monitoring: { name: 'Мониторинг', icon: '📊', settings: [] },
             content: { name: 'Контент', icon: '📝', settings: [] },
             integrations: { name: 'Интеграции', icon: '🔗', settings: [] },
-            fake: { name: 'Фейковые данные', icon: '🎭', settings: [] }
+            fake: { name: 'Фейковые данные', icon: '🎭', settings: [] },
         };
-        settings.forEach(setting => {
+        settings.forEach((setting) => {
             const category = this.getSettingCategory(setting.key);
             if (categories[category]) {
                 categories[category].settings.push(setting);

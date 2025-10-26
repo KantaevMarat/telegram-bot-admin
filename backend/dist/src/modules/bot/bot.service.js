@@ -105,12 +105,19 @@ let BotService = BotService_1 = class BotService {
         }
     }
     async createUser(from, refBy) {
+        let referrerId;
+        if (refBy) {
+            const referrer = await this.userRepo.findOne({ where: { tg_id: refBy } });
+            if (referrer) {
+                referrerId = referrer.id;
+            }
+        }
         const user = this.userRepo.create({
             tg_id: from.id.toString(),
             username: from.username,
             first_name: from.first_name,
             last_name: from.last_name,
-            referred_by: refBy || undefined,
+            referred_by: referrerId || undefined,
             status: 'active',
             balance_usdt: 0,
         });
@@ -288,7 +295,7 @@ let BotService = BotService_1 = class BotService {
             keyboard.push([
                 {
                     text: '🌐 Открыть приложение',
-                    web_app: { url: webAppUrl }
+                    web_app: { url: webAppUrl },
                 },
             ]);
         }
@@ -352,7 +359,7 @@ let BotService = BotService_1 = class BotService {
     }
     async sendProfile(chatId, user) {
         const refCount = await this.userRepo.count({
-            where: { referred_by: user.tg_id },
+            where: { referred_by: user.id },
         });
         const text = `👤 *Ваш профиль*\n\n` +
             `🆔 ID: ${user.tg_id}\n` +
@@ -386,7 +393,7 @@ let BotService = BotService_1 = class BotService {
     }
     async sendReferralInfo(chatId, user) {
         const refCount = await this.userRepo.count({
-            where: { referred_by: user.tg_id },
+            where: { referred_by: user.id },
         });
         const refBonus = await this.settingsService.getValue('ref_bonus', '10');
         const botUsername = await this.settingsService.getValue('bot_username', 'yourbot');
@@ -400,7 +407,12 @@ let BotService = BotService_1 = class BotService {
             `Делитесь ссылкой с друзьями!`;
         const keyboard = {
             inline_keyboard: [
-                [{ text: '📤 Поделиться ссылкой', url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${encodeURIComponent('Присоединяйся к боту и зарабатывай!')}` }],
+                [
+                    {
+                        text: '📤 Поделиться ссылкой',
+                        url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${encodeURIComponent('Присоединяйся к боту и зарабатывай!')}`,
+                    },
+                ],
                 [{ text: '🔙 Назад', callback_data: 'menu' }],
             ],
         };
@@ -449,7 +461,74 @@ let BotService = BotService_1 = class BotService {
     async handleCustomButton(chatId, user, button) {
         let text = 'Информация';
         let keyboard = { inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'menu' }]] };
-        if (button.action_type === 'send_message' && button.action_payload?.text) {
+        if (button.action_type === 'command' && button.action_payload?.command) {
+            const command = button.action_payload.command;
+            switch (command) {
+                case 'stats':
+                    text =
+                        `📊 *Статистика*\n\n` +
+                            `👤 Пользователей: ${await this.userRepo.count()}\n` +
+                            `💰 Общий баланс: ${(await this.userRepo.sum('balance_usdt')) || 0} USDT\n` +
+                            `📋 Заданий выполнено: ${await this.userTaskRepo.count()}`;
+                    break;
+                case 'balance':
+                    await this.sendBalance(chatId, user);
+                    return;
+                case 'tasks':
+                    await this.sendAvailableTasks(chatId, user);
+                    return;
+                case 'bonus':
+                    text =
+                        `🎁 *Бонусы*\n\n` +
+                            `💰 Ваш баланс: ${user.balance_usdt} USDT\n` +
+                            `📋 Выполнено заданий: ${user.tasks_completed}\n` +
+                            `💎 Общий заработок: ${user.total_earned} USDT`;
+                    break;
+                case 'support':
+                    text =
+                        `📞 *Поддержка*\n\n` +
+                            `Если у вас есть вопросы или проблемы, обратитесь к администратору.\n\n` +
+                            `Мы поможем вам разобраться с любыми вопросами!`;
+                    break;
+                case 'settings':
+                    text =
+                        `⚙️ *Настройки*\n\n` +
+                            `🔔 Уведомления: Включены\n` +
+                            `🌐 Язык: Русский\n` +
+                            `📱 Тема: Системная`;
+                    break;
+                case 'payouts':
+                    text =
+                        `📋 *Заявки на вывод*\n\n` +
+                            `Для вывода средств используйте команду:\n` +
+                            `\`wallet АДРЕС_КОШЕЛЬКА СУММА\`\n\n` +
+                            `Пример: \`wallet TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE 10\``;
+                    break;
+                case 'referrals':
+                    await this.sendReferralInfo(chatId, user);
+                    return;
+                case 'info':
+                    text =
+                        `ℹ️ *Информация*\n\n` +
+                            `🤖 Добро пожаловать в наш бот!\n` +
+                            `💰 Зарабатывайте USDT выполняя задания\n` +
+                            `👥 Приглашайте друзей и получайте бонусы\n` +
+                            `📋 Выполняйте задания и увеличивайте баланс`;
+                    break;
+                case 'notifications':
+                    text =
+                        `🔔 *Уведомления*\n\n` +
+                            `📢 Новые задания\n` +
+                            `💰 Пополнения баланса\n` +
+                            `🎁 Бонусы и акции\n` +
+                            `📞 Сообщения поддержки`;
+                    break;
+                default:
+                    text =
+                        `ℹ️ *Информация*\n\n` + `Команда: ${command}\n` + `Эта функция находится в разработке.`;
+            }
+        }
+        else if (button.action_type === 'send_message' && button.action_payload?.text) {
             text = button.action_payload.text;
             text = text
                 .replace('{username}', user.username || user.first_name || 'Friend')
@@ -599,7 +678,7 @@ let BotService = BotService_1 = class BotService {
                         await this.sendMessage(chatId, text, step.keyboard);
                     }
                     else if (step.type === 'delay' && step.ms) {
-                        await new Promise(resolve => setTimeout(resolve, step.ms));
+                        await new Promise((resolve) => setTimeout(resolve, step.ms));
                     }
                 }
             }
