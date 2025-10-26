@@ -715,7 +715,8 @@ export default function PayoutsPage() {
                 {selectedPayout.reason_if_declined && (
                   <div className="payout-details__section payout-details__section--error">
                     <h3 className="payout-details__section-title">
-                      ❌ Причина отклонения
+                      <AlertCircle size={20} style={{ display: 'inline', marginRight: '8px' }} />
+                      Причина отклонения
                     </h3>
                     <p className="payout-details__text">
                       {selectedPayout.reason_if_declined}

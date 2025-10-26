@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usersApi, balanceApi } from '../api/client';
-import { Search, Filter, Eye, DollarSign, TrendingUp, Users, X, Plus, Minus, ChevronLeft, ChevronRight, User, LayoutGrid, LayoutList, Lock, Unlock, ShieldOff, Shield } from 'lucide-react';
+import { Search, Filter, Eye, DollarSign, TrendingUp, Users, X, Plus, Minus, ChevronLeft, ChevronRight, User, LayoutGrid, LayoutList, Lock, Unlock, ShieldOff, Shield, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function UsersPage() {
@@ -370,7 +370,8 @@ export default function UsersPage() {
               }}
               className="btn btn--secondary btn--sm"
             >
-              📊 Экспорт CSV
+              <Download size={16} />
+              Экспорт CSV
             </button>
           </div>
         </div>
