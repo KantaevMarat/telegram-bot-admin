@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { buttonsApi } from '../api/client';
-import { Square, Plus, Edit, Trash2, X, Image, Link, MessageSquare } from 'lucide-react';
+import { Square, Plus, Edit, Trash2, X, Image, Link, MessageSquare, LayoutGrid, LayoutList, Check, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface Button {
@@ -55,6 +55,7 @@ const getActionPayloadText = (actionPayload: any, actionType: string): string =>
 export default function ButtonsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingButton, setEditingButton] = useState<Button | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   
   const [formData, setFormData] = useState({
     label: '',
@@ -207,7 +208,7 @@ export default function ButtonsPage() {
         </div>
       </header>
 
-      {/* Buttons Grid */}
+      {/* Stats Grid */}
       <div className="stats-grid" style={{ marginBottom: '24px' }}>
         <div className="stat-card stat-card--info">
           <div className="stat-card__icon">
@@ -240,10 +241,33 @@ export default function ButtonsPage() {
         </div>
       </div>
 
-      {/* Buttons Table */}
-      <div className="table-responsive">
-        <div className="table-container">
-          <table className="table">
+      {/* View Mode Toggle */}
+      <div className="filters-section" style={{ marginBottom: '24px' }}>
+        <div className="view-mode-toggle">
+          <button
+            onClick={() => setViewMode('table')}
+            className={`view-mode-toggle__btn ${viewMode === 'table' ? 'view-mode-toggle__btn--active' : ''}`}
+            title="Режим таблицы"
+          >
+            <LayoutList size={16} />
+            Таблица
+          </button>
+          <button
+            onClick={() => setViewMode('cards')}
+            className={`view-mode-toggle__btn ${viewMode === 'cards' ? 'view-mode-toggle__btn--active' : ''}`}
+            title="Режим карточек"
+          >
+            <LayoutGrid size={16} />
+            Карточки
+          </button>
+        </div>
+      </div>
+
+      {/* Buttons Table or Cards */}
+      {viewMode === 'table' ? (
+        <div className="table-responsive">
+          <div className="table-container">
+            <table className="table">
           <thead className="table__head">
             <tr>
               <th className="table__cell">Кнопка</th>
@@ -343,7 +367,108 @@ export default function ButtonsPage() {
           </tbody>
         </table>
         </div>
-      </div>
+        </div>
+      ) : (
+        <div className="cards-grid">
+          {buttons.length === 0 ? (
+            <div className="empty-state">
+              <Square size={48} />
+              <p>Нет кнопок</p>
+            </div>
+          ) : (
+            buttons.map((button: Button) => (
+              <div key={button.id} className="button-card">
+                <div className="button-card__header">
+                  <div className="button-card__icon">
+                    {button.action_type === 'url' ? (
+                      <Link size={20} />
+                    ) : button.media_url ? (
+                      <Image size={20} />
+                    ) : (
+                      <MessageSquare size={20} />
+                    )}
+                  </div>
+                  <div className="button-card__status">
+                    <span className={`badge ${button.active ? 'badge--success' : 'badge--danger'}`}>
+                      {button.active ? <><Check size={14} /> Активна</> : <><XCircle size={14} /> Неактивна</>}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="button-card__body">
+                  <h3 className="button-card__label">{button.label}</h3>
+                  
+                  <div className="button-card__details">
+                    <div className="button-card__detail">
+                      <div className="button-card__detail-label">Тип</div>
+                      <div className="button-card__detail-value">
+                        {button.action_type === 'url' ? (
+                          <span className="badge badge--info">URL</span>
+                        ) : button.action_type === 'inline_query' ? (
+                          <span className="badge badge--primary">Inline Query</span>
+                        ) : (
+                          <span className="badge badge--default">Text</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="button-card__detail">
+                      <div className="button-card__detail-label">Позиция</div>
+                      <div className="button-card__detail-value">
+                        <span className="badge badge--default">
+                          Ряд {button.row}, Кол {button.col}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {button.action_type === 'url' ? (
+                    <div className="button-card__action-payload">
+                      <Link size={14} />
+                      <span className="button-card__action-text">
+                        {getActionPayloadText(button.action_payload, button.action_type) || 'Нет URL'}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="button-card__action-payload">
+                      <MessageSquare size={14} />
+                      <span className="button-card__action-text">
+                        {getActionPayloadText(button.action_payload, button.action_type) || 'Нет текста'}
+                      </span>
+                    </div>
+                  )}
+
+                  {button.media_url && (
+                    <div className="button-card__media">
+                      <Image size={14} />
+                      <span>Медиа прикреплено</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="button-card__actions">
+                  <button
+                    onClick={() => handleEditButton(button)}
+                    className="btn btn--secondary btn--sm"
+                    title="Редактировать"
+                  >
+                    <Edit size={14} />
+                    Редактировать
+                  </button>
+                  <button
+                    onClick={() => handleDeleteButton(button.id)}
+                    className="btn btn--danger btn--sm"
+                    title="Удалить"
+                  >
+                    <Trash2 size={14} />
+                    Удалить
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Modal */}
       {showModal && (
