@@ -379,69 +379,56 @@ export default function ButtonsPage() {
             buttons.map((button: Button) => (
               <div key={button.id} className="button-card">
                 <div className="button-card__header">
-                  <div className="button-card__icon">
+                  <div className="button-card__avatar">
                     {button.action_type === 'url' ? (
-                      <Link size={20} />
+                      <Link size={28} />
                     ) : button.media_url ? (
-                      <Image size={20} />
+                      <Image size={28} />
                     ) : (
-                      <MessageSquare size={20} />
+                      <MessageSquare size={28} />
                     )}
                   </div>
-                  <div className="button-card__status">
-                    <span className={`badge ${button.active ? 'badge--success' : 'badge--danger'}`}>
-                      {button.active ? <><Check size={14} /> Активна</> : <><XCircle size={14} /> Неактивна</>}
-                    </span>
+                  <div className="button-card__info">
+                    <h3 className="button-card__name">{button.label}</h3>
+                    <p className="button-card__type">
+                      {button.action_type === 'url' ? 'URL ссылка' : 
+                       button.action_type === 'inline_query' ? 'Inline запрос' : 
+                       'Текстовое сообщение'}
+                    </p>
                   </div>
+                  <span className={`badge ${button.active ? 'badge--success' : 'badge--danger'}`}>
+                    {button.active ? <><Check size={14} /> Активна</> : <><XCircle size={14} /> Неактивна</>}
+                  </span>
                 </div>
 
-                <div className="button-card__body">
-                  <h3 className="button-card__label">{button.label}</h3>
-                  
-                  <div className="button-card__details">
-                    <div className="button-card__detail">
-                      <div className="button-card__detail-label">Тип</div>
-                      <div className="button-card__detail-value">
-                        {button.action_type === 'url' ? (
-                          <span className="badge badge--info">URL</span>
-                        ) : button.action_type === 'inline_query' ? (
-                          <span className="badge badge--primary">Inline Query</span>
-                        ) : (
-                          <span className="badge badge--default">Text</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="button-card__detail">
-                      <div className="button-card__detail-label">Позиция</div>
-                      <div className="button-card__detail-value">
-                        <span className="badge badge--default">
-                          Ряд {button.row}, Кол {button.col}
-                        </span>
-                      </div>
-                    </div>
+                <div className="button-card__stats">
+                  <div className="button-card__stat">
+                    <Square size={16} />
+                    <span className="button-card__stat-label">Позиция:</span>
+                    <span className="button-card__stat-value">Ряд {button.row}, Кол {button.col}</span>
                   </div>
-
                   {button.action_type === 'url' ? (
-                    <div className="button-card__action-payload">
-                      <Link size={14} />
-                      <span className="button-card__action-text">
+                    <div className="button-card__stat">
+                      <Link size={16} />
+                      <span className="button-card__stat-label">URL:</span>
+                      <span className="button-card__stat-value button-card__stat-value--truncate">
                         {getActionPayloadText(button.action_payload, button.action_type) || 'Нет URL'}
                       </span>
                     </div>
                   ) : (
-                    <div className="button-card__action-payload">
-                      <MessageSquare size={14} />
-                      <span className="button-card__action-text">
+                    <div className="button-card__stat">
+                      <MessageSquare size={16} />
+                      <span className="button-card__stat-label">Текст:</span>
+                      <span className="button-card__stat-value button-card__stat-value--truncate">
                         {getActionPayloadText(button.action_payload, button.action_type) || 'Нет текста'}
                       </span>
                     </div>
                   )}
-
                   {button.media_url && (
-                    <div className="button-card__media">
-                      <Image size={14} />
-                      <span>Медиа прикреплено</span>
+                    <div className="button-card__stat">
+                      <Image size={16} />
+                      <span className="button-card__stat-label">Медиа:</span>
+                      <span className="button-card__stat-value">Прикреплено</span>
                     </div>
                   )}
                 </div>
@@ -452,7 +439,7 @@ export default function ButtonsPage() {
                     className="btn btn--secondary btn--sm"
                     title="Редактировать"
                   >
-                    <Edit size={14} />
+                    <Edit size={16} />
                     Редактировать
                   </button>
                   <button
@@ -460,7 +447,7 @@ export default function ButtonsPage() {
                     className="btn btn--danger btn--sm"
                     title="Удалить"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={16} />
                     Удалить
                   </button>
                 </div>
