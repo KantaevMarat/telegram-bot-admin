@@ -417,8 +417,9 @@ export default function UsersPage() {
       {/* Users Table or Cards */}
       <section className="users-page__content">
         {viewMode === 'table' ? (
-          <div className="table-container">
-            <table className="users-table">
+          <div className="table-responsive">
+            <div className="table-container">
+              <table className="users-table">
             <thead className="users-table__head">
               <tr className="users-table__row">
                 <th className="users-table__cell users-table__cell--checkbox">
@@ -578,7 +579,8 @@ export default function UsersPage() {
               )}
             </tbody>
           </table>
-        </div>
+          </div>
+          </div>
         ) : (
           <div className="users-cards">
             {isLoading ? (

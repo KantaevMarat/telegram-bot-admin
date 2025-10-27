@@ -65,7 +65,7 @@ export default function StatsPage() {
           <div className="loading-skeleton" style={{ width: '300px', height: '20px' }}></div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', alignItems: 'start' }}>
+        <div className="stats-columns">
           {/* Real Stats */}
           <div className="card">
             <div className="card-header">

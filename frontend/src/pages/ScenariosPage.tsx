@@ -149,7 +149,8 @@ export default function ScenariosPage() {
         </div>
       ) : (
         <div className="table-responsive">
-          <table className="table">
+          <div className="table-container">
+            <table className="table">
             <thead>
               <tr>
                 <th>Название</th>
@@ -218,6 +219,7 @@ export default function ScenariosPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

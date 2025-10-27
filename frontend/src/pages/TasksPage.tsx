@@ -222,8 +222,9 @@ export default function TasksPage() {
       </div>
 
       {/* Tasks Table */}
-      <div className="table-container">
-        <table className="table">
+      <div className="table-responsive">
+        <div className="table-container">
+          <table className="table">
           <thead className="table__head">
             <tr>
               <th className="table__cell">Задание</th>
@@ -348,6 +349,7 @@ export default function TasksPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Modal */}

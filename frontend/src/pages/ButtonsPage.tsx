@@ -241,8 +241,9 @@ export default function ButtonsPage() {
       </div>
 
       {/* Buttons Table */}
-      <div className="table-container">
-        <table className="table">
+      <div className="table-responsive">
+        <div className="table-container">
+          <table className="table">
           <thead className="table__head">
             <tr>
               <th className="table__cell">Кнопка</th>
@@ -341,6 +342,7 @@ export default function ButtonsPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Modal */}

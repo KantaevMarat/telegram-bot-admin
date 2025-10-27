@@ -174,8 +174,9 @@ export default function AdminsPage() {
       </div>
 
       {/* Admins Table */}
-      <div className="table-container">
-        <table className="table">
+      <div className="table-responsive">
+        <div className="table-container">
+          <table className="table">
           <thead className="table__head">
             <tr>
               <th className="table__cell">Администратор</th>
@@ -268,6 +269,7 @@ export default function AdminsPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Modal */}

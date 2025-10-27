@@ -105,19 +105,19 @@ export default function ChatsPage() {
         </div>
       </header>
       
-      <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '24px', height: 'calc(100vh - 200px)' }}>
+      <div className="chats-layout">
         {/* Список чатов */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-          <div style={{ padding: '20px', borderBottom: '1px solid var(--border)' }}>
-            <h3 style={{ margin: 0, fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' }}>
+        <div className="card chats-sidebar">
+          <div className="chats-sidebar__header">
+            <h3 className="chats-sidebar__title">
               Чаты ({chats?.length || 0})
             </h3>
           </div>
           
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="chats-sidebar__list">
             {!chats || chats.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
-                <MessageSquare size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
+              <div className="empty-chat-state">
+                <MessageSquare size={48} className="empty-chat-state__icon" />
                 <p>Нет активных чатов</p>
               </div>
             ) : (
@@ -207,29 +207,16 @@ export default function ChatsPage() {
         </div>
 
         {/* Окно чата */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        <div className="card chat-window">
           {!selectedUserId ? (
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              color: 'var(--text-tertiary)',
-            }}>
-              <MessageSquare size={64} style={{ marginBottom: '16px', opacity: 0.3 }} />
+            <div className="empty-chat-state">
+              <MessageSquare size={64} className="empty-chat-state__icon" />
               <p style={{ fontSize: 'var(--font-size-lg)' }}>Выберите чат</p>
             </div>
           ) : (
             <>
               {/* Заголовок чата */}
-              <div style={{
-                padding: '20px',
-                borderBottom: '1px solid var(--border)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-              }}>
+              <div className="chat-window__header">
                 <div style={{
                   width: '40px',
                   height: '40px',
@@ -253,14 +240,7 @@ export default function ChatsPage() {
               </div>
 
               {/* Сообщения */}
-              <div style={{
-                flex: 1,
-                overflowY: 'auto',
-                padding: '20px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-              }}>
+              <div className="chat-messages">
                 {messagesLoading ? (
                   <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>
                     Загрузка сообщений...
