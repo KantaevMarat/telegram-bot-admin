@@ -1932,6 +1932,11 @@ a:hover {
   }
 }
 
+/* View Toggle Alignment */
+.payouts-page__filters .filter-group:last-child {
+  margin-left: auto;
+}
+
 /* === Chats Page === */
 .chats-layout {
   grid-template-columns: 350px 1fr;
