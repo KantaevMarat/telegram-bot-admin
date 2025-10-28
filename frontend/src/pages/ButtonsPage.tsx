@@ -242,24 +242,24 @@ export default function ButtonsPage() {
       </div>
 
       {/* View Mode Toggle */}
-      <div className="filters-section" style={{ marginBottom: '24px' }}>
-        <div className="view-mode-toggle">
-          <button
-            onClick={() => setViewMode('table')}
-            className={`view-mode-toggle__btn ${viewMode === 'table' ? 'view-mode-toggle__btn--active' : ''}`}
-            title="Режим таблицы"
-          >
-            <LayoutList size={16} />
-            Таблица
-          </button>
-          <button
-            onClick={() => setViewMode('cards')}
-            className={`view-mode-toggle__btn ${viewMode === 'cards' ? 'view-mode-toggle__btn--active' : ''}`}
-            title="Режим карточек"
-          >
-            <LayoutGrid size={16} />
-            Карточки
-          </button>
+      <div className="filters-section" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+        <div className="filter-group">
+          <div className="view-toggle">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
+              title="Табличный вид"
+            >
+              <LayoutList size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
+              title="Карточный вид"
+            >
+              <LayoutGrid size={18} />
+            </button>
+          </div>
         </div>
       </div>
 

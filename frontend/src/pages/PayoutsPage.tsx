@@ -349,21 +349,23 @@ export default function PayoutsPage() {
             <Filter size={20} className="payouts-filters__icon" />
             <h3 className="payouts-filters__heading">Фильтры и поиск</h3>
           </div>
-          <div className="view-mode-toggle">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`view-mode-toggle__btn ${viewMode === 'table' ? 'view-mode-toggle__btn--active' : ''}`}
-              title="Режим таблицы"
-            >
-              <LayoutList size={16} />
-            </button>
-            <button
-              onClick={() => setViewMode('cards')}
-              className={`view-mode-toggle__btn ${viewMode === 'cards' ? 'view-mode-toggle__btn--active' : ''}`}
-              title="Режим карточек"
-            >
-              <LayoutGrid size={16} />
-            </button>
+          <div className="filter-group">
+            <div className="view-toggle">
+              <button
+                onClick={() => setViewMode('table')}
+                className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
+                title="Табличный вид"
+              >
+                <LayoutList size={18} />
+              </button>
+              <button
+                onClick={() => setViewMode('cards')}
+                className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
+                title="Карточный вид"
+              >
+                <LayoutGrid size={18} />
+              </button>
+            </div>
           </div>
         </div>
         
