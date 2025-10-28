@@ -1932,6 +1932,62 @@ a:hover {
   }
 }
 
+/* View Mode Toggle */
+.view-mode-toggle {
+  display: flex;
+  gap: var(--spacing-xs);
+  background: var(--bg-tertiary);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+
+.view-mode-toggle__btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-height: var(--touch-target-min);
+  white-space: nowrap;
+}
+
+.view-mode-toggle__btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.view-mode-toggle__btn--active {
+  background: var(--accent);
+  color: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.view-mode-toggle__btn--active:hover {
+  background: var(--accent-hover);
+}
+
+@media (max-width: 640px) {
+  .view-mode-toggle__btn {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: var(--font-size-xs);
+  }
+  
+  .view-mode-toggle__btn svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
 /* === Chats Page === */
 .chats-layout {
   display: grid;
