@@ -349,6 +349,24 @@ export default function PayoutsPage() {
             <Filter size={20} className="payouts-filters__icon" />
             <h3 className="payouts-filters__heading">Фильтры и поиск</h3>
           </div>
+          <div className="filter-group">
+            <div className="view-toggle">
+              <button
+                onClick={() => setViewMode('table')}
+                className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
+                title="Табличный вид"
+              >
+                <LayoutList size={18} />
+              </button>
+              <button
+                onClick={() => setViewMode('cards')}
+                className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
+                title="Карточный вид"
+              >
+                <LayoutGrid size={18} />
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="payouts-filters__grid">
@@ -451,28 +469,6 @@ export default function PayoutsPage() {
           </div>
         </section>
       )}
-
-      {/* View Mode Toggle Section */}
-      <section className="payouts-page__view-toggle">
-        <div className="filter-group">
-          <div className="view-toggle">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
-              title="Табличный вид"
-            >
-              <LayoutList size={18} />
-            </button>
-            <button
-              onClick={() => setViewMode('cards')}
-              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
-              title="Карточный вид"
-            >
-              <LayoutGrid size={18} />
-            </button>
-          </div>
-        </div>
-      </section>
 
       {/* Payouts Table or Cards */}
       <section className="payouts-page__table">
