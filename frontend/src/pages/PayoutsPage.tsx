@@ -410,6 +410,26 @@ export default function PayoutsPage() {
               <option value="large">Более $1000</option>
             </select>
           </div>
+
+          {/* View Mode Toggle */}
+          <div className="filter-group">
+            <div className="view-toggle">
+              <button
+                onClick={() => setViewMode('table')}
+                className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
+                title="Табличный вид"
+              >
+                <LayoutList size={18} />
+              </button>
+              <button
+                onClick={() => setViewMode('cards')}
+                className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
+                title="Карточный вид"
+              >
+                <LayoutGrid size={18} />
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
