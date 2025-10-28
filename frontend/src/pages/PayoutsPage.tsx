@@ -349,26 +349,8 @@ export default function PayoutsPage() {
             <Filter size={20} className="payouts-filters__icon" />
             <h3 className="payouts-filters__heading">Фильтры и поиск</h3>
           </div>
-          <div className="filter-group">
-            <div className="view-toggle">
-              <button
-                onClick={() => setViewMode('table')}
-                className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
-                title="Табличный вид"
-              >
-                <LayoutList size={18} />
-              </button>
-              <button
-                onClick={() => setViewMode('cards')}
-                className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
-                title="Карточный вид"
-              >
-                <LayoutGrid size={18} />
-              </button>
-            </div>
-          </div>
         </div>
-        
+
         <div className="payouts-filters__grid">
           {/* Search */}
           <div className="payouts-search">
@@ -470,6 +452,28 @@ export default function PayoutsPage() {
         </section>
       )}
 
+      {/* View Mode Toggle Section */}
+      <section className="payouts-page__view-toggle">
+        <div className="filter-group">
+          <div className="view-toggle">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
+              title="Табличный вид"
+            >
+              <LayoutList size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
+              title="Карточный вид"
+            >
+              <LayoutGrid size={18} />
+            </button>
+          </div>
+        </div>
+      </section>
+
       {/* Payouts Table or Cards */}
       <section className="payouts-page__table">
         {isLoading ? (
@@ -496,9 +500,7 @@ export default function PayoutsPage() {
                       </h3>
                       <p className="payout-card__username">ID: {payout.user?.tg_id}</p>
                     </div>
-                    <span className={`badge ${getStatusBadgeClass(payout.status)}`}>
-                      <StatusBadge status={payout.status} />
-                    </span>
+                    <StatusBadge status={payout.status} />
                   </div>
 
                   <div className="payout-card__stats">
