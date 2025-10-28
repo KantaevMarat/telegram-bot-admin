@@ -484,96 +484,76 @@ export default function PayoutsPage() {
             ) : (
               filteredPayouts.map((payout: any) => (
                 <div key={payout.id} className="payout-card">
-                  {/* Header */}
                   <div className="payout-card__header">
-                    <div className="payout-card__user">
-                      <div className="payout-card__avatar">
-                        <User size={24} />
-                      </div>
-                      <div className="payout-card__user-info">
-                        <div className="payout-card__name">
-                          {payout.user?.first_name || payout.user?.username || 'Аноним'}
-                        </div>
-                        <div className="payout-card__id">
-                          ID: {payout.user?.tg_id}
-                        </div>
-                      </div>
+                    <div className="payout-card__avatar">
+                      <User size={32} />
                     </div>
-                    <div className="payout-card__amount">
-                      ${parseFloat(payout.amount).toFixed(2)}
+                    <div className="payout-card__info">
+                      <h3 className="payout-card__name">
+                        {payout.user?.first_name || payout.user?.username || 'Аноним'}
+                      </h3>
+                      <p className="payout-card__username">ID: {payout.user?.tg_id}</p>
                     </div>
+                    <span className={`badge ${getStatusBadgeClass(payout.status)}`}>
+                      <StatusBadge status={payout.status} />
+                    </span>
                   </div>
 
-                  {/* Details */}
-                  <div className="payout-card__details">
-                    <div className="payout-card__detail">
-                      <div className="payout-card__label">Метод</div>
-                      <div className="payout-card__value">{payout.method}</div>
+                  <div className="payout-card__stats">
+                    <div className="payout-card__stat">
+                      <DollarSign size={16} />
+                      <span className="payout-card__stat-label">Сумма:</span>
+                      <span className="payout-card__stat-value">${parseFloat(payout.amount).toFixed(2)}</span>
                     </div>
-                    <div className="payout-card__detail">
-                      <div className="payout-card__label">Статус</div>
-                      <div className="payout-card__value">
-                        <StatusBadge status={payout.status} />
+                    <div className="payout-card__stat">
+                      <Calendar size={16} />
+                      <span className="payout-card__stat-label">Дата:</span>
+                      <span className="payout-card__stat-value">
+                        {new Date(payout.created_at).toLocaleDateString('ru-RU')}
+                      </span>
+                    </div>
+                    {payout.wallet_address && (
+                      <div className="payout-card__stat">
+                        <Wallet size={16} />
+                        <span className="payout-card__stat-label">Кошелек:</span>
+                        <span className="payout-card__stat-value payout-card__stat-value--truncate">
+                          {payout.wallet_address?.length > 20 
+                            ? `${payout.wallet_address.slice(0, 10)}...${payout.wallet_address.slice(-8)}`
+                            : payout.wallet_address}
+                        </span>
                       </div>
-                    </div>
-                    <div className="payout-card__detail">
-                      <div className="payout-card__label">Реквизиты</div>
-                      <div className="payout-card__value payout-card__value--mono" title={payout.wallet_address}>
-                        {payout.wallet_address?.length > 20 
-                          ? `${payout.wallet_address.slice(0, 10)}...${payout.wallet_address.slice(-8)}`
-                          : payout.wallet_address}
-                      </div>
-                    </div>
-                    <div className="payout-card__detail">
-                      <div className="payout-card__label">Дата создания</div>
-                      <div className="payout-card__value">
-                        {new Date(payout.created_at).toLocaleString('ru-RU', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </div>
-                    </div>
+                    )}
                   </div>
 
-                  {/* Footer */}
-                  <div className="payout-card__footer">
-                    <div className="payout-card__date">
-                      <Calendar size={14} />
-                      {new Date(payout.created_at).toLocaleDateString('ru-RU')}
-                    </div>
-                    <div className="payout-card__actions">
-                      <button
-                        onClick={() => handleViewDetails(payout)}
-                        className="btn btn--secondary btn--sm"
-                        title="Просмотреть детали"
-                      >
-                        <Eye size={14} />
-                        Детали
-                      </button>
-                      {payout.status === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => approveMutation.mutate(payout.id)}
-                            className="btn btn--success btn--sm"
-                            title="Одобрить"
-                          >
-                            <Check size={14} />
-                            Одобрить
-                          </button>
-                          <button
-                            onClick={() => handleDeclineClick(payout.id)}
-                            className="btn btn--danger btn--sm"
-                            title="Отклонить"
-                          >
-                            <X size={14} />
-                            Отклонить
-                          </button>
-                        </>
-                      )}
-                    </div>
+                  <div className="payout-card__actions">
+                    <button
+                      onClick={() => handleViewDetails(payout)}
+                      className="btn btn--secondary btn--sm"
+                      title="Просмотреть детали"
+                    >
+                      <Eye size={16} />
+                      Детали
+                    </button>
+                    {payout.status === 'pending' && (
+                      <>
+                        <button
+                          onClick={() => approveMutation.mutate(payout.id)}
+                          className="btn btn--success btn--sm"
+                          title="Одобрить"
+                        >
+                          <Check size={16} />
+                          Одобрить
+                        </button>
+                        <button
+                          onClick={() => handleDeclineClick(payout.id)}
+                          className="btn btn--danger btn--sm"
+                          title="Отклонить"
+                        >
+                          <X size={16} />
+                          Отклонить
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))
