@@ -79,6 +79,7 @@ export class AddRewardToUserTasks1730239000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.dropColumn('user_tasks', 'created_at');
     await queryRunner.dropColumn('user_tasks', 'reward');
     await queryRunner.dropColumn('user_tasks', 'reward_received');
     await queryRunner.dropColumn('user_tasks', 'started_at');
