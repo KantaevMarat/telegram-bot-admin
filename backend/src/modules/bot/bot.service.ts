@@ -78,7 +78,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy() {
     // Stop polling when service is destroyed
-    this.pollingInterval = null;
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
     this.logger.log('🛑 Bot polling stopped');
   }
 
@@ -99,6 +102,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
    */
   private startPolling() {
     this.logger.log('🤖 Starting bot polling for development...');
+    // Set interval to non-null to enable continuous polling
+    this.pollingInterval = setInterval(() => {}, 1000000) as NodeJS.Timeout; // Dummy interval, actual polling is recursive
     this.pollUpdates(); // Start polling once
   }
 
