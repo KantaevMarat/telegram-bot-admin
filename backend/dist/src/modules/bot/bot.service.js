@@ -851,7 +851,30 @@ let BotService = BotService_1 = class BotService {
     async handleCustomButton(chatId, user, button) {
         let text = 'Информация';
         let keyboard = { inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'menu' }]] };
-        if (button.action_type === 'command' && button.action_payload?.command) {
+        if (button.action_type === 'text' || button.action_type === 'send_message') {
+            let payloadText = '';
+            if (typeof button.action_payload === 'string') {
+                payloadText = button.action_payload;
+            }
+            else if (button.action_payload?.text) {
+                if (typeof button.action_payload.text === 'string') {
+                    payloadText = button.action_payload.text;
+                }
+                else if (button.action_payload.text?.text) {
+                    payloadText = button.action_payload.text.text;
+                }
+            }
+            if (payloadText) {
+                text = payloadText
+                    .replace(/{username}/g, user.username || user.first_name || 'Друг')
+                    .replace(/{balance}/g, user.balance_usdt.toString())
+                    .replace(/{tasks_completed}/g, user.tasks_completed.toString());
+            }
+            else {
+                text = button.label || 'Информация';
+            }
+        }
+        else if (button.action_type === 'command' && button.action_payload?.command) {
             const command = button.action_payload.command;
             switch (command) {
                 case 'stats':
