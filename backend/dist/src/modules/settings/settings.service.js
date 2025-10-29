@@ -19,10 +19,12 @@ const typeorm_2 = require("typeorm");
 const settings_entity_1 = require("../../entities/settings.entity");
 const settings_history_entity_1 = require("../../entities/settings-history.entity");
 const default_settings_1 = require("../../database/default-settings");
+const sync_service_1 = require("../sync/sync.service");
 let SettingsService = class SettingsService {
-    constructor(settingsRepository, settingsHistoryRepository) {
+    constructor(settingsRepository, settingsHistoryRepository, syncService) {
         this.settingsRepository = settingsRepository;
         this.settingsHistoryRepository = settingsHistoryRepository;
+        this.syncService = syncService;
     }
     async findAll() {
         return await this.settingsRepository.find({ order: { key: 'ASC' } });
@@ -48,6 +50,11 @@ let SettingsService = class SettingsService {
         const savedSetting = await this.settingsRepository.save(setting);
         if (oldValue !== value) {
             await this.recordHistory(key, oldValue, value, changeReason, adminTgId, adminUsername, adminFirstName, ipAddress, userAgent);
+            await this.syncService.emitEntityEvent('settings', 'updated', {
+                key,
+                value,
+                oldValue,
+            });
         }
         return savedSetting;
     }
@@ -407,6 +414,7 @@ exports.SettingsService = SettingsService = __decorate([
     __param(0, (0, typeorm_1.InjectRepository)(settings_entity_1.Settings)),
     __param(1, (0, typeorm_1.InjectRepository)(settings_history_entity_1.SettingsHistory)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
-        typeorm_2.Repository])
+        typeorm_2.Repository,
+        sync_service_1.SyncService])
 ], SettingsService);
 //# sourceMappingURL=settings.service.js.map

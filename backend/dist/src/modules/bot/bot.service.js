@@ -31,8 +31,9 @@ const fake_stats_service_1 = require("../stats/fake-stats.service");
 const settings_service_1 = require("../settings/settings.service");
 const messages_service_1 = require("../messages/messages.service");
 const users_service_1 = require("../users/users.service");
+const sync_service_1 = require("../sync/sync.service");
 let BotService = BotService_1 = class BotService {
-    constructor(userRepo, buttonRepo, taskRepo, userTaskRepo, scenarioRepo, configService, fakeStatsService, settingsService, messagesService, usersService) {
+    constructor(userRepo, buttonRepo, taskRepo, userTaskRepo, scenarioRepo, configService, fakeStatsService, settingsService, messagesService, usersService, syncService) {
         this.userRepo = userRepo;
         this.buttonRepo = buttonRepo;
         this.taskRepo = taskRepo;
@@ -43,8 +44,11 @@ let BotService = BotService_1 = class BotService {
         this.settingsService = settingsService;
         this.messagesService = messagesService;
         this.usersService = usersService;
+        this.syncService = syncService;
         this.logger = new common_1.Logger(BotService_1.name);
         this.botToken = '';
+        this.pollingOffset = 0;
+        this.pollingInterval = null;
         this.logger.log('BotService constructor called');
         this.botToken = this.configService.get('TELEGRAM_BOT_TOKEN') || '';
         this.logger.log(`Bot token loaded: ${this.botToken ? 'YES' : 'NO'}`);
@@ -52,6 +56,25 @@ let BotService = BotService_1 = class BotService {
         if (!this.botToken) {
             this.logger.error('TELEGRAM_BOT_TOKEN is not set!');
         }
+    }
+    async onModuleInit() {
+        this.syncService.on('buttons.created', () => this.syncService.invalidateCache('buttons'));
+        this.syncService.on('buttons.updated', () => this.syncService.invalidateCache('buttons'));
+        this.syncService.on('buttons.deleted', () => this.syncService.invalidateCache('buttons'));
+        this.syncService.on('scenarios.created', () => this.syncService.invalidateCache('scenarios'));
+        this.syncService.on('scenarios.updated', () => this.syncService.invalidateCache('scenarios'));
+        this.syncService.on('scenarios.deleted', () => this.syncService.invalidateCache('scenarios'));
+        this.syncService.on('tasks.created', () => this.syncService.invalidateCache('tasks'));
+        this.syncService.on('tasks.updated', () => this.syncService.invalidateCache('tasks'));
+        this.syncService.on('tasks.deleted', () => this.syncService.invalidateCache('tasks'));
+        this.logger.log('✅ BotService subscribed to sync events');
+        if (process.env.NODE_ENV === 'development') {
+            this.startPolling();
+        }
+    }
+    async onModuleDestroy() {
+        this.pollingInterval = null;
+        this.logger.log('🛑 Bot polling stopped');
     }
     async handleWebhook(update) {
         try {
@@ -64,6 +87,45 @@ let BotService = BotService_1 = class BotService {
         }
         catch (error) {
             this.logger.error('Error handling webhook:', error);
+        }
+    }
+    startPolling() {
+        this.logger.log('🤖 Starting bot polling for development...');
+        this.pollUpdates();
+    }
+    async pollUpdates() {
+        try {
+            const url = `https://api.telegram.org/bot${this.botToken}/getUpdates`;
+            this.logger.debug(`🔍 Polling with offset: ${this.pollingOffset + 1}`);
+            const response = await axios_1.default.get(url, {
+                params: {
+                    offset: this.pollingOffset,
+                    limit: 100,
+                    timeout: 30,
+                },
+            });
+            this.logger.debug(`📡 Telegram API response: ${response.data.ok}, updates: ${response.data.result?.length || 0}`);
+            const updates = response.data.result;
+            if (updates && updates.length > 0) {
+                this.logger.log(`📨 Received ${updates.length} update(s)`);
+                for (const update of updates) {
+                    this.logger.debug(`📨 Processing update ${update.update_id}: ${update.message?.text || 'no text'}`);
+                    await this.handleWebhook(update);
+                    this.pollingOffset = update.update_id + 1;
+                }
+            }
+            else {
+                this.logger.debug('📭 No new updates');
+            }
+            if (this.pollingInterval) {
+                this.pollUpdates();
+            }
+        }
+        catch (error) {
+            this.logger.error('Failed to poll updates:', error.response?.status, error.response?.data || error.message);
+            if (this.pollingInterval) {
+                setTimeout(() => this.pollUpdates(), 5000);
+            }
         }
     }
     async handleMessage(message) {
@@ -311,6 +373,12 @@ let BotService = BotService_1 = class BotService {
         }
     }
     async getMainKeyboard() {
+        const cacheKey = 'buttons:main_keyboard';
+        const cached = this.syncService.getCache(cacheKey);
+        if (cached) {
+            this.logger.debug('✅ Using cached main keyboard');
+            return cached;
+        }
         const buttons = await this.buttonRepo.find({
             where: { active: true },
             order: { row: 'ASC', col: 'ASC' },
@@ -346,9 +414,11 @@ let BotService = BotService_1 = class BotService {
                 },
             ]);
         }
-        return {
+        const result = {
             inline_keyboard: keyboard,
         };
+        this.syncService.setCache(cacheKey, result, 60);
+        return result;
     }
     async sendMessage(chatId, text, replyMarkup) {
         const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
@@ -864,9 +934,14 @@ let BotService = BotService_1 = class BotService {
     async findMatchingScenario(text) {
         if (!text)
             return null;
-        const scenarios = await this.scenarioRepo.find({
-            where: { is_active: true },
-        });
+        const cacheKey = 'scenarios:active';
+        let scenarios = this.syncService.getCache(cacheKey);
+        if (!scenarios) {
+            scenarios = await this.scenarioRepo.find({
+                where: { is_active: true },
+            });
+            this.syncService.setCache(cacheKey, scenarios, 60);
+        }
         const textLower = text.toLowerCase().trim();
         for (const scenario of scenarios) {
             const triggerLower = scenario.trigger.toLowerCase().trim();
@@ -956,6 +1031,7 @@ exports.BotService = BotService = BotService_1 = __decorate([
         fake_stats_service_1.FakeStatsService,
         settings_service_1.SettingsService,
         messages_service_1.MessagesService,
-        users_service_1.UsersService])
+        users_service_1.UsersService,
+        sync_service_1.SyncService])
 ], BotService);
 //# sourceMappingURL=bot.service.js.map

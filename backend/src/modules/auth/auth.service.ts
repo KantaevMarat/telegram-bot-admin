@@ -210,6 +210,12 @@ export class AuthService {
    */
   async devLogin(adminId: number) {
     this.logger.log(`Development login attempt for admin ID: ${adminId}`);
+    this.logger.log(`Searching for admin with tg_id: "${adminId.toString()}"`);
+
+    // Get all admins to debug
+    const allAdmins = await this.adminRepo.find();
+    this.logger.log(`Total admins in DB: ${allAdmins.length}`);
+    allAdmins.forEach(a => this.logger.log(`  - Admin: tg_id="${a.tg_id}", role=${a.role}`));
 
     const admin = await this.adminRepo.findOne({
       where: { tg_id: adminId.toString() },
@@ -241,5 +247,33 @@ export class AuthService {
     this.logger.log(`Development login successful: ${admin.tg_id}`);
 
     return result;
+  }
+
+  /**
+   * DEBUG: Test admin lookup to see what's in the database
+   */
+  async debugAdminLookup() {
+    const allAdmins = await this.adminRepo.find();
+    const searchTgId = '697184435';
+    
+    const foundByString = await this.adminRepo.findOne({
+      where: { tg_id: searchTgId },
+    });
+
+    return {
+      totalAdmins: allAdmins.length,
+      searchingFor: searchTgId,
+      searchingForType: typeof searchTgId,
+      foundByString: foundByString ? 'YES' : 'NO',
+      allAdminsInDb: allAdmins.map(a => ({
+        id: a.id,
+        tg_id: a.tg_id,
+        tg_id_type: typeof a.tg_id,
+        role: a.role,
+        username: a.username,
+        matchesSearch: a.tg_id === searchTgId,
+        toStringMatches: a.tg_id.toString() === searchTgId,
+      })),
+    };
   }
 }

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { buttonsApi } from '../api/client';
 import { Square, Plus, Edit, Trash2, X, Image, Link, MessageSquare, LayoutGrid, LayoutList, Check, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useSyncRefetch } from '../hooks/useSync';
 
 interface Button {
   id: string;
@@ -69,10 +70,13 @@ export default function ButtonsPage() {
 
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['buttons'],
     queryFn: () => buttonsApi.getButtons(),
   });
+
+  // 🔄 Auto-refresh on sync events
+  useSyncRefetch(['buttons.created', 'buttons.updated', 'buttons.deleted'], refetch);
 
   const createMutation = useMutation({
     mutationFn: (data: any) => buttonsApi.createButton(data),
@@ -197,7 +201,23 @@ export default function ButtonsPage() {
           <h1 className="page-title">Кнопки</h1>
           <p className="page-subtitle">Управление интерактивными кнопками</p>
         </div>
-        <div className="page-actions">
+        <div className="page-actions" style={{ display: 'flex', gap: '12px' }}>
+          <div className="view-toggle">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
+              title="Табличный вид"
+            >
+              <LayoutList size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
+              title="Карточный вид"
+            >
+              <LayoutGrid size={18} />
+            </button>
+          </div>
           <button
             onClick={handleOpenModal}
             className="btn btn--primary"
@@ -237,28 +257,6 @@ export default function ButtonsPage() {
           <div className="stat-card__content">
             <div className="stat-card__value">{buttons.filter(b => !b.active).length}</div>
             <div className="stat-card__label">Неактивных</div>
-          </div>
-        </div>
-      </div>
-
-      {/* View Mode Toggle */}
-      <div className="filters-section" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'flex-end' }}>
-        <div className="filter-group">
-          <div className="view-toggle">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
-              title="Табличный вид"
-            >
-              <LayoutList size={18} />
-            </button>
-            <button
-              onClick={() => setViewMode('cards')}
-              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
-              title="Карточный вид"
-            >
-              <LayoutGrid size={18} />
-            </button>
           </div>
         </div>
       </div>
@@ -443,7 +441,7 @@ export default function ButtonsPage() {
                     Редактировать
                   </button>
                   <button
-                    onClick={() => handleDeleteButton(button.id)}
+                    onClick={() => handleDelete(button.id)}
                     className="btn btn--danger btn--sm"
                     title="Удалить"
                   >

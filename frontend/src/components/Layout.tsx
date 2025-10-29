@@ -1,6 +1,7 @@
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import toast from 'react-hot-toast';
 import {
   BarChart3,
   Users,
@@ -15,6 +16,7 @@ import {
   Shield,
   LogOut,
   Home,
+  RefreshCw,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -23,7 +25,21 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
-  const { admin, logout } = useAuthStore();
+  const { admin, logout, refreshToken } = useAuthStore();
+  const [refreshingToken, setRefreshingToken] = useState(false);
+
+  const handleRefreshToken = async () => {
+    setRefreshingToken(true);
+    try {
+      await refreshToken();
+      toast.success('🔄 Токен обновлен!');
+    } catch (error) {
+      toast.error('❌ Не удалось обновить токен');
+      console.error('Token refresh error:', error);
+    } finally {
+      setRefreshingToken(false);
+    }
+  };
 
   const menuItems = [
     { path: '/', icon: Home, label: 'Главная', color: '#646cff' },
@@ -94,9 +110,28 @@ export default function Layout({ children }: LayoutProps) {
                 </p>
               </div>
             </div>
-            <button onClick={logout} className="sidebar-logout">
-              <LogOut size={16} />
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={handleRefreshToken}
+                disabled={refreshingToken}
+                className="sidebar-logout"
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #374151',
+                  color: '#9ca3af',
+                  padding: '8px',
+                  borderRadius: '6px',
+                  cursor: refreshingToken ? 'not-allowed' : 'pointer',
+                  opacity: refreshingToken ? 0.6 : 1,
+                }}
+                title="Обновить токен"
+              >
+                <RefreshCw size={16} className={refreshingToken ? 'animate-spin' : ''} />
+              </button>
+              <button onClick={logout} className="sidebar-logout">
+                <LogOut size={16} />
+              </button>
+            </div>
           </div>
         </div>
       </nav>

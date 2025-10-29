@@ -6,31 +6,42 @@ const getApiUrl = () => {
   const currentUrl = window.location.href;
   console.log('🔗 Current URL:', currentUrl);
 
-  // For Telegram Web Apps (serveo, ngrok, etc.), always use localhost API
-  // because the backend is running locally, not on the tunnel
+  // Priority 1: Check environment variable (highest priority)
+  // But ignore Docker-internal hostnames when running in browser
+  if (import.meta.env.VITE_API_URL) {
+    const envApiUrl = import.meta.env.VITE_API_URL.replace('/api', '') + '/api';
+    
+    // Check if this is a Docker-internal hostname
+    const isDockerInternal = envApiUrl.includes('tg-backend') || 
+                            envApiUrl.includes('tg-frontend') ||
+                            envApiUrl.includes('://backend:') ||
+                            envApiUrl.includes('://frontend:');
+    
+    // If we're in a browser (localhost) but env has Docker hostname, ignore it
+    if (isDockerInternal && (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1'))) {
+      console.log('⚠️ Ignoring Docker-internal VITE_API_URL in browser:', envApiUrl);
+    } else {
+      console.log('🔧 Using VITE_API_URL from env:', envApiUrl);
+      return envApiUrl;
+    }
+  }
+
+  // Priority 2: For Telegram Web Apps (serveo, ngrok, etc.)
   if (currentUrl.includes('serveo.net') || currentUrl.includes('ngrok.io') || currentUrl.includes('trycloudflare.com') || currentUrl.includes('loca.lt')) {
     const apiUrl = 'http://localhost:3000/api';
     console.log('📱 Telegram Web App detected - using localhost API:', apiUrl);
     return apiUrl;
   }
 
-  // If running locally, use localhost
+  // Priority 3: Running locally (localhost or 127.0.0.1)
   if (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1')) {
-    // Check if we're running in Docker container
-    if (window.location.hostname === 'localhost' && window.location.port === '5173') {
-      // We're running in Docker, use environment variable
-      const apiUrl = (import.meta.env.VITE_API_URL || 'http://tg-backend:3000') + '/api';
-      console.log('🐳 Docker detected - using env API URL:', apiUrl);
-      return apiUrl;
-    } else {
-      // We're running locally on host
-      const apiUrl = 'http://localhost:3000/api';
-      console.log('🏠 Using localhost API URL:', apiUrl);
-      return apiUrl;
-    }
+    const apiUrl = 'http://localhost:3000/api';
+    console.log('🏠 Local development - using localhost API:', apiUrl);
+    return apiUrl;
   }
 
-  const fallbackUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+  // Fallback: production or unknown environment
+  const fallbackUrl = 'http://localhost:3000/api';
   console.log('🔄 Using fallback API URL:', fallbackUrl);
   return fallbackUrl;
 };

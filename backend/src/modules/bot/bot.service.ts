@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -12,11 +12,14 @@ import { FakeStatsService } from '../stats/fake-stats.service';
 import { SettingsService } from '../settings/settings.service';
 import { MessagesService } from '../messages/messages.service';
 import { UsersService } from '../users/users.service';
+import { SyncService } from '../sync/sync.service';
 
 @Injectable()
-export class BotService {
+export class BotService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BotService.name);
   private botToken: string = '';
+  private pollingOffset: number = 0; // Start from 0 to get all messages
+  private pollingInterval: NodeJS.Timeout | null = null;
 
   constructor(
     @InjectRepository(User)
@@ -34,6 +37,7 @@ export class BotService {
     private settingsService: SettingsService,
     private messagesService: MessagesService,
     private usersService: UsersService,
+    private syncService: SyncService,
   ) {
     this.logger.log('BotService constructor called');
     this.botToken = this.configService.get('TELEGRAM_BOT_TOKEN') || '';
@@ -47,6 +51,37 @@ export class BotService {
     }
   }
 
+  /**
+   * Subscribe to sync events for cache invalidation
+   */
+  async onModuleInit() {
+    // Listen to sync events and invalidate cache
+    this.syncService.on('buttons.created', () => this.syncService.invalidateCache('buttons'));
+    this.syncService.on('buttons.updated', () => this.syncService.invalidateCache('buttons'));
+    this.syncService.on('buttons.deleted', () => this.syncService.invalidateCache('buttons'));
+    
+    this.syncService.on('scenarios.created', () => this.syncService.invalidateCache('scenarios'));
+    this.syncService.on('scenarios.updated', () => this.syncService.invalidateCache('scenarios'));
+    this.syncService.on('scenarios.deleted', () => this.syncService.invalidateCache('scenarios'));
+    
+    this.syncService.on('tasks.created', () => this.syncService.invalidateCache('tasks'));
+    this.syncService.on('tasks.updated', () => this.syncService.invalidateCache('tasks'));
+    this.syncService.on('tasks.deleted', () => this.syncService.invalidateCache('tasks'));
+
+    this.logger.log('✅ BotService subscribed to sync events');
+
+    // Start polling for development
+    if (process.env.NODE_ENV === 'development') {
+      this.startPolling();
+    }
+  }
+
+  async onModuleDestroy() {
+    // Stop polling when service is destroyed
+    this.pollingInterval = null;
+    this.logger.log('🛑 Bot polling stopped');
+  }
+
   async handleWebhook(update: any) {
     try {
       if (update.message) {
@@ -56,6 +91,59 @@ export class BotService {
       }
     } catch (error) {
       this.logger.error('Error handling webhook:', error);
+    }
+  }
+
+  /**
+   * Start polling for updates (for development)
+   */
+  private startPolling() {
+    this.logger.log('🤖 Starting bot polling for development...');
+    this.pollUpdates(); // Start polling once
+  }
+
+  /**
+   * Poll for updates from Telegram API
+   */
+  private async pollUpdates() {
+    try {
+      const url = `https://api.telegram.org/bot${this.botToken}/getUpdates`;
+      this.logger.debug(`🔍 Polling with offset: ${this.pollingOffset + 1}`);
+
+      const response = await axios.get(url, {
+        params: {
+          offset: this.pollingOffset,
+          limit: 100,
+          timeout: 30, // 30 second long polling timeout
+        },
+      });
+
+      this.logger.debug(`📡 Telegram API response: ${response.data.ok}, updates: ${response.data.result?.length || 0}`);
+
+      const updates = response.data.result;
+      if (updates && updates.length > 0) {
+        this.logger.log(`📨 Received ${updates.length} update(s)`);
+
+        for (const update of updates) {
+          this.logger.debug(`📨 Processing update ${update.update_id}: ${update.message?.text || 'no text'}`);
+          await this.handleWebhook(update);
+          this.pollingOffset = update.update_id + 1; // Set to next expected update_id
+        }
+      } else {
+        this.logger.debug('📭 No new updates');
+      }
+
+      // Continue polling
+      if (this.pollingInterval) { // Check if not destroyed
+        this.pollUpdates();
+      }
+    } catch (error) {
+      this.logger.error('Failed to poll updates:', error.response?.status, error.response?.data || error.message);
+
+      // Retry polling after error
+      if (this.pollingInterval) {
+        setTimeout(() => this.pollUpdates(), 5000); // Retry in 5 seconds
+      }
     }
   }
 
@@ -358,6 +446,16 @@ export class BotService {
   }
 
   private async getMainKeyboard() {
+    // Try to get from cache first
+    const cacheKey = 'buttons:main_keyboard';
+    const cached = this.syncService.getCache(cacheKey);
+    
+    if (cached) {
+      this.logger.debug('✅ Using cached main keyboard');
+      return cached;
+    }
+
+    // Fetch from database
     const buttons = await this.buttonRepo.find({
       where: { active: true },
       order: { row: 'ASC', col: 'ASC' },
@@ -402,9 +500,14 @@ export class BotService {
       ]);
     }
 
-    return {
+    const result = {
       inline_keyboard: keyboard,
     };
+
+    // Cache for 60 seconds (will be invalidated on button changes)
+    this.syncService.setCache(cacheKey, result, 60);
+
+    return result;
   }
 
   async sendMessage(chatId: string, text: string, replyMarkup?: any) {
@@ -1080,10 +1183,19 @@ export class BotService {
   private async findMatchingScenario(text: string): Promise<Scenario | null> {
     if (!text) return null;
 
-    // Get all active scenarios
-    const scenarios = await this.scenarioRepo.find({
-      where: { is_active: true },
-    });
+    // Try to get from cache first
+    const cacheKey = 'scenarios:active';
+    let scenarios = this.syncService.getCache<Scenario[]>(cacheKey);
+
+    if (!scenarios) {
+      // Fetch from database
+      scenarios = await this.scenarioRepo.find({
+        where: { is_active: true },
+      });
+      
+      // Cache for 60 seconds (will be invalidated on scenario changes)
+      this.syncService.setCache(cacheKey, scenarios, 60);
+    }
 
     // Find matching scenario (case-insensitive)
     const textLower = text.toLowerCase().trim();

@@ -3,10 +3,12 @@ import { Task } from '../../entities/task.entity';
 import { UserTask } from '../../entities/user-task.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { SyncService } from '../sync/sync.service';
 export declare class TasksService {
     private taskRepo;
     private userTaskRepo;
-    constructor(taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>);
+    private syncService;
+    constructor(taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, syncService: SyncService);
     create(createTaskDto: CreateTaskDto): Promise<Task>;
     findAll(active?: boolean): Promise<Task[]>;
     findOne(id: string): Promise<Task>;

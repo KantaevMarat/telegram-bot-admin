@@ -22,21 +22,7 @@ async function bootstrap() {
     validateJWTSecret();
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     app.enableCors({
-        origin: (origin, callback) => {
-            if (!origin)
-                return callback(null, true);
-            if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-                return callback(null, true);
-            }
-            if (origin.includes('serveo.net') ||
-                origin.includes('ngrok.io') ||
-                origin.includes('trycloudflare.com') ||
-                origin.includes('loca.lt') ||
-                origin.includes('telegram.org')) {
-                return callback(null, true);
-            }
-            return callback(new Error('Not allowed by CORS'));
-        },
+        origin: true,
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],

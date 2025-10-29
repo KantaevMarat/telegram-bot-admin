@@ -23,7 +23,14 @@ export const useAuthStore = create<AuthState>()(
           // Try to get fresh token in development mode
           if (import.meta.env.DEV) {
             console.log('🔄 Refreshing token in development mode...');
-            const response = await fetch('http://localhost:3000/api/auth/telegram/admin', {
+            // Use localhost when running locally, ignore Docker hostnames
+            let apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const isDockerHostname = apiUrl.includes('tg-backend') || apiUrl.includes('tg-frontend');
+            if (isDockerHostname) {
+              apiUrl = 'http://localhost:3000';
+            }
+            
+            const response = await fetch(`${apiUrl}/api/auth/telegram/admin`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -31,11 +38,17 @@ export const useAuthStore = create<AuthState>()(
               body: JSON.stringify({ initData: 'dev' }),
             });
 
+            console.log('🔄 Token refresh response status:', response.status);
+            console.log('🔄 Token refresh response headers:', response.headers);
+
             if (response.ok) {
               const data = await response.json();
-              console.log('✅ Token refreshed successfully');
+              console.log('✅ Token refreshed successfully:', data);
               set({ token: data.access_token, admin: data.admin, isAuthenticated: true });
               return;
+            } else {
+              const errorText = await response.text();
+              console.log('❌ Token refresh failed with status:', response.status, 'body:', errorText);
             }
           }
 

@@ -31,28 +31,7 @@ async function bootstrap() {
 
   // Enable CORS for all origins (including serveo, ngrok, etc.)
   app.enableCors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, Postman, etc.)
-      if (!origin) return callback(null, true);
-
-      // Allow localhost for development
-      if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-        return callback(null, true);
-      }
-
-      // Allow Telegram Web Apps from various domains
-      if (
-        origin.includes('serveo.net') ||
-        origin.includes('ngrok.io') ||
-        origin.includes('trycloudflare.com') ||
-        origin.includes('loca.lt') ||
-        origin.includes('telegram.org')
-      ) {
-        return callback(null, true);
-      }
-
-      return callback(new Error('Not allowed by CORS'));
-    },
+    origin: true, // Allow all origins in development
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],

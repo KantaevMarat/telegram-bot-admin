@@ -5,6 +5,7 @@ import { Task } from '../../entities/task.entity';
 import { UserTask } from '../../entities/user-task.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { SyncService } from '../sync/sync.service';
 
 @Injectable()
 export class TasksService {
@@ -13,11 +14,17 @@ export class TasksService {
     private taskRepo: Repository<Task>,
     @InjectRepository(UserTask)
     private userTaskRepo: Repository<UserTask>,
+    private syncService: SyncService,
   ) {}
 
   async create(createTaskDto: CreateTaskDto) {
     const task = this.taskRepo.create(createTaskDto);
-    return await this.taskRepo.save(task);
+    const saved = await this.taskRepo.save(task);
+    
+    // Emit sync event
+    await this.syncService.emitEntityEvent('tasks', 'created', saved);
+    
+    return saved;
   }
 
   async findAll(active?: boolean) {
@@ -39,12 +46,21 @@ export class TasksService {
   async update(id: string, updateTaskDto: UpdateTaskDto) {
     const task = await this.findOne(id);
     Object.assign(task, updateTaskDto);
-    return await this.taskRepo.save(task);
+    const updated = await this.taskRepo.save(task);
+    
+    // Emit sync event
+    await this.syncService.emitEntityEvent('tasks', 'updated', updated);
+    
+    return updated;
   }
 
   async remove(id: string) {
     const task = await this.findOne(id);
     await this.taskRepo.remove(task);
+    
+    // Emit sync event
+    await this.syncService.emitEntityEvent('tasks', 'deleted', { id });
+    
     return { success: true, message: 'Task removed' };
   }
 

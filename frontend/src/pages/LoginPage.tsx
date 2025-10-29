@@ -24,8 +24,9 @@ export default function LoginPage() {
           // Use development login endpoint
           console.log('🚀 Development mode: Using dev login endpoint');
           try {
-            const response = await authApi.devLogin('6971844353');
-            login(response.data.access_token, response.data.admin);
+            const response = await authApi.devLogin('697184435');
+            console.log('✅ Dev login response:', response);
+            login(response.access_token, response.admin);
             toast.success('🔧 Режим разработки: Успешный вход!');
             return;
           } catch (error: any) {

@@ -41,12 +41,17 @@ export class StatsController {
   @Post('fake/regenerate')
   @ApiOperation({ summary: 'Manually regenerate fake statistics' })
   async regenerateFakeStats() {
-    const newStats = await this.fakeStatsService.regenerateFakeStats();
-    return {
-      success: true,
-      message: 'Fake statistics regenerated successfully',
-      data: newStats,
-    };
+    try {
+      const newStats = await this.fakeStatsService.regenerateFakeStats();
+      return {
+        success: true,
+        message: 'Fake statistics regenerated successfully',
+        data: newStats,
+      };
+    } catch (error) {
+      console.error('❌ Error regenerating fake stats:', error);
+      throw error;
+    }
   }
 
   @Get('top-users')

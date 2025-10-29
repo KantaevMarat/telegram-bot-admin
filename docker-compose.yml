@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "15432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -70,7 +70,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-tg_app}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      JWT_SECRET: ${JWT_SECRET:-this-is-a-very-strong-jwt-secret-key-with-more-than-32-characters-for-production-use-only}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL}
       MINIO_ENDPOINT: minio
@@ -83,7 +83,7 @@ services:
     volumes:
       - ./backend:/app
       - /app/node_modules
-    command: node dist/src/main.js
+    command: npm run start:dev
 
   frontend:
     build:
@@ -93,7 +93,7 @@ services:
     container_name: tg-frontend
     restart: unless-stopped
     environment:
-      VITE_API_URL: ${VITE_API_URL:-http://tg-backend:3000}
+      VITE_API_URL: http://tg-backend:3000
       VITE_TELEGRAM_BOT_USERNAME: ${VITE_TELEGRAM_BOT_USERNAME}
     ports:
       - "${FRONTEND_PORT:-5173}:5173"

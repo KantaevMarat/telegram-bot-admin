@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminsApi } from '../api/client';
-import { Shield, Plus, Edit, Trash2, X, UserCheck, Crown, User } from 'lucide-react';
+import { Shield, Plus, Edit, Trash2, X, UserCheck, Crown, User, LayoutGrid, LayoutList } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface Admin {
@@ -15,6 +15,7 @@ interface Admin {
 export default function AdminsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingAdmin, setEditingAdmin] = useState<Admin | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   
   const [formData, setFormData] = useState({
     tg_id: '',
@@ -129,7 +130,23 @@ export default function AdminsPage() {
           <h1 className="page-title">Администраторы</h1>
           <p className="page-subtitle">Управление администраторами системы</p>
         </div>
-        <div className="page-actions">
+        <div className="page-actions" style={{ display: 'flex', gap: '12px' }}>
+          <div className="view-toggle">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
+              title="Табличный вид"
+            >
+              <LayoutList size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
+              title="Карточный вид"
+            >
+              <LayoutGrid size={18} />
+            </button>
+          </div>
           <button
             onClick={handleOpenModal}
             className="btn btn--primary"
@@ -173,104 +190,179 @@ export default function AdminsPage() {
         </div>
       </div>
 
-      {/* Admins Table */}
-      <div className="table-responsive">
-        <div className="table-container">
-          <table className="table">
-          <thead className="table__head">
-            <tr>
-              <th className="table__cell">Администратор</th>
-              <th className="table__cell">Telegram ID</th>
-              <th className="table__cell table__cell--center">Роль</th>
-              <th className="table__cell table__cell--center">Действия</th>
-            </tr>
-          </thead>
-          <tbody className="table__body">
-            {admins.length === 0 ? (
-              <tr className="table__row">
-                <td colSpan={4} className="table__cell table__cell--empty">
-                  Администраторы не найдены
-                </td>
+      {/* Admins Table or Cards */}
+      {viewMode === 'table' ? (
+        <div className="table-responsive">
+          <div className="table-container">
+            <table className="table">
+            <thead className="table__head">
+              <tr>
+                <th className="table__cell">Администратор</th>
+                <th className="table__cell">Telegram ID</th>
+                <th className="table__cell table__cell--center">Роль</th>
+                <th className="table__cell table__cell--center">Действия</th>
               </tr>
-            ) : (
-              admins.map((admin) => (
-                <tr key={admin.id} className="table__row">
-                  <td className="table__cell">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ 
-                        width: '40px', 
-                        height: '40px', 
-                        borderRadius: '50%',
-                        background: admin.role === 'superadmin' ? 'var(--warning-light)' : 'var(--accent-light)',
-                        color: admin.role === 'superadmin' ? 'var(--warning)' : 'var(--accent)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        {admin.role === 'superadmin' ? (
-                          <Crown size={20} />
-                        ) : (
-                          <User size={20} />
-                        )}
-                      </div>
-                      <div>
-                        <div style={{ 
-                          fontWeight: 'var(--font-weight-semibold)', 
-                          color: 'var(--text-primary)' 
-                        }}>
-                          {admin.first_name || admin.username || 'Без имени'}
-                        </div>
-                        {admin.username && (
-                          <div style={{ 
-                            fontSize: 'var(--font-size-xs)', 
-                            color: 'var(--text-secondary)' 
-                          }}>
-                            @{admin.username}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="table__cell">
-                    <span style={{ 
-                      fontSize: 'var(--font-size-sm)', 
-                      color: 'var(--text-secondary)',
-                      fontFamily: 'monospace'
-                    }}>
-                      {admin.tg_id}
-                    </span>
-                  </td>
-                  <td className="table__cell table__cell--center">
-                    <span className={`badge ${admin.role === 'superadmin' ? 'badge--warning' : 'badge--primary'}`}>
-                      {admin.role === 'superadmin' ? 'Супер-админ' : 'Админ'}
-                    </span>
-                  </td>
-                  <td className="table__cell table__cell--center">
-                    <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                      <button
-                        onClick={() => handleEditAdmin(admin)}
-                        className="btn btn--secondary btn--icon btn--sm"
-                        title="Редактировать"
-                      >
-                        <Edit size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(admin.id)}
-                        className="btn btn--danger btn--icon btn--sm"
-                        title="Удалить"
-                        disabled={deleteMutation.isPending}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
+            </thead>
+            <tbody className="table__body">
+              {admins.length === 0 ? (
+                <tr className="table__row">
+                  <td colSpan={4} className="table__cell table__cell--empty">
+                    Администраторы не найдены
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                admins.map((admin) => (
+                  <tr key={admin.id} className="table__row">
+                    <td className="table__cell">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ 
+                          width: '40px', 
+                          height: '40px', 
+                          borderRadius: '50%',
+                          background: admin.role === 'superadmin' ? 'var(--warning-light)' : 'var(--accent-light)',
+                          color: admin.role === 'superadmin' ? 'var(--warning)' : 'var(--accent)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          {admin.role === 'superadmin' ? (
+                            <Crown size={20} />
+                          ) : (
+                            <User size={20} />
+                          )}
+                        </div>
+                        <div>
+                          <div style={{ 
+                            fontWeight: 'var(--font-weight-semibold)', 
+                            color: 'var(--text-primary)' 
+                          }}>
+                            {admin.first_name || admin.username || 'Без имени'}
+                          </div>
+                          {admin.username && (
+                            <div style={{ 
+                              fontSize: 'var(--font-size-xs)', 
+                              color: 'var(--text-secondary)' 
+                            }}>
+                              @{admin.username}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="table__cell">
+                      <span style={{ 
+                        fontSize: 'var(--font-size-sm)', 
+                        color: 'var(--text-secondary)',
+                        fontFamily: 'monospace'
+                      }}>
+                        {admin.tg_id}
+                      </span>
+                    </td>
+                    <td className="table__cell table__cell--center">
+                      <span className={`badge ${admin.role === 'superadmin' ? 'badge--warning' : 'badge--primary'}`}>
+                        {admin.role === 'superadmin' ? 'Супер-админ' : 'Админ'}
+                      </span>
+                    </td>
+                    <td className="table__cell table__cell--center">
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                        <button
+                          onClick={() => handleEditAdmin(admin)}
+                          className="btn btn--secondary btn--icon btn--sm"
+                          title="Редактировать"
+                        >
+                          <Edit size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(admin.id)}
+                          className="btn btn--danger btn--icon btn--sm"
+                          title="Удалить"
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="cards-grid">
+          {admins.length === 0 ? (
+            <div className="empty-state">
+              <Shield size={48} />
+              <p>Администраторы не найдены</p>
+            </div>
+          ) : (
+            admins.map((admin) => (
+              <div key={admin.id} className="admin-card">
+                <div className="admin-card__header">
+                  <div className="admin-card__avatar">
+                    {admin.role === 'superadmin' ? (
+                      <Crown size={32} />
+                    ) : (
+                      <User size={32} />
+                    )}
+                  </div>
+                  <div className="admin-card__info">
+                    <h3 className="admin-card__name">
+                      {admin.first_name || admin.username || 'Без имени'}
+                    </h3>
+                    <p className="admin-card__username">
+                      @{admin.username || 'нет username'}
+                    </p>
+                  </div>
+                  <span className={`badge ${admin.role === 'superadmin' ? 'badge--warning' : 'badge--primary'}`}>
+                    {admin.role === 'superadmin' ? 'Супер-админ' : 'Админ'}
+                  </span>
+                </div>
+
+                <div className="admin-card__stats">
+                  <div className="admin-card__stat">
+                    <Shield size={16} />
+                    <span className="admin-card__stat-label">Telegram ID:</span>
+                    <span className="admin-card__stat-value">{admin.tg_id}</span>
+                  </div>
+                  <div className="admin-card__stat">
+                    {admin.role === 'superadmin' ? (
+                      <Crown size={16} />
+                    ) : (
+                      <User size={16} />
+                    )}
+                    <span className="admin-card__stat-label">Роль:</span>
+                    <span className="admin-card__stat-value">
+                      {admin.role === 'superadmin' ? 'Супер-администратор' : 'Администратор'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="admin-card__actions">
+                  <button
+                    onClick={() => handleEditAdmin(admin)}
+                    className="btn btn--secondary btn--sm"
+                    title="Редактировать"
+                  >
+                    <Edit size={16} />
+                    Редактировать
+                  </button>
+                  <button
+                    onClick={() => handleDelete(admin.id)}
+                    className="btn btn--danger btn--sm"
+                    title="Удалить"
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 size={16} />
+                    Удалить
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Modal */}
       {showModal && (

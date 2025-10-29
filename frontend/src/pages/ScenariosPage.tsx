@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { scenariosApi } from '../api/client';
-import { MessageCircle, Plus, Edit2, Trash2, X, Check, XCircle } from 'lucide-react';
+import { MessageCircle, Plus, Edit2, Trash2, X, Check, XCircle, LayoutGrid, LayoutList } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useSyncRefetch } from '../hooks/useSync';
 
 interface Scenario {
   id: string;
@@ -17,6 +18,7 @@ interface Scenario {
 export default function ScenariosPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingScenario, setEditingScenario] = useState<Scenario | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [formData, setFormData] = useState({
     name: '',
     trigger: '',
@@ -27,10 +29,13 @@ export default function ScenariosPage() {
   const queryClient = useQueryClient();
 
   // Получение списка сценариев
-  const { data: scenarios, isLoading } = useQuery({
+  const { data: scenarios, isLoading, refetch } = useQuery({
     queryKey: ['scenarios'],
     queryFn: () => scenariosApi.getScenarios(),
   });
+
+  // 🔄 Auto-refresh on sync events
+  useSyncRefetch(['scenarios.created', 'scenarios.updated', 'scenarios.deleted'], refetch);
 
   // Создание сценария
   const createMutation = useMutation({
@@ -126,7 +131,23 @@ export default function ScenariosPage() {
           <h1 className="page-title">Сценарии</h1>
           <p className="page-subtitle">Настройка автоматических ответов</p>
         </div>
-        <div className="page-actions">
+        <div className="page-actions" style={{ display: 'flex', gap: '12px' }}>
+          <div className="view-toggle">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
+              title="Табличный вид"
+            >
+              <LayoutList size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
+              title="Карточный вид"
+            >
+              <LayoutGrid size={18} />
+            </button>
+          </div>
           <button className="btn btn--primary" onClick={() => handleOpenModal()}>
             <Plus size={16} />
             Добавить сценарий
@@ -136,10 +157,10 @@ export default function ScenariosPage() {
       
       {/* Список сценариев */}
       {!scenarios || scenarios.length === 0 ? (
-      <div className="empty-state">
+        <div className="empty-state">
           <MessageCircle size={48} className="empty-state__icon" />
           <h3 className="empty-state__text">Нет сценариев</h3>
-        <p className="empty-state__subtext">
+          <p className="empty-state__subtext">
             Создайте первый сценарий автоматического ответа
           </p>
           <button className="btn btn--primary" onClick={() => handleOpenModal()}>
@@ -147,7 +168,7 @@ export default function ScenariosPage() {
             Добавить сценарий
           </button>
         </div>
-      ) : (
+      ) : viewMode === 'table' ? (
         <div className="table-responsive">
           <div className="table-container">
             <table className="table">
@@ -220,6 +241,64 @@ export default function ScenariosPage() {
             </tbody>
           </table>
           </div>
+        </div>
+      ) : (
+        <div className="cards-grid">
+          {scenarios.map((scenario: Scenario) => (
+            <div key={scenario.id} className="scenario-card">
+              <div className="scenario-card__header">
+                <div className="scenario-card__avatar">
+                  <MessageCircle size={32} />
+                </div>
+                <div className="scenario-card__info">
+                  <h3 className="scenario-card__name">{scenario.name}</h3>
+                  <div className="scenario-card__trigger">
+                    <code>{scenario.trigger}</code>
+                  </div>
+                </div>
+                <span className={`badge ${scenario.is_active ? 'badge--success' : 'badge--danger'}`}>
+                  {scenario.is_active ? <><Check size={14} /> Активен</> : <><XCircle size={14} /> Отключён</>}
+                </span>
+              </div>
+
+              <div className="scenario-card__content">
+                <div className="scenario-card__response">
+                  <span className="scenario-card__label">Ответ:</span>
+                  <p className="scenario-card__text">{scenario.response}</p>
+                </div>
+              </div>
+
+              <div className="scenario-card__meta">
+                <span className="scenario-card__date">
+                  Создан: {new Date(scenario.created_at).toLocaleDateString('ru-RU')}
+                </span>
+                {scenario.updated_at && scenario.updated_at !== scenario.created_at && (
+                  <span className="scenario-card__date">
+                    Обновлён: {new Date(scenario.updated_at).toLocaleDateString('ru-RU')}
+                  </span>
+                )}
+              </div>
+
+              <div className="scenario-card__actions">
+                <button
+                  onClick={() => handleOpenModal(scenario)}
+                  className="btn btn--secondary btn--sm"
+                  title="Редактировать"
+                >
+                  <Edit2 size={16} />
+                  Редактировать
+                </button>
+                <button
+                  onClick={() => handleDelete(scenario.id)}
+                  className="btn btn--danger btn--sm"
+                  title="Удалить"
+                >
+                  <Trash2 size={16} />
+                  Удалить
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

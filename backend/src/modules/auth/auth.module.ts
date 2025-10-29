@@ -5,6 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { DebugController } from './debug.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { Admin } from '../../entities/admin.entity';
 import { User } from '../../entities/user.entity';
@@ -24,7 +25,7 @@ import { User } from '../../entities/user.entity';
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, DebugController],
   providers: [AuthService, JwtStrategy],
   exports: [AuthService, JwtStrategy, PassportModule],
 })

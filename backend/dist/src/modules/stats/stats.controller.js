@@ -36,12 +36,18 @@ let StatsController = class StatsController {
         return await this.statsService.getStatsHistory(days ? parseInt(days.toString()) : 30);
     }
     async regenerateFakeStats() {
-        const newStats = await this.fakeStatsService.regenerateFakeStats();
-        return {
-            success: true,
-            message: 'Fake statistics regenerated successfully',
-            data: newStats,
-        };
+        try {
+            const newStats = await this.fakeStatsService.regenerateFakeStats();
+            return {
+                success: true,
+                message: 'Fake statistics regenerated successfully',
+                data: newStats,
+            };
+        }
+        catch (error) {
+            console.error('❌ Error regenerating fake stats:', error);
+            throw error;
+        }
     }
     async getTopUsers(limit) {
         return await this.statsService.getTopUsers(limit ? parseInt(limit.toString()) : 10);

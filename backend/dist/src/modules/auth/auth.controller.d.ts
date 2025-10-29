@@ -25,4 +25,19 @@ export declare class AuthController {
             tasks_completed: number;
         };
     }>;
+    testAdmins(): Promise<{
+        totalAdmins: number;
+        searchingFor: string;
+        searchingForType: "string" | "number" | "bigint" | "boolean" | "symbol" | "undefined" | "object" | "function";
+        foundByString: string;
+        allAdminsInDb: {
+            id: string;
+            tg_id: string;
+            tg_id_type: "string" | "number" | "bigint" | "boolean" | "symbol" | "undefined" | "object" | "function";
+            role: string;
+            username: string;
+            matchesSearch: boolean;
+            toStringMatches: boolean;
+        }[];
+    }>;
 }

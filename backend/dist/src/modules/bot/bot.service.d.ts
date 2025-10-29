@@ -1,3 +1,4 @@
+import { OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { User } from '../../entities/user.entity';
@@ -9,7 +10,8 @@ import { FakeStatsService } from '../stats/fake-stats.service';
 import { SettingsService } from '../settings/settings.service';
 import { MessagesService } from '../messages/messages.service';
 import { UsersService } from '../users/users.service';
-export declare class BotService {
+import { SyncService } from '../sync/sync.service';
+export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private userRepo;
     private buttonRepo;
     private taskRepo;
@@ -20,10 +22,17 @@ export declare class BotService {
     private settingsService;
     private messagesService;
     private usersService;
+    private syncService;
     private readonly logger;
     private botToken;
-    constructor(userRepo: Repository<User>, buttonRepo: Repository<Button>, taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, scenarioRepo: Repository<Scenario>, configService: ConfigService, fakeStatsService: FakeStatsService, settingsService: SettingsService, messagesService: MessagesService, usersService: UsersService);
+    private pollingOffset;
+    private pollingInterval;
+    constructor(userRepo: Repository<User>, buttonRepo: Repository<Button>, taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, scenarioRepo: Repository<Scenario>, configService: ConfigService, fakeStatsService: FakeStatsService, settingsService: SettingsService, messagesService: MessagesService, usersService: UsersService, syncService: SyncService);
+    onModuleInit(): Promise<void>;
+    onModuleDestroy(): Promise<void>;
     handleWebhook(update: any): Promise<void>;
+    private startPolling;
+    private pollUpdates;
     private handleMessage;
     private createUser;
     private giveReferralBonus;

@@ -34,8 +34,16 @@ export class FakeStatsService {
    * Manual trigger for fake stats regeneration
    */
   async regenerateFakeStats() {
-    this.logger.log('🔄 Manually regenerating fake stats...');
-    return await this.generateAndSaveFakeStats();
+    try {
+      this.logger.log('🔄 Manually regenerating fake stats...');
+      const result = await this.generateAndSaveFakeStats();
+      this.logger.log('✅ Fake stats regenerated successfully');
+      return result;
+    } catch (error) {
+      this.logger.error('❌ Error in regenerateFakeStats:', error.message);
+      this.logger.error('Stack trace:', error.stack);
+      throw error;
+    }
   }
 
   /**
@@ -88,10 +96,16 @@ export class FakeStatsService {
    * Generate and save new fake stats using smooth random walk algorithm
    */
   private async generateAndSaveFakeStats(): Promise<FakeStats> {
+    this.logger.log('Step 1: Getting real stats...');
     const realStats = await this.getRealStats();
+    this.logger.log(`Real stats: users=${realStats.users_count}, earned=${realStats.total_earned}`);
+    
+    this.logger.log('Step 2: Saving real stats snapshot...');
     await this.saveRealStatsSnapshot(realStats);
 
+    this.logger.log('Step 3: Getting latest fake stats...');
     const previousFake = await this.getLatestFakeStats();
+    this.logger.log(`Previous fake stats: online=${previousFake.online}, active=${previousFake.active}`);
 
     // Configuration parameters
     const maxDeltaPercent = this.configService.get<number>('FAKE_STATS_MAX_DELTA_PERCENT', 15);
@@ -160,6 +174,16 @@ export class FakeStatsService {
     noiseStdDev: number,
     onlyGrowth = false,
   ): number {
+    // Handle edge cases: if real value is 0 or very small, use small default
+    if (realValue <= 0) {
+      realValue = 10; // Default minimum value
+    }
+    
+    // If previous value is 0 or very small, initialize it based on real value
+    if (previousValue <= 0) {
+      previousValue = realValue * 0.8; // Start at 80% of real value
+    }
+
     // Random drift (trend component)
     const drift = this.randomUniform(trendMin, trendMax);
 
@@ -186,6 +210,12 @@ export class FakeStatsService {
 
     newValue = this.clamp(newValue, minBound, maxBound);
 
+    // Final safety check: ensure result is a valid number
+    if (isNaN(newValue) || !isFinite(newValue)) {
+      this.logger.warn(`Invalid newValue detected, using realValue instead. Previous: ${previousValue}, Real: ${realValue}`);
+      newValue = realValue;
+    }
+
     return newValue;
   }
 
@@ -205,9 +235,12 @@ export class FakeStatsService {
       .select('COALESCE(SUM(user.total_earned), 0)', 'total')
       .getRawOne();
 
+    const oneDayAgo = new Date();
+    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+    
     const activeUsers24h = await this.userRepo
       .createQueryBuilder('user')
-      .where("user.updated_at > NOW() - INTERVAL '24 hours'")
+      .where('user.updated_at > :oneDayAgo', { oneDayAgo })
       .getCount();
 
     return {
@@ -237,8 +270,15 @@ export class FakeStatsService {
    * Utility: Random Gaussian (normal) distribution (Box-Muller transform)
    */
   private randomGaussian(mean: number, stdDev: number): number {
-    const u1 = Math.random();
-    const u2 = Math.random();
+    // Ensure u1 and u2 are never exactly 0 (would cause log(0) = -Infinity)
+    let u1 = Math.random();
+    let u2 = Math.random();
+    
+    // Box-Muller requires u1 > 0
+    while (u1 <= Number.EPSILON) {
+      u1 = Math.random();
+    }
+    
     const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
     return z0 * stdDev + mean;
   }

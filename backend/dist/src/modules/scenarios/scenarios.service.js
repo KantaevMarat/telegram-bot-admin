@@ -17,13 +17,17 @@ const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const scenario_entity_1 = require("../../entities/scenario.entity");
+const sync_service_1 = require("../sync/sync.service");
 let ScenariosService = class ScenariosService {
-    constructor(scenarioRepo) {
+    constructor(scenarioRepo, syncService) {
         this.scenarioRepo = scenarioRepo;
+        this.syncService = syncService;
     }
     async create(createScenarioDto) {
         const scenario = this.scenarioRepo.create(createScenarioDto);
-        return await this.scenarioRepo.save(scenario);
+        const saved = await this.scenarioRepo.save(scenario);
+        await this.syncService.emitEntityEvent('scenarios', 'created', saved);
+        return saved;
     }
     async findAll(active) {
         const where = active !== undefined ? { active } : {};
@@ -47,11 +51,14 @@ let ScenariosService = class ScenariosService {
     async update(id, updateScenarioDto) {
         const scenario = await this.findOne(id);
         Object.assign(scenario, updateScenarioDto);
-        return await this.scenarioRepo.save(scenario);
+        const updated = await this.scenarioRepo.save(scenario);
+        await this.syncService.emitEntityEvent('scenarios', 'updated', updated);
+        return updated;
     }
     async remove(id) {
         const scenario = await this.findOne(id);
         await this.scenarioRepo.remove(scenario);
+        await this.syncService.emitEntityEvent('scenarios', 'deleted', { id });
         return { success: true, message: 'Scenario removed' };
     }
 };
@@ -59,6 +66,7 @@ exports.ScenariosService = ScenariosService;
 exports.ScenariosService = ScenariosService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(scenario_entity_1.Scenario)),
-    __metadata("design:paramtypes", [typeorm_2.Repository])
+    __metadata("design:paramtypes", [typeorm_2.Repository,
+        sync_service_1.SyncService])
 ], ScenariosService);
 //# sourceMappingURL=scenarios.service.js.map

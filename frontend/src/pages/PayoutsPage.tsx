@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payoutsApi } from '../api/client';
 import toast from 'react-hot-toast';
 import { FileText, Check, X, Filter, Search, Download, Eye, DollarSign, Clock, CheckCircle, XCircle, Calendar, Wallet, Users, TrendingUp, AlertCircle, LayoutGrid, LayoutList, User, CreditCard } from 'lucide-react';
+import { useSyncRefetch } from '../hooks/useSync';
 
 // Status Badge Component
 const StatusBadge = ({ status }: { status: string }) => {
@@ -48,10 +49,13 @@ export default function PayoutsPage() {
 
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['payouts', statusFilter],
     queryFn: () => payoutsApi.getPayouts({ status: statusFilter === 'all' ? undefined : statusFilter }),
   });
+
+  // 🔄 Auto-refresh on sync events
+  useSyncRefetch(['payouts.created', 'payouts.updated', 'payouts.approved', 'payouts.declined'], refetch);
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => payoutsApi.approvePayout(id),
@@ -349,11 +353,28 @@ export default function PayoutsPage() {
             <Filter size={20} className="payouts-filters__icon" />
             <h3 className="payouts-filters__heading">Фильтры и поиск</h3>
           </div>
+          <div className="view-toggle">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
+              title="Табличный вид"
+            >
+              <LayoutList size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
+              title="Карточный вид"
+            >
+              <LayoutGrid size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="payouts-filters__grid">
           {/* Search */}
-          <div className="payouts-search">
+          <div className="filter-group">
+            <label className="filter-group__label">Поиск</label>
             <div className="search-input">
               <Search size={18} className="search-input__icon" />
               <input
@@ -409,26 +430,6 @@ export default function PayoutsPage() {
               <option value="medium">$100 - $1000</option>
               <option value="large">Более $1000</option>
             </select>
-          </div>
-
-          {/* View Mode Toggle */}
-          <div className="filter-group">
-            <div className="view-toggle">
-              <button
-                onClick={() => setViewMode('table')}
-                className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
-                title="Табличный вид"
-              >
-                <LayoutList size={18} />
-              </button>
-              <button
-                onClick={() => setViewMode('cards')}
-                className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
-                title="Карточный вид"
-              >
-                <LayoutGrid size={18} />
-              </button>
-            </div>
           </div>
         </div>
       </section>

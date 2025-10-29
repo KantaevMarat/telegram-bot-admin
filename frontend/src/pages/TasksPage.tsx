@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tasksApi } from '../api/client';
-import { CheckSquare, Plus, Edit, Trash2, X, Upload, TrendingUp, DollarSign, Check, XCircle } from 'lucide-react';
+import { CheckSquare, Plus, Edit, Trash2, X, Upload, TrendingUp, DollarSign, Check, XCircle, LayoutGrid, LayoutList } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useSyncRefetch } from '../hooks/useSync';
 
 interface Task {
   id: string;
@@ -21,6 +22,7 @@ interface Task {
 export default function TasksPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   
   const [formData, setFormData] = useState({
     title: '',
@@ -36,10 +38,13 @@ export default function TasksPage() {
 
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['tasks'],
     queryFn: () => tasksApi.getTasks(),
   });
+
+  // 🔄 Auto-refresh on sync events
+  useSyncRefetch(['tasks.created', 'tasks.updated', 'tasks.deleted'], refetch);
 
   const createMutation = useMutation({
     mutationFn: (data: any) => tasksApi.createTask(data),
@@ -163,7 +168,23 @@ export default function TasksPage() {
           <h1 className="page-title">Задания</h1>
           <p className="page-subtitle">Управление заданиями для пользователей</p>
         </div>
-        <div className="page-actions">
+        <div className="page-actions" style={{ display: 'flex', gap: '12px' }}>
+          <div className="view-toggle">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
+              title="Табличный вид"
+            >
+              <LayoutList size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
+              title="Карточный вид"
+            >
+              <LayoutGrid size={18} />
+            </button>
+          </div>
           <button
             onClick={handleOpenModal}
             className="btn btn--primary"
@@ -221,136 +242,215 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Tasks Table */}
-      <div className="table-responsive">
-        <div className="table-container">
-          <table className="table">
-          <thead className="table__head">
-            <tr>
-              <th className="table__cell">Задание</th>
-              <th className="table__cell">Награда</th>
-              <th className="table__cell">Выполнений</th>
-              <th className="table__cell table__cell--center">Статус</th>
-              <th className="table__cell table__cell--center">Действия</th>
-            </tr>
-          </thead>
-          <tbody className="table__body">
-            {tasks.length === 0 ? (
-              <tr className="table__row">
-                <td colSpan={5} className="table__cell table__cell--empty">
-                  Задания не найдены
-                </td>
+      {/* Tasks Table or Cards */}
+      {viewMode === 'table' ? (
+        <div className="table-responsive">
+          <div className="table-container">
+            <table className="table">
+            <thead className="table__head">
+              <tr>
+                <th className="table__cell">Задание</th>
+                <th className="table__cell">Награда</th>
+                <th className="table__cell">Выполнений</th>
+                <th className="table__cell table__cell--center">Статус</th>
+                <th className="table__cell table__cell--center">Действия</th>
               </tr>
-            ) : (
-              tasks.map((task) => (
-                <tr key={task.id} className="table__row">
-                  <td className="table__cell">
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                      <div style={{ 
-                        width: '40px', 
-                        height: '40px', 
-                        borderRadius: 'var(--radius-md)',
-                        background: 'var(--accent-light)',
-                        color: 'var(--accent)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0
-                      }}>
-                        <CheckSquare size={20} />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ 
-                          fontWeight: 'var(--font-weight-semibold)', 
-                          color: 'var(--text-primary)',
-                          marginBottom: '4px'
-                        }}>
-                          {task.title}
-                        </div>
-                        <div style={{ 
-                          fontSize: 'var(--font-size-sm)', 
-                          color: 'var(--text-secondary)',
-                          lineHeight: '1.4',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          overflow: 'hidden'
-                        }}>
-                          {task.description}
-                        </div>
-                        {task.action_url && (
-                          <div style={{ 
-                            fontSize: 'var(--font-size-xs)', 
-                            color: 'var(--text-tertiary)',
-                            marginTop: '4px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}>
-                            <Upload size={12} />
-                            Есть ссылка
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="table__cell">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <div style={{ 
-                        fontSize: 'var(--font-size-sm)', 
-                        fontWeight: 'var(--font-weight-semibold)',
-                        color: 'var(--text-primary)'
-                      }}>
-                        ${task.reward_min || 0} - ${task.reward_max || 0}
-                      </div>
-                      <div style={{ 
-                        fontSize: 'var(--font-size-xs)', 
-                        color: 'var(--text-secondary)' 
-                      }}>
-                        USDT
-                      </div>
-                    </div>
-                  </td>
-                  <td className="table__cell">
-                    <div style={{ 
-                      fontSize: 'var(--font-size-lg)', 
-                      fontWeight: 'var(--font-weight-bold)',
-                      color: 'var(--text-primary)'
-                    }}>
-                      {task.completions_count || 0}
-                    </div>
-                  </td>
-                  <td className="table__cell table__cell--center">
-                    <span className={`badge ${task.active ? 'badge--success' : 'badge--danger'}`}>
-                      {task.active ? <><Check size={14} /> Активно</> : <><XCircle size={14} /> Неактивно</>}
-                    </span>
-                  </td>
-                  <td className="table__cell table__cell--center">
-                    <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                      <button
-                        onClick={() => handleEditTask(task)}
-                        className="btn btn--secondary btn--icon btn--sm"
-                        title="Редактировать"
-                      >
-                        <Edit size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(task.id)}
-                        className="btn btn--danger btn--icon btn--sm"
-                        title="Удалить"
-                        disabled={deleteMutation.isPending}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
+            </thead>
+            <tbody className="table__body">
+              {tasks.length === 0 ? (
+                <tr className="table__row">
+                  <td colSpan={5} className="table__cell table__cell--empty">
+                    Задания не найдены
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                tasks.map((task) => (
+                  <tr key={task.id} className="table__row">
+                    <td className="table__cell">
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                        <div style={{ 
+                          width: '40px', 
+                          height: '40px', 
+                          borderRadius: 'var(--radius-md)',
+                          background: 'var(--accent-light)',
+                          color: 'var(--accent)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0
+                        }}>
+                          <CheckSquare size={20} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ 
+                            fontWeight: 'var(--font-weight-semibold)', 
+                            color: 'var(--text-primary)',
+                            marginBottom: '4px'
+                          }}>
+                            {task.title}
+                          </div>
+                          <div style={{ 
+                            fontSize: 'var(--font-size-sm)', 
+                            color: 'var(--text-secondary)',
+                            lineHeight: '1.4',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden'
+                          }}>
+                            {task.description}
+                          </div>
+                          {task.action_url && (
+                            <div style={{ 
+                              fontSize: 'var(--font-size-xs)', 
+                              color: 'var(--text-tertiary)',
+                              marginTop: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}>
+                              <Upload size={12} />
+                              Есть ссылка
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="table__cell">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <div style={{ 
+                          fontSize: 'var(--font-size-sm)', 
+                          fontWeight: 'var(--font-weight-semibold)',
+                          color: 'var(--text-primary)'
+                        }}>
+                          ${task.reward_min || 0} - ${task.reward_max || 0}
+                        </div>
+                        <div style={{ 
+                          fontSize: 'var(--font-size-xs)', 
+                          color: 'var(--text-secondary)' 
+                        }}>
+                          USDT
+                        </div>
+                      </div>
+                    </td>
+                    <td className="table__cell">
+                      <div style={{ 
+                        fontSize: 'var(--font-size-lg)', 
+                        fontWeight: 'var(--font-weight-bold)',
+                        color: 'var(--text-primary)'
+                      }}>
+                        {task.completions_count || 0}
+                      </div>
+                    </td>
+                    <td className="table__cell table__cell--center">
+                      <span className={`badge ${task.active ? 'badge--success' : 'badge--danger'}`}>
+                        {task.active ? <><Check size={14} /> Активно</> : <><XCircle size={14} /> Неактивно</>}
+                      </span>
+                    </td>
+                    <td className="table__cell table__cell--center">
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                        <button
+                          onClick={() => handleEditTask(task)}
+                          className="btn btn--secondary btn--icon btn--sm"
+                          title="Редактировать"
+                        >
+                          <Edit size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(task.id)}
+                          className="btn btn--danger btn--icon btn--sm"
+                          title="Удалить"
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="cards-grid">
+          {tasks.length === 0 ? (
+            <div className="empty-state">
+              <CheckSquare size={48} />
+              <p>Задания не найдены</p>
+            </div>
+          ) : (
+            tasks.map((task) => (
+              <div key={task.id} className="task-card">
+                <div className="task-card__header">
+                  <div className="task-card__avatar">
+                    <CheckSquare size={32} />
+                  </div>
+                  <div className="task-card__info">
+                    <h3 className="task-card__name">{task.title}</h3>
+                    <p className="task-card__description">{task.description}</p>
+                  </div>
+                  <span className={`badge ${task.active ? 'badge--success' : 'badge--danger'}`}>
+                    {task.active ? <><Check size={14} /> Активно</> : <><XCircle size={14} /> Неактивно</>}
+                  </span>
+                </div>
+
+                <div className="task-card__stats">
+                  <div className="task-card__stat">
+                    <DollarSign size={16} />
+                    <span className="task-card__stat-label">Награда:</span>
+                    <span className="task-card__stat-value">
+                      ${task.reward_min || 0} - ${task.reward_max || 0}
+                    </span>
+                  </div>
+                  <div className="task-card__stat">
+                    <TrendingUp size={16} />
+                    <span className="task-card__stat-label">Выполнений:</span>
+                    <span className="task-card__stat-value">{task.completions_count || 0}</span>
+                  </div>
+                  {task.action_url && (
+                    <div className="task-card__stat">
+                      <Upload size={16} />
+                      <span className="task-card__stat-label">Ссылка:</span>
+                      <span className="task-card__stat-value task-card__stat-value--truncate">
+                        {task.action_url}
+                      </span>
+                    </div>
+                  )}
+                  {task.media_url && (
+                    <div className="task-card__stat">
+                      <Upload size={16} />
+                      <span className="task-card__stat-label">Медиа:</span>
+                      <span className="task-card__stat-value">Прикреплено</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="task-card__actions">
+                  <button
+                    onClick={() => handleEditTask(task)}
+                    className="btn btn--secondary btn--sm"
+                    title="Редактировать"
+                  >
+                    <Edit size={16} />
+                    Редактировать
+                  </button>
+                  <button
+                    onClick={() => handleDelete(task.id)}
+                    className="btn btn--danger btn--sm"
+                    title="Удалить"
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 size={16} />
+                    Удалить
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Modal */}
       {showModal && (

@@ -26,6 +26,7 @@ const payouts_module_1 = require("./modules/payouts/payouts.module");
 const balance_module_1 = require("./modules/balance/balance.module");
 const settings_module_1 = require("./modules/settings/settings.module");
 const broadcast_module_1 = require("./modules/broadcast/broadcast.module");
+const sync_module_1 = require("./modules/sync/sync.module");
 const typeorm_config_1 = require("./config/typeorm.config");
 let AppModule = class AppModule {
 };
@@ -35,7 +36,7 @@ exports.AppModule = AppModule = __decorate([
         imports: [
             config_1.ConfigModule.forRoot({
                 isGlobal: true,
-                envFilePath: '.env',
+                envFilePath: '../.env',
             }),
             typeorm_1.TypeOrmModule.forRootAsync({
                 imports: [config_1.ConfigModule],
@@ -53,6 +54,7 @@ exports.AppModule = AppModule = __decorate([
                 }),
                 inject: [config_1.ConfigService],
             }),
+            sync_module_1.SyncModule,
             auth_module_1.AuthModule,
             admin_module_1.AdminModule,
             bot_module_1.BotModule,

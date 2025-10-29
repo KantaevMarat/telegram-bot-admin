@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usersApi, balanceApi } from '../api/client';
-import { Search, Filter, Eye, DollarSign, TrendingUp, Users, X, Plus, Minus, ChevronLeft, ChevronRight, User, LayoutGrid, LayoutList, Lock, Unlock, ShieldOff, Shield, Download, Check, XCircle } from 'lucide-react';
+import { Search, Filter, Eye, DollarSign, TrendingUp, Users, X, Plus, Minus, ChevronLeft, ChevronRight, User, LayoutGrid, LayoutList, List, Lock, Unlock, ShieldOff, Shield, Download, Check, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useSyncRefetch } from '../hooks/useSync';
 
 export default function UsersPage() {
   const [page, setPage] = useState(1);
@@ -18,7 +19,7 @@ export default function UsersPage() {
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [sortBy, setSortBy] = useState<'registered_at' | 'balance_usdt' | 'tasks_completed' | 'total_earned' | 'first_name'>('registered_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'list' | 'cards'>('table');
 
   const queryClient = useQueryClient();
 
@@ -33,11 +34,14 @@ export default function UsersPage() {
   }, [search]);
 
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['users', page, debouncedSearch, statusFilter],
     queryFn: () => usersApi.getUsers({ page, search: debouncedSearch, status: statusFilter === 'all' ? undefined : statusFilter }),
     placeholderData: (previousData) => previousData,
   });
+
+  // 🔄 Auto-refresh on sync events
+  useSyncRefetch(['users.created', 'users.updated', 'users.balance_updated'], refetch);
 
   const { data: balanceHistory } = useQuery({
     queryKey: ['balance-logs', selectedUser?.id],
@@ -342,6 +346,13 @@ export default function UsersPage() {
                 <LayoutList size={18} />
               </button>
               <button
+                onClick={() => setViewMode('list')}
+                className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'list' ? 'btn--active' : ''}`}
+                title="Списочный вид"
+              >
+                <List size={18} />
+              </button>
+              <button
                 onClick={() => setViewMode('cards')}
                 className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
                 title="Карточный вид"
@@ -581,8 +592,93 @@ export default function UsersPage() {
           </table>
           </div>
           </div>
+        ) : viewMode === 'list' ? (
+          <div className="users-list">
+            {isLoading ? (
+              <div className="loading">Загрузка...</div>
+            ) : sortedUsers.length === 0 ? (
+              <div className="empty-state">
+                <User size={48} />
+                <p>Пользователи не найдены</p>
+              </div>
+            ) : (
+              sortedUsers.map((user: any) => (
+                <div key={user.id} className="user-card">
+                  <div className="user-card__header">
+                    <div className="user-card__avatar">
+                      <User size={32} />
+                    </div>
+                    <div className="user-card__info">
+                      <h3 className="user-card__name">{user.first_name || 'Без имени'}</h3>
+                      <p className="user-card__username">@{user.username || 'нет username'}</p>
+                    </div>
+                    <span className={`badge ${user.status === 'active' ? 'badge--success' : 'badge--error'}`}>
+                      {user.status === 'active' ? 'Активен' : 'Заблокирован'}
+                    </span>
+                  </div>
+
+                  <div className="user-card__stats">
+                    <div className="user-card__stat">
+                      <DollarSign size={16} />
+                      <span className="user-card__stat-label">Баланс:</span>
+                      <span className="user-card__stat-value">${parseFloat(user.balance_usdt || '0').toFixed(2)}</span>
+                    </div>
+                    <div className="user-card__stat">
+                      <TrendingUp size={16} />
+                      <span className="user-card__stat-label">Заработано:</span>
+                      <span className="user-card__stat-value">${parseFloat(user.total_earned || '0').toFixed(2)}</span>
+                    </div>
+                    <div className="user-card__stat">
+                      <Users size={16} />
+                      <span className="user-card__stat-label">Заданий:</span>
+                      <span className="user-card__stat-value">{user.tasks_completed || 0}</span>
+                    </div>
+                  </div>
+
+                  <div className="user-card__meta">
+                    <span className="user-card__meta-item">ID: {user.tg_id}</span>
+                    <span className="user-card__meta-item">
+                      {new Date(user.registered_at).toLocaleDateString('ru-RU')}
+                    </span>
+                  </div>
+
+                  <div className="user-card__actions">
+                    <button
+                      onClick={() => openModal(user)}
+                      className="btn btn--secondary btn--sm"
+                      title="Просмотреть профиль"
+                    >
+                      <Eye size={16} />
+                      Просмотр
+                    </button>
+                    {user.status === 'active' ? (
+                      <button
+                        onClick={() => handleBlockUser(user.id)}
+                        className="btn btn--danger btn--sm"
+                        title="Заблокировать пользователя"
+                        disabled={blockMutation.isPending}
+                      >
+                        <Lock size={16} />
+                        Заблокировать
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleUnblockUser(user.id)}
+                        className="btn btn--success btn--sm"
+                        title="Разблокировать пользователя"
+                        disabled={unblockMutation.isPending}
+                      >
+                        <Unlock size={16} />
+                        Разблокировать
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         ) : (
-          <div className="users-cards">
+          <div className="cards-grid">
             {isLoading ? (
               <div className="loading">Загрузка...</div>
             ) : sortedUsers.length === 0 ? (

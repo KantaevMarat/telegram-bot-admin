@@ -26,12 +26,15 @@ let AuthController = AuthController_1 = class AuthController {
     async loginAdmin(loginDto) {
         if (!loginDto.initData || loginDto.initData === 'dev') {
             this.logger.log('Development mode login detected');
-            return await this.authService.devLogin(6971844353);
+            return await this.authService.devLogin(697184435);
         }
         return await this.authService.loginAdmin(loginDto.initData);
     }
     async loginUser(loginDto) {
         return await this.authService.loginUser(loginDto.initData);
+    }
+    async testAdmins() {
+        return await this.authService.debugAdminLookup();
     }
 };
 exports.AuthController = AuthController;
@@ -51,6 +54,13 @@ __decorate([
     __metadata("design:paramtypes", [login_dto_1.LoginDto]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "loginUser", null);
+__decorate([
+    (0, common_1.Get)('test-admins'),
+    (0, swagger_1.ApiOperation)({ summary: 'DEBUG: Test admin lookup' }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "testAdmins", null);
 exports.AuthController = AuthController = AuthController_1 = __decorate([
     (0, swagger_1.ApiTags)('auth'),
     (0, common_1.Controller)('auth'),

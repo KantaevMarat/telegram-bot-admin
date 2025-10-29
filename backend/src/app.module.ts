@@ -17,6 +17,7 @@ import { PayoutsModule } from './modules/payouts/payouts.module';
 import { BalanceModule } from './modules/balance/balance.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { BroadcastModule } from './modules/broadcast/broadcast.module';
+import { SyncModule } from './modules/sync/sync.module';
 import { typeOrmConfig } from './config/typeorm.config';
 
 @Module({
@@ -24,7 +25,7 @@ import { typeOrmConfig } from './config/typeorm.config';
     // Configuration
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: '../.env',
     }),
 
     // Database
@@ -48,6 +49,9 @@ import { typeOrmConfig } from './config/typeorm.config';
       }),
       inject: [ConfigService],
     }),
+
+    // Sync module (MUST be before feature modules to ensure global availability)
+    SyncModule,
 
     // Feature modules
     AuthModule,

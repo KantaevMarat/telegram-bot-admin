@@ -2,9 +2,11 @@ import { Repository } from 'typeorm';
 import { Button } from '../../entities/button.entity';
 import { CreateButtonDto } from './dto/create-button.dto';
 import { UpdateButtonDto } from './dto/update-button.dto';
+import { SyncService } from '../sync/sync.service';
 export declare class ButtonsService {
     private buttonRepo;
-    constructor(buttonRepo: Repository<Button>);
+    private syncService;
+    constructor(buttonRepo: Repository<Button>, syncService: SyncService);
     create(createButtonDto: CreateButtonDto): Promise<Button>;
     findAll(active?: boolean): Promise<Button[]>;
     findOne(id: string): Promise<Button>;

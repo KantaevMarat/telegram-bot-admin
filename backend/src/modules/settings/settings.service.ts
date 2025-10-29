@@ -5,6 +5,7 @@ import { Settings } from '../../entities/settings.entity';
 import { SettingsHistory } from '../../entities/settings-history.entity';
 import { UpdateSettingDto } from './dto/update-setting.dto';
 import { DEFAULT_SETTINGS, getDefaultSettingsByCategory } from '../../database/default-settings';
+import { SyncService } from '../sync/sync.service';
 
 @Injectable()
 export class SettingsService {
@@ -13,6 +14,7 @@ export class SettingsService {
     private settingsRepository: Repository<Settings>,
     @InjectRepository(SettingsHistory)
     private settingsHistoryRepository: Repository<SettingsHistory>,
+    private syncService: SyncService,
   ) {}
 
   async findAll(): Promise<Settings[]> {
@@ -62,6 +64,13 @@ export class SettingsService {
         ipAddress,
         userAgent,
       );
+      
+      // Emit sync event
+      await this.syncService.emitEntityEvent('settings', 'updated', {
+        key,
+        value,
+        oldValue,
+      });
     }
 
     return savedSetting;

@@ -2,10 +2,12 @@ import { Repository } from 'typeorm';
 import { Settings } from '../../entities/settings.entity';
 import { SettingsHistory } from '../../entities/settings-history.entity';
 import { UpdateSettingDto } from './dto/update-setting.dto';
+import { SyncService } from '../sync/sync.service';
 export declare class SettingsService {
     private settingsRepository;
     private settingsHistoryRepository;
-    constructor(settingsRepository: Repository<Settings>, settingsHistoryRepository: Repository<SettingsHistory>);
+    private syncService;
+    constructor(settingsRepository: Repository<Settings>, settingsHistoryRepository: Repository<SettingsHistory>, syncService: SyncService);
     findAll(): Promise<Settings[]>;
     findOne(key: string): Promise<Settings | null>;
     upsert(key: string, value: string, adminTgId?: string, adminUsername?: string, adminFirstName?: string, changeReason?: string, ipAddress?: string, userAgent?: string): Promise<Settings>;

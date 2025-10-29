@@ -18,14 +18,18 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const task_entity_1 = require("../../entities/task.entity");
 const user_task_entity_1 = require("../../entities/user-task.entity");
+const sync_service_1 = require("../sync/sync.service");
 let TasksService = class TasksService {
-    constructor(taskRepo, userTaskRepo) {
+    constructor(taskRepo, userTaskRepo, syncService) {
         this.taskRepo = taskRepo;
         this.userTaskRepo = userTaskRepo;
+        this.syncService = syncService;
     }
     async create(createTaskDto) {
         const task = this.taskRepo.create(createTaskDto);
-        return await this.taskRepo.save(task);
+        const saved = await this.taskRepo.save(task);
+        await this.syncService.emitEntityEvent('tasks', 'created', saved);
+        return saved;
     }
     async findAll(active) {
         const where = active !== undefined ? { active } : {};
@@ -44,11 +48,14 @@ let TasksService = class TasksService {
     async update(id, updateTaskDto) {
         const task = await this.findOne(id);
         Object.assign(task, updateTaskDto);
-        return await this.taskRepo.save(task);
+        const updated = await this.taskRepo.save(task);
+        await this.syncService.emitEntityEvent('tasks', 'updated', updated);
+        return updated;
     }
     async remove(id) {
         const task = await this.findOne(id);
         await this.taskRepo.remove(task);
+        await this.syncService.emitEntityEvent('tasks', 'deleted', { id });
         return { success: true, message: 'Task removed' };
     }
     async getTaskStats(id) {
@@ -74,6 +81,7 @@ exports.TasksService = TasksService = __decorate([
     __param(0, (0, typeorm_1.InjectRepository)(task_entity_1.Task)),
     __param(1, (0, typeorm_1.InjectRepository)(user_task_entity_1.UserTask)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
-        typeorm_2.Repository])
+        typeorm_2.Repository,
+        sync_service_1.SyncService])
 ], TasksService);
 //# sourceMappingURL=tasks.service.js.map

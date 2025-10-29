@@ -17,13 +17,17 @@ const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const button_entity_1 = require("../../entities/button.entity");
+const sync_service_1 = require("../sync/sync.service");
 let ButtonsService = class ButtonsService {
-    constructor(buttonRepo) {
+    constructor(buttonRepo, syncService) {
         this.buttonRepo = buttonRepo;
+        this.syncService = syncService;
     }
     async create(createButtonDto) {
         const button = this.buttonRepo.create(createButtonDto);
-        return await this.buttonRepo.save(button);
+        const saved = await this.buttonRepo.save(button);
+        await this.syncService.emitEntityEvent('buttons', 'created', saved);
+        return saved;
     }
     async findAll(active) {
         const where = active !== undefined ? { active } : {};
@@ -42,11 +46,14 @@ let ButtonsService = class ButtonsService {
     async update(id, updateButtonDto) {
         const button = await this.findOne(id);
         Object.assign(button, updateButtonDto);
-        return await this.buttonRepo.save(button);
+        const updated = await this.buttonRepo.save(button);
+        await this.syncService.emitEntityEvent('buttons', 'updated', updated);
+        return updated;
     }
     async remove(id) {
         const button = await this.findOne(id);
         await this.buttonRepo.remove(button);
+        await this.syncService.emitEntityEvent('buttons', 'deleted', { id });
         return { success: true, message: 'Button removed' };
     }
 };
@@ -54,6 +61,7 @@ exports.ButtonsService = ButtonsService;
 exports.ButtonsService = ButtonsService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(button_entity_1.Button)),
-    __metadata("design:paramtypes", [typeorm_2.Repository])
+    __metadata("design:paramtypes", [typeorm_2.Repository,
+        sync_service_1.SyncService])
 ], ButtonsService);
 //# sourceMappingURL=buttons.service.js.map
