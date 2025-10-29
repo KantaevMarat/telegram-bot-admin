@@ -131,24 +131,48 @@ export default function ButtonsPage() {
     // Parse inline buttons from action_payload if they exist
     let inlineButtons: Array<{ text: string; type: 'url' | 'callback' | 'web_app'; url?: string; callback?: string; web_app_url?: string }> = [];
     let actionUrl = '';
+    let buttonType: 'reply' | 'inline' = 'reply';
+    let actionPayloadText = getActionPayloadText(button.action_payload, button.action_type);
     
-    if (button.action_payload?.inline_buttons) {
-      inlineButtons = button.action_payload.inline_buttons;
-    } else if (button.action_type === 'url' && typeof button.action_payload === 'object' && button.action_payload?.url) {
-      actionUrl = button.action_payload.url;
+    // Check for inline buttons
+    if (button.action_payload && typeof button.action_payload === 'object') {
+      if (button.action_payload.inline_buttons && Array.isArray(button.action_payload.inline_buttons)) {
+        buttonType = 'inline';
+        inlineButtons = button.action_payload.inline_buttons.map((btn: any) => {
+          if (btn.url) {
+            return { text: btn.text || '', type: 'url' as const, url: btn.url };
+          } else if (btn.web_app?.url) {
+            return { text: btn.text || '', type: 'web_app' as const, web_app_url: btn.web_app.url };
+          } else {
+            return { text: btn.text || '', type: 'callback' as const, callback: btn.callback_data || '' };
+          }
+        });
+        
+        // Extract text from payload
+        if (button.action_payload.text) {
+          actionPayloadText = button.action_payload.text;
+        }
+      } else if (button.action_type === 'url' && button.action_payload.url) {
+        actionUrl = button.action_payload.url;
+        if (button.action_payload.text) {
+          actionPayloadText = button.action_payload.text;
+        }
+      } else if (button.action_payload?.text?.text) {
+        actionPayloadText = button.action_payload.text.text;
+      }
     }
     
     setEditingButton(button);
     setFormData({
       label: button.label,
       action_type: button.action_type,
-      action_payload: getActionPayloadText(button.action_payload, button.action_type),
+      action_payload: actionPayloadText,
       action_url: actionUrl,
       media_url: button.media_url || '',
       row: button.row,
       col: button.col,
       active: button.active,
-      button_type: button.action_payload?.inline_buttons ? 'inline' : 'reply',
+      button_type: buttonType,
       inline_buttons: inlineButtons,
     });
     setShowModal(true);
