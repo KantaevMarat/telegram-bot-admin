@@ -43,6 +43,8 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private sendAvailableTasks;
     private handleCallbackQuery;
     private getMainKeyboard;
+    private getReplyKeyboard;
+    private handleReplyButton;
     sendMessage(chatId: string, text: string, replyMarkup?: any): Promise<void>;
     private answerCallbackQuery;
     setWebhook(webhookUrl: string): Promise<any>;

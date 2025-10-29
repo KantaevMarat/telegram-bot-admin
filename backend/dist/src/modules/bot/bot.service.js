@@ -160,13 +160,17 @@ let BotService = BotService_1 = class BotService {
             await this.handleWithdrawalRequest(chatId, user, text);
         }
         else {
+            const handled = await this.handleReplyButton(chatId, text, user);
+            if (handled) {
+                return;
+            }
             const scenario = await this.findMatchingScenario(text);
             if (scenario) {
                 await this.handleScenario(chatId, user, scenario);
             }
             else {
                 await this.messagesService.createUserMessage(user.id, text);
-                await this.sendMessage(chatId, 'Спасибо за ваше сообщение! Администратор скоро ответит.');
+                await this.sendMessage(chatId, 'Спасибо за ваше сообщение! Администратор скоро ответит.', this.getReplyKeyboard());
             }
         }
     }
@@ -218,17 +222,18 @@ let BotService = BotService_1 = class BotService {
     }
     async sendWelcomeMessage(chatId, user) {
         const fakeStats = await this.fakeStatsService.getLatestFakeStats();
-        const greetingTemplate = await this.settingsService.getValue('greeting_template', 'Default welcome message');
+        const greetingTemplate = await this.settingsService.getValue('greeting_template', '👋 Добро пожаловать, {username}!\n\n💰 Ваш баланс: {balance} USDT\n📊 Всего заработано: {tasks_completed} заданий\n\n🎯 Выполняйте задания и зарабатывайте!\n👥 Приглашайте друзей по реферальной ссылке\n💸 Выводите заработанные средства\n\n📈 Сейчас онлайн: {fake.online} чел.\n✅ Активных пользователей: {fake.active}\n💵 Выплачено всего: ${fake.paid} USDT');
         let text = greetingTemplate;
         if (fakeStats) {
             text = text
                 .replace('{fake.online}', fakeStats.online.toString())
                 .replace('{fake.active}', fakeStats.active.toString())
                 .replace('{fake.paid}', fakeStats.paid_usdt.toString())
-                .replace('{username}', user.username || user.first_name || 'Friend')
-                .replace('{balance}', user.balance_usdt.toString());
+                .replace('{username}', user.username || user.first_name || 'Друг')
+                .replace('{balance}', user.balance_usdt.toString())
+                .replace('{tasks_completed}', user.tasks_completed.toString());
         }
-        await this.sendMessage(chatId, text, await this.getMainKeyboard());
+        await this.sendMessage(chatId, text, this.getReplyKeyboard());
     }
     async handleCommand(chatId, command, user) {
         const cmd = command.split(' ')[0];
@@ -249,25 +254,28 @@ let BotService = BotService_1 = class BotService {
                 await this.sendReferralInfo(chatId, user);
                 break;
             case '/menu':
-                await this.sendMessage(chatId, 'Главное меню:', await this.getMainKeyboard());
+                await this.sendWelcomeMessage(chatId, user);
                 break;
             case '/help':
                 await this.sendHelp(chatId);
                 break;
             default:
-                await this.sendMessage(chatId, 'Неизвестная команда. Используйте /help для списка команд.');
+                await this.sendMessage(chatId, 'Неизвестная команда. Используйте /help для списка команд.', this.getReplyKeyboard());
         }
     }
     async sendHelp(chatId) {
-        const text = `📖 *Доступные команды:*\n\n` +
-            `/start - Главное меню\n` +
-            `/balance - Проверить баланс\n` +
-            `/tasks - Список заданий\n` +
-            `/profile - Ваш профиль\n` +
-            `/referral - Реферальная программа\n` +
-            `/menu - Главное меню\n` +
-            `/help - Эта справка`;
-        await this.sendMessage(chatId, text);
+        const text = `📖 *Справка по боту*\n\n` +
+            `🎯 *Используйте кнопки меню:*\n` +
+            `📋 Задания - список доступных заданий\n` +
+            `💰 Баланс - проверить баланс и заработок\n` +
+            `👤 Профиль - ваша статистика\n` +
+            `👥 Рефералы - пригласить друзей\n` +
+            `💸 Вывести - вывод средств\n\n` +
+            `💡 *Команды:*\n` +
+            `/start - главное меню\n` +
+            `/help - эта справка\n\n` +
+            `❓ Есть вопросы? Напишите нам, и мы ответим!`;
+        await this.sendMessage(chatId, text, this.getReplyKeyboard());
     }
     async sendAvailableTasks(chatId, user) {
         const tasks = await this.taskRepo.find({ where: { active: true } });
@@ -424,6 +432,50 @@ let BotService = BotService_1 = class BotService {
         this.syncService.setCache(cacheKey, result, 60);
         return result;
     }
+    getReplyKeyboard() {
+        return {
+            keyboard: [
+                [
+                    { text: '📋 Задания' },
+                    { text: '💰 Баланс' },
+                ],
+                [
+                    { text: '👤 Профиль' },
+                    { text: '👥 Рефералы' },
+                ],
+                [
+                    { text: '💸 Вывести' },
+                    { text: 'ℹ️ Помощь' },
+                ],
+            ],
+            resize_keyboard: true,
+            persistent: true,
+        };
+    }
+    async handleReplyButton(chatId, text, user) {
+        switch (text) {
+            case '📋 Задания':
+                await this.sendAvailableTasks(chatId, user);
+                return true;
+            case '💰 Баланс':
+                await this.sendBalance(chatId, user);
+                return true;
+            case '👤 Профиль':
+                await this.sendProfile(chatId, user);
+                return true;
+            case '👥 Рефералы':
+                await this.sendReferralInfo(chatId, user);
+                return true;
+            case '💸 Вывести':
+                await this.sendWithdrawInfo(chatId, user);
+                return true;
+            case 'ℹ️ Помощь':
+                await this.sendHelp(chatId);
+                return true;
+            default:
+                return false;
+        }
+    }
     async sendMessage(chatId, text, replyMarkup) {
         const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
         try {
@@ -466,78 +518,66 @@ let BotService = BotService_1 = class BotService {
     }
     async sendBalance(chatId, user) {
         const text = `💰 *Ваш баланс*\n\n` +
-            `💵 Доступно: ${user.balance_usdt} USDT\n` +
+            `💵 Доступно: *${user.balance_usdt} USDT*\n` +
             `📊 Всего заработано: ${user.total_earned} USDT\n` +
             `✅ Выполнено заданий: ${user.tasks_completed}\n\n` +
-            `Используйте кнопку "Вывод средств" для вывода`;
-        const keyboard = {
-            inline_keyboard: [
-                [{ text: '💸 Вывести средства', callback_data: 'withdraw' }],
-                [{ text: '🔙 Назад', callback_data: 'menu' }],
-            ],
-        };
-        await this.sendMessage(chatId, text, keyboard);
+            `💸 Для вывода используйте кнопку "*Вывести*" внизу\n` +
+            `📋 Выполняйте задания чтобы заработать больше!`;
+        await this.sendMessage(chatId, text, this.getReplyKeyboard());
     }
     async sendProfile(chatId, user) {
         const refCount = await this.userRepo.count({
             where: { referred_by: user.id },
         });
         const text = `👤 *Ваш профиль*\n\n` +
-            `🆔 ID: ${user.tg_id}\n` +
+            `🆔 ID: \`${user.tg_id}\`\n` +
             `👤 Имя: ${user.first_name || 'Не указано'}\n` +
-            `📱 Username: @${user.username || 'не указан'}\n` +
-            `💰 Баланс: ${user.balance_usdt} USDT\n` +
+            `📱 Username: @${user.username || 'не указан'}\n\n` +
+            `💰 Баланс: *${user.balance_usdt} USDT*\n` +
+            `📊 Заработано: ${user.total_earned} USDT\n` +
             `✅ Заданий выполнено: ${user.tasks_completed}\n` +
-            `👥 Рефералов: ${refCount}\n` +
-            `📅 Регистрация: ${new Date(user.registered_at).toLocaleDateString('ru-RU')}`;
-        const keyboard = {
-            inline_keyboard: [
-                [{ text: '👥 Реферальная программа', callback_data: 'referral' }],
-                [{ text: '🔙 Назад', callback_data: 'menu' }],
-            ],
-        };
-        await this.sendMessage(chatId, text, keyboard);
+            `👥 Приглашено рефералов: ${refCount}\n\n` +
+            `📅 В системе с: ${new Date(user.registered_at).toLocaleDateString('ru-RU')}`;
+        await this.sendMessage(chatId, text, this.getReplyKeyboard());
     }
     async sendWithdrawInfo(chatId, user) {
         const minWithdraw = await this.settingsService.getValue('min_withdraw', '10');
         if (parseFloat(user.balance_usdt.toString()) < parseFloat(minWithdraw)) {
-            await this.sendMessage(chatId, `❌ Недостаточно средств для вывода.\n\nМинимальная сумма: ${minWithdraw} USDT\nВаш баланс: ${user.balance_usdt} USDT`);
+            await this.sendMessage(chatId, `❌ *Недостаточно средств для вывода*\n\n` +
+                `Минимальная сумма: ${minWithdraw} USDT\n` +
+                `Ваш баланс: ${user.balance_usdt} USDT\n\n` +
+                `📋 Выполните больше заданий чтобы заработать!`, this.getReplyKeyboard());
             return;
         }
         const text = `💸 *Вывод средств*\n\n` +
-            `Ваш баланс: ${user.balance_usdt} USDT\n` +
-            `Минимум для вывода: ${minWithdraw} USDT\n\n` +
-            `Отправьте адрес кошелька USDT (TRC20) для вывода средств.\n\n` +
-            `Формат: wallet YOUR_WALLET_ADDRESS AMOUNT\n` +
-            `Пример: wallet TXxxx...xxx 50`;
-        await this.sendMessage(chatId, text);
+            `💰 Ваш баланс: *${user.balance_usdt} USDT*\n` +
+            `📊 Минимум для вывода: ${minWithdraw} USDT\n\n` +
+            `📝 *Инструкция:*\n` +
+            `Отправьте сообщение в формате:\n` +
+            `\`wallet АДРЕС СУММА\`\n\n` +
+            `📌 *Пример:*\n` +
+            `\`wallet TXxxx...xxx 50\`\n\n` +
+            `⚠️ Используйте только TRC20 (USDT Tron)`;
+        await this.sendMessage(chatId, text, this.getReplyKeyboard());
     }
     async sendReferralInfo(chatId, user) {
         const refCount = await this.userRepo.count({
             where: { referred_by: user.id },
         });
-        const refBonus = await this.settingsService.getValue('ref_bonus', '10');
+        const refBonus = await this.settingsService.getValue('ref_bonus', '5');
         const botUsername = await this.settingsService.getValue('bot_username', 'yourbot');
         const refLink = `https://t.me/${botUsername}?start=ref${user.tg_id}`;
         const text = `👥 *Реферальная программа*\n\n` +
-            `Приглашайте друзей и получайте ${refBonus}% от их заработка!\n\n` +
-            `📊 Ваша статистика:\n` +
-            `👥 Приглашено: ${refCount} человек\n\n` +
-            `🔗 Ваша реферальная ссылка:\n` +
-            `${refLink}\n\n` +
-            `Делитесь ссылкой с друзьями!`;
-        const keyboard = {
-            inline_keyboard: [
-                [
-                    {
-                        text: '📤 Поделиться ссылкой',
-                        url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${encodeURIComponent('Присоединяйся к боту и зарабатывай!')}`,
-                    },
-                ],
-                [{ text: '🔙 Назад', callback_data: 'menu' }],
-            ],
-        };
-        await this.sendMessage(chatId, text, keyboard);
+            `💰 Получайте *${refBonus} USDT* за каждого друга!\n` +
+            `🎁 Ваш друг также получит бонус при регистрации\n\n` +
+            `📊 *Ваша статистика:*\n` +
+            `👥 Приглашено: *${refCount} чел.*\n` +
+            `💵 Заработано с рефералов: ${refCount * parseInt(refBonus)} USDT\n\n` +
+            `🔗 *Ваша реферальная ссылка:*\n` +
+            `\`${refLink}\`\n\n` +
+            `📤 Скопируйте ссылку и делитесь с друзьями!\n` +
+            `💡 Чем больше друзей - тем больше заработок!`;
+        await this.sendMessage(chatId, text, this.getReplyKeyboard());
     }
     async handleTaskAction(chatId, user, data) {
         const taskId = data.replace('task_', '');
