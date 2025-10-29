@@ -851,6 +851,39 @@ let BotService = BotService_1 = class BotService {
     async handleCustomButton(chatId, user, button) {
         let text = 'Информация';
         let keyboard = { inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'menu' }]] };
+        if (button.action_payload?.inline_buttons && Array.isArray(button.action_payload.inline_buttons)) {
+            const inlineKeyboard = [];
+            button.action_payload.inline_buttons.forEach((btn) => {
+                if (btn.url) {
+                    inlineKeyboard.push([{ text: btn.text, url: btn.url }]);
+                }
+                else if (btn.web_app?.url) {
+                    inlineKeyboard.push([{ text: btn.text, web_app: { url: btn.web_app.url } }]);
+                }
+                else if (btn.callback_data) {
+                    inlineKeyboard.push([{ text: btn.text, callback_data: btn.callback_data }]);
+                }
+            });
+            if (inlineKeyboard.length > 0) {
+                inlineKeyboard.push([{ text: '🔙 Назад', callback_data: 'menu' }]);
+            }
+            keyboard = { inline_keyboard: inlineKeyboard };
+            if (button.action_payload.text) {
+                text = button.action_payload.text;
+            }
+            else if (button.action_payload?.text?.text) {
+                text = button.action_payload.text.text;
+            }
+            else {
+                text = button.label || 'Информация';
+            }
+            text = text
+                .replace(/{username}/g, user.username || user.first_name || 'Друг')
+                .replace(/{balance}/g, user.balance_usdt.toString())
+                .replace(/{tasks_completed}/g, user.tasks_completed.toString());
+            await this.sendMessage(chatId, text, keyboard);
+            return;
+        }
         if (button.action_type === 'text' || button.action_type === 'send_message') {
             let payloadText = '';
             if (typeof button.action_payload === 'string') {
@@ -948,14 +981,33 @@ let BotService = BotService_1 = class BotService {
                 .replace('{balance}', user.balance_usdt.toString())
                 .replace('{tasks_completed}', user.tasks_completed.toString());
         }
-        else if (button.action_type === 'open_url' && button.action_payload?.url) {
+        else if (button.action_type === 'open_url' || (button.action_type === 'url' && button.action_payload?.url)) {
             text = button.action_payload?.text || 'Перейдите по ссылке ниже';
-            keyboard = {
-                inline_keyboard: [
-                    [{ text: '🔗 Перейти', url: button.action_payload.url }],
-                    [{ text: '🔙 Назад', callback_data: 'menu' }],
-                ],
-            };
+            if (button.action_payload?.inline_buttons && Array.isArray(button.action_payload.inline_buttons)) {
+                const inlineKeyboard = [];
+                inlineKeyboard.push([{ text: '🔗 Перейти', url: button.action_payload.url }]);
+                button.action_payload.inline_buttons.forEach((btn) => {
+                    if (btn.url) {
+                        inlineKeyboard.push([{ text: btn.text, url: btn.url }]);
+                    }
+                    else if (btn.web_app?.url) {
+                        inlineKeyboard.push([{ text: btn.text, web_app: { url: btn.web_app.url } }]);
+                    }
+                    else if (btn.callback_data) {
+                        inlineKeyboard.push([{ text: btn.text, callback_data: btn.callback_data }]);
+                    }
+                });
+                inlineKeyboard.push([{ text: '🔙 Назад', callback_data: 'menu' }]);
+                keyboard = { inline_keyboard: inlineKeyboard };
+            }
+            else {
+                keyboard = {
+                    inline_keyboard: [
+                        [{ text: '🔗 Перейти', url: button.action_payload.url }],
+                        [{ text: '🔙 Назад', callback_data: 'menu' }],
+                    ],
+                };
+            }
         }
         await this.sendMessage(chatId, text, keyboard);
     }

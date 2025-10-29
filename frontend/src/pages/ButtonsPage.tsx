@@ -62,10 +62,13 @@ export default function ButtonsPage() {
     label: '',
     action_type: 'text',
     action_payload: '',
+    action_url: '',
     media_url: '',
     row: 1,
     col: 1,
     active: true,
+    button_type: 'reply', // 'reply' for ReplyKeyboard, 'inline' for InlineKeyboard
+    inline_buttons: [] as Array<{ text: string; type: 'url' | 'callback' | 'web_app'; url?: string; callback?: string; web_app_url?: string }>,
   });
 
   const queryClient = useQueryClient();
@@ -113,24 +116,40 @@ export default function ButtonsPage() {
       label: '',
       action_type: 'text',
       action_payload: '',
+      action_url: '',
       media_url: '',
       row: 1,
       col: 1,
       active: true,
+      button_type: 'reply',
+      inline_buttons: [],
     });
     setShowModal(true);
   };
 
   const handleEditButton = (button: Button) => {
+    // Parse inline buttons from action_payload if they exist
+    let inlineButtons: Array<{ text: string; type: 'url' | 'callback' | 'web_app'; url?: string; callback?: string; web_app_url?: string }> = [];
+    let actionUrl = '';
+    
+    if (button.action_payload?.inline_buttons) {
+      inlineButtons = button.action_payload.inline_buttons;
+    } else if (button.action_type === 'url' && typeof button.action_payload === 'object' && button.action_payload?.url) {
+      actionUrl = button.action_payload.url;
+    }
+    
     setEditingButton(button);
     setFormData({
       label: button.label,
       action_type: button.action_type,
       action_payload: getActionPayloadText(button.action_payload, button.action_type),
+      action_url: actionUrl,
       media_url: button.media_url || '',
       row: button.row,
       col: button.col,
       active: button.active,
+      button_type: button.action_payload?.inline_buttons ? 'inline' : 'reply',
+      inline_buttons: inlineButtons,
     });
     setShowModal(true);
   };
@@ -142,21 +161,66 @@ export default function ButtonsPage() {
       label: '',
       action_type: 'text',
       action_payload: '',
+      action_url: '',
       media_url: '',
       row: 1,
       col: 1,
       active: true,
+      button_type: 'reply',
+      inline_buttons: [],
     });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Build action_payload based on type and inline buttons
+    let actionPayload: any;
+    
+    if (formData.button_type === 'inline' && formData.inline_buttons.length > 0) {
+      // Message with inline buttons
+      actionPayload = {
+        text: formData.action_payload || formData.label,
+        inline_buttons: formData.inline_buttons.map(btn => {
+          if (btn.type === 'url') {
+            return { text: btn.text, url: btn.url };
+          } else if (btn.type === 'web_app') {
+            return { text: btn.text, web_app: { url: btn.web_app_url } };
+          } else {
+            return { text: btn.text, callback_data: btn.callback || `btn_${Date.now()}` };
+          }
+        })
+      };
+    } else if (formData.action_type === 'url') {
+      // URL button (can also have inline buttons if needed)
+      actionPayload = { 
+        url: formData.action_url || formData.action_payload,
+        inline_buttons: formData.inline_buttons.length > 0 ? formData.inline_buttons.map(btn => {
+          if (btn.type === 'url') return { text: btn.text, url: btn.url };
+          if (btn.type === 'web_app') return { text: btn.text, web_app: { url: btn.web_app_url } };
+          return { text: btn.text, callback_data: btn.callback || `btn_${Date.now()}` };
+        }) : undefined
+      };
+    } else {
+      // Text message
+      actionPayload = { 
+        text: { text: formData.action_payload },
+        inline_buttons: formData.inline_buttons.length > 0 ? formData.inline_buttons.map(btn => {
+          if (btn.type === 'url') return { text: btn.text, url: btn.url };
+          if (btn.type === 'web_app') return { text: btn.text, web_app: { url: btn.web_app_url } };
+          return { text: btn.text, callback_data: btn.callback || `btn_${Date.now()}` };
+        }) : undefined
+      };
+    }
+
     const submitData = {
-      ...formData,
-      action_payload: formData.action_type === 'url' 
-        ? { url: formData.action_payload }
-        : { text: { text: formData.action_payload } }
+      label: formData.label,
+      action_type: formData.action_type,
+      action_payload: actionPayload,
+      media_url: formData.media_url,
+      row: formData.row,
+      col: formData.col,
+      active: formData.active,
     };
 
     if (editingButton) {
@@ -164,6 +228,29 @@ export default function ButtonsPage() {
     } else {
       createMutation.mutate(submitData);
     }
+  };
+
+  const addInlineButton = () => {
+    setFormData(prev => ({
+      ...prev,
+      inline_buttons: [...prev.inline_buttons, { text: '', type: 'url' as const }]
+    }));
+  };
+
+  const updateInlineButton = (index: number, field: string, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      inline_buttons: prev.inline_buttons.map((btn, i) => 
+        i === index ? { ...btn, [field]: value } : btn
+      )
+    }));
+  };
+
+  const removeInlineButton = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      inline_buttons: prev.inline_buttons.filter((_, i) => i !== index)
+    }));
   };
 
   const handleDelete = (id: string) => {
@@ -486,6 +573,18 @@ export default function ButtonsPage() {
                 </div>
 
                 <div className="form-group">
+                  <label className="form-label">Тип кнопки</label>
+                  <select
+                    className="form-select"
+                    value={formData.button_type}
+                    onChange={(e) => setFormData(prev => ({ ...prev, button_type: e.target.value as 'reply' | 'inline' }))}
+                  >
+                    <option value="reply">Постоянная кнопка (внизу)</option>
+                    <option value="inline">Кнопка с подкнопками</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
                   <label className="form-label">Тип действия</label>
                   <select
                     className="form-select"
@@ -497,19 +596,135 @@ export default function ButtonsPage() {
                   </select>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">
-                    {formData.action_type === 'url' ? 'URL' : 'Текст'} *
-                  </label>
-                  <input
-                    type={formData.action_type === 'url' ? 'url' : 'text'}
-                    className="form-input"
-                    value={formData.action_payload}
-                    onChange={(e) => setFormData(prev => ({ ...prev, action_payload: e.target.value }))}
-                    placeholder={formData.action_type === 'url' ? 'https://example.com' : 'Введите текст'}
-                    required
-                  />
-                </div>
+                {formData.button_type === 'reply' && (
+                  <div className="form-group">
+                    <label className="form-label">
+                      {formData.action_type === 'url' ? 'URL' : 'Текст при нажатии'} *
+                    </label>
+                    <input
+                      type={formData.action_type === 'url' ? 'url' : 'text'}
+                      className="form-input"
+                      value={formData.action_url || formData.action_payload}
+                      onChange={(e) => {
+                        if (formData.action_type === 'url') {
+                          setFormData(prev => ({ ...prev, action_url: e.target.value }));
+                        } else {
+                          setFormData(prev => ({ ...prev, action_payload: e.target.value }));
+                        }
+                      }}
+                      placeholder={formData.action_type === 'url' ? 'https://example.com' : 'Введите текст'}
+                      required
+                    />
+                  </div>
+                )}
+
+                {formData.button_type === 'inline' && (
+                  <div className="form-group">
+                    <label className="form-label">Текст сообщения *</label>
+                    <textarea
+                      className="form-input"
+                      rows={3}
+                      value={formData.action_payload}
+                      onChange={(e) => setFormData(prev => ({ ...prev, action_payload: e.target.value }))}
+                      placeholder="Текст сообщения, которое покажется с кнопками под ним"
+                      required
+                    />
+                  </div>
+                )}
+
+                {formData.button_type === 'inline' && (
+                  <div className="form-group">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label className="form-label">Кнопки под сообщением</label>
+                      <button
+                        type="button"
+                        onClick={addInlineButton}
+                        className="btn btn--secondary btn--sm"
+                      >
+                        <Plus size={14} />
+                        Добавить кнопку
+                      </button>
+                    </div>
+                    {formData.inline_buttons.map((btn, index) => (
+                      <div key={index} style={{ 
+                        display: 'flex', 
+                        gap: '8px', 
+                        marginBottom: '8px',
+                        padding: '12px',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)',
+                        backgroundColor: 'var(--background-secondary)'
+                      }}>
+                        <input
+                          type="text"
+                          className="form-input"
+                          style={{ flex: 1 }}
+                          value={btn.text}
+                          onChange={(e) => updateInlineButton(index, 'text', e.target.value)}
+                          placeholder="Текст кнопки"
+                        />
+                        <select
+                          className="form-select"
+                          style={{ width: '120px' }}
+                          value={btn.type}
+                          onChange={(e) => updateInlineButton(index, 'type', e.target.value)}
+                        >
+                          <option value="url">Ссылка</option>
+                          <option value="callback">Действие</option>
+                          <option value="web_app">Web App</option>
+                        </select>
+                        {btn.type === 'url' && (
+                          <input
+                            type="url"
+                            className="form-input"
+                            style={{ flex: 1 }}
+                            value={btn.url || ''}
+                            onChange={(e) => updateInlineButton(index, 'url', e.target.value)}
+                            placeholder="https://example.com"
+                          />
+                        )}
+                        {btn.type === 'callback' && (
+                          <input
+                            type="text"
+                            className="form-input"
+                            style={{ flex: 1 }}
+                            value={btn.callback || ''}
+                            onChange={(e) => updateInlineButton(index, 'callback', e.target.value)}
+                            placeholder="callback_data"
+                          />
+                        )}
+                        {btn.type === 'web_app' && (
+                          <input
+                            type="url"
+                            className="form-input"
+                            style={{ flex: 1 }}
+                            value={btn.web_app_url || ''}
+                            onChange={(e) => updateInlineButton(index, 'web_app_url', e.target.value)}
+                            placeholder="https://app.example.com"
+                          />
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeInlineButton(index)}
+                          className="btn btn--danger btn--icon btn--sm"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    {formData.inline_buttons.length === 0 && (
+                      <div style={{ 
+                        padding: '16px', 
+                        textAlign: 'center', 
+                        color: 'var(--text-secondary)',
+                        backgroundColor: 'var(--background-secondary)',
+                        borderRadius: 'var(--radius-md)'
+                      }}>
+                        Нет кнопок. Нажмите "Добавить кнопку" чтобы создать.
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="form-group">
                   <label className="form-label">URL медиафайла</label>
