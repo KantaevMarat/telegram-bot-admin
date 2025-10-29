@@ -56,9 +56,24 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
    */
   async onModuleInit() {
     // Listen to sync events and invalidate cache
-    this.syncService.on('buttons.created', () => this.syncService.invalidateCache('buttons'));
-    this.syncService.on('buttons.updated', () => this.syncService.invalidateCache('buttons'));
-    this.syncService.on('buttons.deleted', () => this.syncService.invalidateCache('buttons'));
+    this.syncService.on('buttons.created', () => {
+      this.syncService.invalidateCache('buttons');
+      this.syncService.invalidateCache('buttons:reply_keyboard');
+      this.syncService.invalidateCache('buttons:main_keyboard');
+      this.logger.debug('🔄 Invalidated button caches due to button.created');
+    });
+    this.syncService.on('buttons.updated', () => {
+      this.syncService.invalidateCache('buttons');
+      this.syncService.invalidateCache('buttons:reply_keyboard');
+      this.syncService.invalidateCache('buttons:main_keyboard');
+      this.logger.debug('🔄 Invalidated button caches due to button.updated');
+    });
+    this.syncService.on('buttons.deleted', () => {
+      this.syncService.invalidateCache('buttons');
+      this.syncService.invalidateCache('buttons:reply_keyboard');
+      this.syncService.invalidateCache('buttons:main_keyboard');
+      this.logger.debug('🔄 Invalidated button caches due to button.deleted');
+    });
     
     this.syncService.on('scenarios.created', () => this.syncService.invalidateCache('scenarios'));
     this.syncService.on('scenarios.updated', () => this.syncService.invalidateCache('scenarios'));
@@ -203,7 +218,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       } else {
         // Save user message
         await this.messagesService.createUserMessage(user.id, text);
-        await this.sendMessage(chatId, 'Спасибо за ваше сообщение! Администратор скоро ответит.', this.getReplyKeyboard());
+        await this.sendMessage(chatId, 'Спасибо за ваше сообщение! Администратор скоро ответит.', await this.getReplyKeyboard());
       }
     }
   }
@@ -282,7 +297,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         .replace('{tasks_completed}', user.tasks_completed.toString());
     }
 
-    await this.sendMessage(chatId, text, this.getReplyKeyboard());
+    await this.sendMessage(chatId, text, await this.getReplyKeyboard());
   }
 
   private async handleCommand(chatId: string, command: string, user: User) {
@@ -318,7 +333,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         break;
 
       default:
-        await this.sendMessage(chatId, 'Неизвестная команда. Используйте /help для списка команд.', this.getReplyKeyboard());
+        await this.sendMessage(chatId, 'Неизвестная команда. Используйте /help для списка команд.', await this.getReplyKeyboard());
     }
   }
 
@@ -336,7 +351,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       `/help - эта справка\n\n` +
       `❓ Есть вопросы? Напишите нам, и мы ответим!`;
 
-    await this.sendMessage(chatId, text, this.getReplyKeyboard());
+    await this.sendMessage(chatId, text, await this.getReplyKeyboard());
   }
 
   private async sendAvailableTasks(chatId: string, user: User) {
@@ -527,32 +542,84 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Get Reply Keyboard (постоянные кнопки внизу экрана)
+   * Загружает кнопки из БД и объединяет с дефолтными
    */
-  private getReplyKeyboard() {
-    return {
-      keyboard: [
-        [
-          { text: '📋 Задания' },
-          { text: '💰 Баланс' },
-        ],
-        [
-          { text: '👤 Профиль' },
-          { text: '👥 Рефералы' },
-        ],
-        [
-          { text: '💸 Вывести' },
-          { text: 'ℹ️ Помощь' },
-        ],
-      ],
+  private async getReplyKeyboard() {
+    // Try to get from cache first
+    const cacheKey = 'buttons:reply_keyboard';
+    const cached = this.syncService.getCache(cacheKey);
+    
+    if (cached) {
+      this.logger.debug('✅ Using cached reply keyboard');
+      return cached;
+    }
+
+    // Fetch custom buttons from database
+    const dbButtons = await this.buttonRepo.find({
+      where: { active: true },
+      order: { row: 'ASC', col: 'ASC' },
+    });
+
+    const keyboard: any[] = [];
+    const rows: any = {};
+
+    // Add custom buttons from DB
+    for (const button of dbButtons) {
+      if (!rows[button.row]) {
+        rows[button.row] = [];
+      }
+      rows[button.row].push({
+        text: button.label,
+      });
+    }
+
+    // If no custom buttons or not enough rows, add default buttons
+    if (Object.keys(rows).length === 0) {
+      // Default keyboard
+      keyboard.push(
+        [{ text: '📋 Задания' }, { text: '💰 Баланс' }],
+        [{ text: '👤 Профиль' }, { text: '👥 Рефералы' }],
+        [{ text: '💸 Вывести' }, { text: 'ℹ️ Помощь' }],
+      );
+    } else {
+      // Convert rows object to array
+      for (const rowKey of Object.keys(rows).sort((a, b) => parseInt(a) - parseInt(b))) {
+        keyboard.push(rows[rowKey]);
+      }
+
+      // Add default "Помощь" button if not present
+      const hasHelp = dbButtons.some(b => 
+        b.label.includes('Помощь') || b.label.includes('Помощь') || b.label === 'ℹ️ Помощь'
+      );
+      if (!hasHelp && keyboard.length > 0) {
+        // Add help button to last row if there's space, otherwise new row
+        const lastRow = keyboard[keyboard.length - 1];
+        if (lastRow.length < 2) {
+          lastRow.push({ text: 'ℹ️ Помощь' });
+        } else {
+          keyboard.push([{ text: 'ℹ️ Помощь' }]);
+        }
+      }
+    }
+
+    const result = {
+      keyboard,
       resize_keyboard: true,
       persistent: true,
     };
+
+    // Cache for 60 seconds (will be invalidated on button changes)
+    this.syncService.setCache(cacheKey, result, 60);
+
+    return result;
   }
 
   /**
    * Handle Reply Keyboard button clicks
+   * Поддерживает как дефолтные, так и кастомные кнопки из БД
    */
   private async handleReplyButton(chatId: string, text: string, user: User): Promise<boolean> {
+    // Check default buttons first
     switch (text) {
       case '📋 Задания':
         await this.sendAvailableTasks(chatId, user);
@@ -579,6 +646,16 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         return true;
 
       default:
+        // Check if it's a custom button from DB
+        const button = await this.buttonRepo.findOne({ 
+          where: { label: text, active: true } 
+        });
+        
+        if (button) {
+          await this.handleCustomButton(chatId, user, button);
+          return true;
+        }
+        
         return false;
     }
   }
@@ -637,7 +714,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       `💸 Для вывода используйте кнопку "*Вывести*" внизу\n` +
       `📋 Выполняйте задания чтобы заработать больше!`;
 
-    await this.sendMessage(chatId, text, this.getReplyKeyboard());
+    await this.sendMessage(chatId, text, await this.getReplyKeyboard());
   }
 
   private async sendProfile(chatId: string, user: User) {
@@ -656,7 +733,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       `👥 Приглашено рефералов: ${refCount}\n\n` +
       `📅 В системе с: ${new Date(user.registered_at).toLocaleDateString('ru-RU')}`;
 
-    await this.sendMessage(chatId, text, this.getReplyKeyboard());
+    await this.sendMessage(chatId, text, await this.getReplyKeyboard());
   }
 
   private async sendWithdrawInfo(chatId: string, user: User) {
@@ -669,7 +746,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         `Минимальная сумма: ${minWithdraw} USDT\n` +
         `Ваш баланс: ${user.balance_usdt} USDT\n\n` +
         `📋 Выполните больше заданий чтобы заработать!`,
-        this.getReplyKeyboard(),
+        await this.getReplyKeyboard(),
       );
       return;
     }
@@ -685,7 +762,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       `\`wallet TXxxx...xxx 50\`\n\n` +
       `⚠️ Используйте только TRC20 (USDT Tron)`;
 
-    await this.sendMessage(chatId, text, this.getReplyKeyboard());
+    await this.sendMessage(chatId, text, await this.getReplyKeyboard());
   }
 
   private async sendReferralInfo(chatId: string, user: User) {
@@ -709,7 +786,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       `📤 Скопируйте ссылку и делитесь с друзьями!\n` +
       `💡 Чем больше друзей - тем больше заработок!`;
 
-    await this.sendMessage(chatId, text, this.getReplyKeyboard());
+    await this.sendMessage(chatId, text, await this.getReplyKeyboard());
   }
 
   private async handleTaskAction(chatId: string, user: User, data: string) {

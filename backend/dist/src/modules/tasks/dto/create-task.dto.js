@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateTaskDto = void 0;
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
+const class_transformer_1 = require("class-transformer");
 class CreateTaskDto {
 }
 exports.CreateTaskDto = CreateTaskDto;
@@ -27,12 +28,16 @@ __decorate([
 ], CreateTaskDto.prototype, "description", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ description: 'Minimum reward' }),
+    (0, class_transformer_1.Transform)(({ value }) => (typeof value === 'string' ? parseFloat(value) : value)),
+    (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsNumber)(),
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], CreateTaskDto.prototype, "reward_min", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ description: 'Maximum reward' }),
+    (0, class_transformer_1.Transform)(({ value }) => (typeof value === 'string' ? parseFloat(value) : value)),
+    (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsNumber)(),
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
@@ -52,6 +57,8 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiProperty)({ description: 'Max completions per user', required: false }),
     (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Transform)(({ value }) => (value !== undefined && typeof value === 'string' ? parseInt(value) : value)),
+    (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsNumber)(),
     __metadata("design:type", Number)
 ], CreateTaskDto.prototype, "max_per_user", void 0);
@@ -76,6 +83,8 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiProperty)({ description: 'Cooldown in hours', required: false }),
     (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Transform)(({ value }) => (value !== undefined && typeof value === 'string' ? parseInt(value) : value)),
+    (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsNumber)(),
     __metadata("design:type", Number)
 ], CreateTaskDto.prototype, "cooldown_hours", void 0);

@@ -1,5 +1,6 @@
 import { IsString, IsNumber, IsBoolean, IsOptional, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Type, Transform } from 'class-transformer';
 
 export class CreateTaskDto {
   @ApiProperty({ description: 'Task title' })
@@ -11,11 +12,15 @@ export class CreateTaskDto {
   description: string;
 
   @ApiProperty({ description: 'Minimum reward' })
+  @Transform(({ value }) => (typeof value === 'string' ? parseFloat(value) : value))
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   reward_min: number;
 
   @ApiProperty({ description: 'Maximum reward' })
+  @Transform(({ value }) => (typeof value === 'string' ? parseFloat(value) : value))
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   reward_max: number;
@@ -32,6 +37,8 @@ export class CreateTaskDto {
 
   @ApiProperty({ description: 'Max completions per user', required: false })
   @IsOptional()
+  @Transform(({ value }) => (value !== undefined && typeof value === 'string' ? parseInt(value) : value))
+  @Type(() => Number)
   @IsNumber()
   max_per_user?: number;
 
@@ -52,6 +59,8 @@ export class CreateTaskDto {
 
   @ApiProperty({ description: 'Cooldown in hours', required: false })
   @IsOptional()
+  @Transform(({ value }) => (value !== undefined && typeof value === 'string' ? parseInt(value) : value))
+  @Type(() => Number)
   @IsNumber()
   cooldown_hours?: number;
 

@@ -194,6 +194,6 @@ export function useSyncRefetch(eventTypes: string[], refetchFn: () => void) {
         unsubscribe(eventType, handler);
       });
     };
-  }, [eventTypes, refetchFn, subscribe, unsubscribe]);
-}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventTypes.join(',')]); // Only re-subscribe if eventTypes change (by string comparison)
 
