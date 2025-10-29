@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Message } from '../../entities/message.entity';
 import { User } from '../../entities/user.entity';
+import { SyncService } from '../sync/sync.service';
 
 @Injectable()
 export class MessagesService {
@@ -11,6 +12,7 @@ export class MessagesService {
     private messageRepo: Repository<Message>,
     @InjectRepository(User)
     private userRepo: Repository<User>,
+    private syncService: SyncService,
   ) {}
 
   async getChats() {
@@ -64,7 +66,16 @@ export class MessagesService {
       is_read: true, // Admin messages are auto-read
     });
 
-    return await this.messageRepo.save(message);
+    const savedMessage = await this.messageRepo.save(message);
+    
+    // 🔄 Publish sync event
+    await this.syncService.publish('messages.created', { 
+      id: savedMessage.id, 
+      userId,
+      fromAdmin: true 
+    });
+
+    return savedMessage;
   }
 
   async createUserMessage(userId: string, text: string, mediaUrl?: string) {
@@ -76,7 +87,16 @@ export class MessagesService {
       is_read: false,
     });
 
-    return await this.messageRepo.save(message);
+    const savedMessage = await this.messageRepo.save(message);
+    
+    // 🔄 Publish sync event
+    await this.syncService.publish('messages.created', { 
+      id: savedMessage.id, 
+      userId,
+      fromAdmin: false 
+    });
+
+    return savedMessage;
   }
 
   async getUnreadCount() {

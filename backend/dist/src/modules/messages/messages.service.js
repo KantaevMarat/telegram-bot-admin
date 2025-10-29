@@ -18,10 +18,12 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const message_entity_1 = require("../../entities/message.entity");
 const user_entity_1 = require("../../entities/user.entity");
+const sync_service_1 = require("../sync/sync.service");
 let MessagesService = class MessagesService {
-    constructor(messageRepo, userRepo) {
+    constructor(messageRepo, userRepo, syncService) {
         this.messageRepo = messageRepo;
         this.userRepo = userRepo;
+        this.syncService = syncService;
     }
     async getChats() {
         const chats = await this.userRepo
@@ -63,7 +65,13 @@ let MessagesService = class MessagesService {
             media_url: mediaUrl,
             is_read: true,
         });
-        return await this.messageRepo.save(message);
+        const savedMessage = await this.messageRepo.save(message);
+        await this.syncService.publish('messages.created', {
+            id: savedMessage.id,
+            userId,
+            fromAdmin: true
+        });
+        return savedMessage;
     }
     async createUserMessage(userId, text, mediaUrl) {
         const message = this.messageRepo.create({
@@ -73,7 +81,13 @@ let MessagesService = class MessagesService {
             media_url: mediaUrl,
             is_read: false,
         });
-        return await this.messageRepo.save(message);
+        const savedMessage = await this.messageRepo.save(message);
+        await this.syncService.publish('messages.created', {
+            id: savedMessage.id,
+            userId,
+            fromAdmin: false
+        });
+        return savedMessage;
     }
     async getUnreadCount() {
         return await this.messageRepo
@@ -89,6 +103,7 @@ exports.MessagesService = MessagesService = __decorate([
     __param(0, (0, typeorm_1.InjectRepository)(message_entity_1.Message)),
     __param(1, (0, typeorm_1.InjectRepository)(user_entity_1.User)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
-        typeorm_2.Repository])
+        typeorm_2.Repository,
+        sync_service_1.SyncService])
 ], MessagesService);
 //# sourceMappingURL=messages.service.js.map

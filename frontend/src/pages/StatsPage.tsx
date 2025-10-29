@@ -2,16 +2,20 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { statsApi } from '../api/client';
 import toast from 'react-hot-toast';
 import { BarChart3, RefreshCw, Users, DollarSign, TrendingUp, Activity, Zap, Sparkles } from 'lucide-react';
+import { useSyncRefetch } from '../hooks/useSync';
 
 export default function StatsPage() {
   const queryClient = useQueryClient();
 
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading, refetch } = useQuery({
     queryKey: ['stats'],
     queryFn: () => statsApi.getStats(),
     refetchInterval: 30000, // Обновлять каждые 30 секунд
     staleTime: 0, // Данные устаревают сразу
   });
+
+  // 🔄 Auto-refresh stats on user activity changes
+  useSyncRefetch(['users.created', 'users.updated', 'users.balance_updated', 'payouts.approved', 'payouts.declined'], refetch);
 
   const handleRegenerate = async () => {
     const toastId = toast.loading('Пересчитываем статистику...');

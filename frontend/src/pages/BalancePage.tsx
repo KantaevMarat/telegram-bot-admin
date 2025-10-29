@@ -1,16 +1,23 @@
 import { useQuery } from '@tanstack/react-query';
 import { balanceApi } from '../api/client';
 import { DollarSign, TrendingUp, Users, ArrowUp, ArrowDown, Wallet, CreditCard, BarChart3 } from 'lucide-react';
+import { useSyncRefetch } from '../hooks/useSync';
 
 export default function BalancePage() {
-  const { data: overview, isLoading: isLoadingOverview } = useQuery({
+  const { data: overview, isLoading: isLoadingOverview, refetch: refetchOverview } = useQuery({
     queryKey: ['balance-overview'],
     queryFn: () => balanceApi.getOverview(),
   });
 
-  const { data: logs, isLoading: isLoadingLogs } = useQuery({
+  const { data: logs, isLoading: isLoadingLogs, refetch: refetchLogs } = useQuery({
     queryKey: ['balance-logs'],
     queryFn: () => balanceApi.getLogs(),
+  });
+
+  // 🔄 Auto-refresh on balance changes
+  useSyncRefetch(['users.balance_updated', 'payouts.approved', 'payouts.declined'], () => {
+    refetchOverview();
+    refetchLogs();
   });
 
   return (

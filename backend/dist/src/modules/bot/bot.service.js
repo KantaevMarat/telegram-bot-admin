@@ -73,7 +73,10 @@ let BotService = BotService_1 = class BotService {
         }
     }
     async onModuleDestroy() {
-        this.pollingInterval = null;
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+        }
         this.logger.log('🛑 Bot polling stopped');
     }
     async handleWebhook(update) {
@@ -91,6 +94,7 @@ let BotService = BotService_1 = class BotService {
     }
     startPolling() {
         this.logger.log('🤖 Starting bot polling for development...');
+        this.pollingInterval = setInterval(() => { }, 1000000);
         this.pollUpdates();
     }
     async pollUpdates() {

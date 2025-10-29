@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { chatsApi } from '../api/client';
 import { MessageSquare, Send, User, Clock, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useSyncRefetch } from '../hooks/useSync';
 
 interface Chat {
   user_id: string;
@@ -35,19 +36,25 @@ export default function ChatsPage() {
   const queryClient = useQueryClient();
 
   // Список чатов с автообновлением каждые 5 секунд
-  const { data: chats, isLoading: chatsLoading } = useQuery({
+  const { data: chats, isLoading: chatsLoading, refetch: refetchChats } = useQuery({
     queryKey: ['chats'],
     queryFn: () => chatsApi.getChats(),
     refetchInterval: 5000,
   });
 
+  // 🔄 Auto-refresh chats on new messages
+  useSyncRefetch(['messages.created'], refetchChats);
+
   // Сообщения выбранного чата с автообновлением каждые 3 секунды
-  const { data: messages, isLoading: messagesLoading } = useQuery({
+  const { data: messages, isLoading: messagesLoading, refetch: refetchMessages } = useQuery({
     queryKey: ['messages', selectedUserId],
     queryFn: () => chatsApi.getMessages(selectedUserId!, 100),
     enabled: !!selectedUserId,
     refetchInterval: 3000,
   });
+
+  // 🔄 Auto-refresh messages on sync events
+  useSyncRefetch(['messages.created'], refetchMessages);
 
   // Отправка сообщения
   const sendMutation = useMutation({

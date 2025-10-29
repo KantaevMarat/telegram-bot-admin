@@ -1,13 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import { statsApi } from '../api/client';
 import { Users, DollarSign, TrendingUp, Clock, Activity, Zap, Sparkles } from 'lucide-react';
+import { useSyncRefetch } from '../hooks/useSync';
 
 export default function Dashboard() {
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading, refetch } = useQuery({
     queryKey: ['stats'],
     queryFn: () => statsApi.getStats(),
     refetchInterval: 30000, // Auto-refresh every 30s
   });
+
+  // 🔄 Auto-refresh dashboard on any user activity
+  useSyncRefetch(['users.created', 'users.updated', 'users.balance_updated', 'payouts.approved', 'payouts.declined'], refetch);
 
   if (isLoading) {
     return (
