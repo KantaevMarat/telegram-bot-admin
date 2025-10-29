@@ -63,6 +63,19 @@ export class AddRewardToUserTasks1730239000000 implements MigrationInterface {
         }),
       );
     }
+
+    // Add created_at if missing (should be auto-generated but just in case)
+    if (table && !table.findColumnByName('created_at')) {
+      await queryRunner.addColumn(
+        'user_tasks',
+        new TableColumn({
+          name: 'created_at',
+          type: 'timestamp',
+          default: 'CURRENT_TIMESTAMP',
+          isNullable: false,
+        }),
+      );
+    }
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

@@ -44,6 +44,14 @@ class AddRewardToUserTasks1730239000000 {
                 isNullable: true,
             }));
         }
+        if (table && !table.findColumnByName('created_at')) {
+            await queryRunner.addColumn('user_tasks', new typeorm_1.TableColumn({
+                name: 'created_at',
+                type: 'timestamp',
+                default: 'CURRENT_TIMESTAMP',
+                isNullable: false,
+            }));
+        }
     }
     async down(queryRunner) {
         await queryRunner.dropColumn('user_tasks', 'reward');
