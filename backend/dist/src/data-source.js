@@ -8,8 +8,8 @@ exports.default = new typeorm_1.DataSource({
     username: process.env.DB_USER || 'telegram_bot_user',
     password: process.env.DB_PASSWORD || 'password',
     database: process.env.DB_NAME || 'telegram_bot_db',
-    entities: [__dirname + '/**/*.entity{.ts,.js}'],
-    migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
+    entities: [__dirname + '/../**/*.entity{.ts,.js}'],
+    migrations: [__dirname + '/../database/migrations/*{.ts,.js}'],
     synchronize: false,
 });
 //# sourceMappingURL=data-source.js.map
