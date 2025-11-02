@@ -46,7 +46,7 @@ fi
 
 # Stop existing containers
 echo "🛑 Stopping existing containers..."
-docker compose -f docker-compose.production.yml down
+docker compose -f docker-compose.production.yml down -v
 
 # Build images
 echo "🏗️  Building Docker images..."
