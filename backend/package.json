@@ -19,7 +19,7 @@
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:generate": "npm run typeorm -- migration:generate -d src/config/typeorm.config.ts",
     "migration:create": "npm run typeorm -- migration:create",
-    "migration:run": "dotenv -e ../.env -- npm run typeorm -- migration:run -d src/data-source.js",
+    "migration:run": "dotenv -e ../.env -- npm run typeorm -- migration:run -d dist/src/data-source.js",
     "migration:revert": "npm run typeorm -- migration:revert -d src/config/typeorm.config.ts",
     "seed": "dotenv -e ../.env -- ts-node src/database/seed.ts",
     "cli:add-admin": "dotenv -e ../.env -- ts-node src/cli/add-admin.ts",
