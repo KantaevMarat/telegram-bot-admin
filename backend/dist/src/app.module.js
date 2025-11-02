@@ -17,7 +17,6 @@ const admin_module_1 = require("./modules/admin/admin.module");
 const bot_module_1 = require("./modules/bot/bot.module");
 const users_module_1 = require("./modules/users/users.module");
 const stats_module_1 = require("./modules/stats/stats.module");
-const media_module_1 = require("./modules/media/media.module");
 const messages_module_1 = require("./modules/messages/messages.module");
 const buttons_module_1 = require("./modules/buttons/buttons.module");
 const scenarios_module_1 = require("./modules/scenarios/scenarios.module");
@@ -27,6 +26,7 @@ const balance_module_1 = require("./modules/balance/balance.module");
 const settings_module_1 = require("./modules/settings/settings.module");
 const broadcast_module_1 = require("./modules/broadcast/broadcast.module");
 const sync_module_1 = require("./modules/sync/sync.module");
+const channels_module_1 = require("./modules/channels/channels.module");
 const typeorm_config_1 = require("./config/typeorm.config");
 let AppModule = class AppModule {
 };
@@ -60,7 +60,6 @@ exports.AppModule = AppModule = __decorate([
             bot_module_1.BotModule,
             users_module_1.UsersModule,
             stats_module_1.StatsModule,
-            media_module_1.MediaModule,
             messages_module_1.MessagesModule,
             buttons_module_1.ButtonsModule,
             scenarios_module_1.ScenariosModule,
@@ -69,6 +68,7 @@ exports.AppModule = AppModule = __decorate([
             balance_module_1.BalanceModule,
             settings_module_1.SettingsModule,
             broadcast_module_1.BroadcastModule,
+            channels_module_1.ChannelsModule,
         ],
     })
 ], AppModule);

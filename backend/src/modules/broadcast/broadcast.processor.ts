@@ -1,21 +1,26 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import axios from 'axios';
+import { BroadcastService } from './broadcast.service';
 
 @Processor('broadcast')
 export class BroadcastProcessor extends WorkerHost {
   private readonly logger = new Logger(BroadcastProcessor.name);
   private botToken: string = '';
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    @Inject(forwardRef(() => BroadcastService))
+    private broadcastService: BroadcastService,
+  ) {
     super();
     this.botToken = this.configService.get('TELEGRAM_BOT_TOKEN') || '';
   }
 
   async process(job: Job<any>): Promise<any> {
-    const { users, text, media_urls } = job.data;
+    const { broadcastId, users, text, media_urls } = job.data;
 
     let successCount = 0;
     let errorCount = 0;
@@ -31,6 +36,11 @@ export class BroadcastProcessor extends WorkerHost {
     }
 
     this.logger.log(`Batch completed: ${successCount} success, ${errorCount} errors`);
+
+    // Обновляем счетчики в broadcast
+    if (broadcastId) {
+      await this.broadcastService.updateBroadcastProgress(broadcastId, successCount, errorCount);
+    }
 
     return { successCount, errorCount };
   }

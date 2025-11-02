@@ -1,25 +1,68 @@
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { broadcastApi } from '../api/client';
 import toast from 'react-hot-toast';
-import { Send, Image, Link, Clock, Users, BarChart, AlertTriangle } from 'lucide-react';
+import { Send, Image, Clock, Users, BarChart, Calendar, Trash2, CheckCircle, XCircle, Loader, AlertCircle } from 'lucide-react';
+
+interface Broadcast {
+  id: string;
+  text: string;
+  media_urls: string[] | null;
+  status: 'draft' | 'scheduled' | 'sending' | 'completed' | 'failed';
+  scheduled_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  total_users: number;
+  sent_count: number;
+  failed_count: number;
+  created_at: string;
+}
 
 export default function BroadcastPage() {
+  const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [isScheduled, setIsScheduled] = useState(false);
 
-  const mutation = useMutation({
+  // Получение списка рассылок
+  const { data: broadcasts = [] } = useQuery<Broadcast[]>({
+    queryKey: ['broadcasts'],
+    queryFn: broadcastApi.getAllBroadcasts,
+  });
+
+  // Создание рассылки
+  const createMutation = useMutation({
     mutationFn: (data: any) => broadcastApi.sendBroadcast(data),
     onSuccess: (response) => {
-      toast.success(`Рассылка запланирована для ${response.total_users} пользователей`);
+      if (isScheduled) {
+        toast.success('Рассылка запланирована!');
+      } else {
+        toast.success(`Рассылка запущена для ${response.total_users} пользователей`);
+      }
       setText('');
       setMediaUrl('');
+      setScheduledAt('');
+      setIsScheduled(false);
+      queryClient.invalidateQueries({ queryKey: ['broadcasts'] });
     },
     onError: (err: any) => {
       const message = Array.isArray(err.response?.data?.message)
         ? err.response.data.message.join(', ')
         : (err.response?.data?.message || err.message);
-      toast.error(`Ошибка отправки рассылки: ${message}`);
+      toast.error(`Ошибка: ${message}`);
+    },
+  });
+
+  // Удаление рассылки
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => broadcastApi.deleteBroadcast(id),
+    onSuccess: () => {
+      toast.success('Рассылка удалена');
+      queryClient.invalidateQueries({ queryKey: ['broadcasts'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || 'Ошибка удаления');
     },
   });
 
@@ -29,12 +72,71 @@ export default function BroadcastPage() {
       toast.error('Введите текст сообщения');
       return;
     }
-    mutation.mutate({
+    
+    if (isScheduled && !scheduledAt) {
+      toast.error('Выберите дату и время');
+      return;
+    }
+
+    createMutation.mutate({
       text,
       media_urls: mediaUrl ? [mediaUrl] : [],
-      batchSize: 30, // Default batch size
-      throttle: 1000,  // Default throttle
+      scheduled_at: isScheduled ? scheduledAt : undefined,
+      batchSize: 30,
+      throttle: 1000,
     });
+  };
+
+  const getStatusBadge = (status: string) => {
+    const styles: Record<string, { color: string; icon: JSX.Element }> = {
+      draft: { color: 'var(--text-tertiary)', icon: <AlertCircle size={14} /> },
+      scheduled: { color: 'var(--warning)', icon: <Clock size={14} /> },
+      sending: { color: 'var(--info)', icon: <Loader size={14} /> },
+      completed: { color: 'var(--success)', icon: <CheckCircle size={14} /> },
+      failed: { color: 'var(--error)', icon: <XCircle size={14} /> },
+    };
+
+    const style = styles[status] || styles.draft;
+
+    return (
+      <span style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        padding: '4px 8px',
+        borderRadius: 'var(--radius-sm)',
+        fontSize: 'var(--font-size-xs)',
+        fontWeight: 'var(--font-weight-medium)',
+        color: style.color,
+        background: `${style.color}15`,
+      }}>
+        {style.icon}
+        {status === 'draft' && 'Черновик'}
+        {status === 'scheduled' && 'Запланировано'}
+        {status === 'sending' && 'Отправка...'}
+        {status === 'completed' && 'Завершено'}
+        {status === 'failed' && 'Ошибка'}
+      </span>
+    );
+  };
+
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return '—';
+    const date = new Date(dateString);
+    return date.toLocaleString('ru-RU', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const stats = {
+    total: broadcasts.length,
+    scheduled: broadcasts.filter(b => b.status === 'scheduled').length,
+    completed: broadcasts.filter(b => b.status === 'completed').length,
+    failed: broadcasts.filter(b => b.status === 'failed').length,
   };
 
   return (
@@ -43,9 +145,52 @@ export default function BroadcastPage() {
       <header className="page-header">
         <div className="page-title-section">
           <h1 className="page-title">Рассылки</h1>
-          <p className="page-subtitle">Отправка сообщений всем пользователям</p>
+          <p className="page-subtitle">Отправка и планирование сообщений</p>
         </div>
       </header>
+
+      {/* Statistics Cards */}
+      <div className="stats-grid" style={{ marginBottom: '24px' }}>
+        <div className="stat-card">
+          <div className="stat-card__icon" style={{ backgroundColor: 'var(--accent-light)' }}>
+            <Send size={24} style={{ color: 'var(--accent)' }} />
+          </div>
+          <div className="stat-card__content">
+            <div className="stat-card__value">{stats.total}</div>
+            <div className="stat-card__label">Всего рассылок</div>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-card__icon" style={{ backgroundColor: 'var(--warning-light)' }}>
+            <Clock size={24} style={{ color: 'var(--warning)' }} />
+          </div>
+          <div className="stat-card__content">
+            <div className="stat-card__value">{stats.scheduled}</div>
+            <div className="stat-card__label">Запланировано</div>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-card__icon" style={{ backgroundColor: 'var(--success-light)' }}>
+            <CheckCircle size={24} style={{ color: 'var(--success)' }} />
+          </div>
+          <div className="stat-card__content">
+            <div className="stat-card__value">{stats.completed}</div>
+            <div className="stat-card__label">Завершено</div>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-card__icon" style={{ backgroundColor: 'var(--error-light)' }}>
+            <XCircle size={24} style={{ color: 'var(--error)' }} />
+          </div>
+          <div className="stat-card__content">
+            <div className="stat-card__value">{stats.failed}</div>
+            <div className="stat-card__label">Ошибки</div>
+          </div>
+        </div>
+      </div>
 
       {/* Main Content */}
       <div className="two-column-layout">
@@ -53,7 +198,7 @@ export default function BroadcastPage() {
         <div className="card">
           <div className="card-header">
             <Send size={24} style={{ color: 'var(--accent)' }} />
-            <h2 className="card-title">Создать рассылку</h2>
+            <h2 className="card-title">Новая рассылка</h2>
           </div>
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -74,7 +219,7 @@ export default function BroadcastPage() {
                 fontSize: 'var(--font-size-xs)', 
                 color: 'var(--text-tertiary)' 
               }}>
-                Максимум 4000 символов. Используйте Markdown для форматирования.
+                Максимум 4000 символов
               </p>
             </div>
 
@@ -92,14 +237,55 @@ export default function BroadcastPage() {
                   placeholder="https://example.com/image.jpg"
                 />
               </div>
-              <p style={{ 
-                margin: '4px 0 0 0', 
-                fontSize: 'var(--font-size-xs)', 
-                color: 'var(--text-tertiary)' 
-              }}>
-                Поддерживаются изображения, видео и документы
-              </p>
             </div>
+
+            {/* Scheduled Checkbox */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '12px',
+              background: 'var(--bg-tertiary)',
+              borderRadius: 'var(--radius-md)',
+              cursor: 'pointer',
+            }}
+            onClick={() => setIsScheduled(!isScheduled)}
+            >
+              <input
+                type="checkbox"
+                checked={isScheduled}
+                onChange={(e) => setIsScheduled(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <Calendar size={16} style={{ color: 'var(--accent)' }} />
+              <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-medium)' }}>
+                Запланировать отправку
+              </span>
+            </div>
+
+            {/* DateTime Picker */}
+            {isScheduled && (
+              <div className="form-group">
+                <label className="form-label">
+                  Дата и время отправки *
+                </label>
+                <input
+                  type="datetime-local"
+                  className="form-input"
+                  value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                  min={new Date().toISOString().slice(0, 16)}
+                  required={isScheduled}
+                />
+                <p style={{ 
+                  margin: '4px 0 0 0', 
+                  fontSize: 'var(--font-size-xs)', 
+                  color: 'var(--text-tertiary)' 
+                }}>
+                  Рассылка будет отправлена автоматически в указанное время
+                </p>
+              </div>
+            )}
 
             <div style={{ 
               display: 'flex', 
@@ -110,10 +296,10 @@ export default function BroadcastPage() {
               <button
                 type="submit"
                 className="btn btn--primary"
-                disabled={mutation.isPending || !text.trim()}
+                disabled={createMutation.isPending || !text.trim()}
               >
                 <Send size={16} />
-                {mutation.isPending ? 'Отправка...' : 'Отправить рассылку'}
+                {createMutation.isPending ? 'Отправка...' : isScheduled ? 'Запланировать' : 'Отправить сейчас'}
               </button>
               
               <button
@@ -121,9 +307,11 @@ export default function BroadcastPage() {
                 onClick={() => {
                   setText('');
                   setMediaUrl('');
+                  setScheduledAt('');
+                  setIsScheduled(false);
                 }}
                 className="btn btn--secondary"
-                disabled={mutation.isPending}
+                disabled={createMutation.isPending}
               >
                 Очистить
               </button>
@@ -131,89 +319,111 @@ export default function BroadcastPage() {
           </form>
         </div>
 
-        {/* Info Panel */}
-        <div>
-          {/* Statistics */}
-          <div className="card" style={{ marginBottom: '20px' }}>
-            <div className="card-header">
-              <BarChart size={20} style={{ color: 'var(--accent)' }} />
-              <h3 style={{ margin: '0', fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' }}>
-                Статистика
-              </h3>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '8px',
-                padding: '8px 12px',
-                background: 'var(--bg-tertiary)',
-                borderRadius: 'var(--radius-md)'
-              }}>
-                <Users size={16} style={{ color: 'var(--info)' }} />
-                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
-                  Всего пользователей: <strong style={{ color: 'var(--text-primary)' }}>1,234</strong>
-                </span>
-              </div>
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '8px',
-                padding: '8px 12px',
-                background: 'var(--bg-tertiary)',
-                borderRadius: 'var(--radius-md)'
-              }}>
-                <Send size={16} style={{ color: 'var(--success)' }} />
-                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
-                  Отправлено сегодня: <strong style={{ color: 'var(--text-primary)' }}>5</strong>
-                </span>
-              </div>
-            </div>
+        {/* Broadcasts List */}
+        <div className="card" style={{ height: 'fit-content' }}>
+          <div className="card-header">
+            <BarChart size={24} style={{ color: 'var(--accent)' }} />
+            <h2 className="card-title">История рассылок</h2>
           </div>
 
-          {/* Tips */}
-          <div className="card">
-            <div className="card-header">
-              <AlertTriangle size={20} style={{ color: 'var(--warning)' }} />
-              <h3 style={{ margin: '0', fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' }}>
-                Рекомендации
-              </h3>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'flex-start', 
-                gap: '8px',
-                padding: '8px 0'
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '600px', overflowY: 'auto' }}>
+            {broadcasts.length === 0 ? (
+              <div style={{
+                padding: '32px',
+                textAlign: 'center',
+                color: 'var(--text-tertiary)',
+                fontSize: 'var(--font-size-sm)',
               }}>
-                <Clock size={14} style={{ color: 'var(--text-tertiary)', marginTop: '2px' }} />
-                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                  Рассылки отправляются батчами по 30 сообщений с задержкой 1 секунда
-                </span>
+                <Send size={48} style={{ opacity: 0.3, marginBottom: '12px' }} />
+                <p>Рассылок пока нет</p>
               </div>
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'flex-start', 
-                gap: '8px',
-                padding: '8px 0'
-              }}>
-                <Image size={14} style={{ color: 'var(--text-tertiary)', marginTop: '2px' }} />
-                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                  Медиафайлы должны быть доступны по прямой ссылке
-                </span>
-              </div>
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'flex-start', 
-                gap: '8px',
-                padding: '8px 0'
-              }}>
-                <Link size={14} style={{ color: 'var(--text-tertiary)', marginTop: '2px' }} />
-                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                  Используйте Markdown для форматирования текста
-                </span>
-              </div>
-            </div>
+            ) : (
+              broadcasts.map((broadcast) => (
+                <div
+                  key={broadcast.id}
+                  style={{
+                    padding: '16px',
+                    background: 'var(--bg-tertiary)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                    {getStatusBadge(broadcast.status)}
+                    
+                    {broadcast.status === 'scheduled' && (
+                      <button
+                        onClick={() => deleteMutation.mutate(broadcast.id)}
+                        disabled={deleteMutation.isPending}
+                        style={{
+                          padding: '4px 8px',
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--error)',
+                          cursor: 'pointer',
+                          borderRadius: 'var(--radius-sm)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: 'var(--font-size-xs)',
+                        }}
+                      >
+                        <Trash2 size={12} />
+                        Удалить
+                      </button>
+                    )}
+                  </div>
+
+                  <p style={{
+                    margin: '8px 0',
+                    fontSize: 'var(--font-size-sm)',
+                    color: 'var(--text-primary)',
+                    lineHeight: '1.4',
+                    wordBreak: 'break-word',
+                    overflowWrap: 'break-word',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: 'vertical',
+                  }}>
+                    {broadcast.text}
+                  </p>
+
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: '8px',
+                    marginTop: '12px',
+                    paddingTop: '12px',
+                    borderTop: '1px solid var(--border)',
+                  }}>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
+                      <Clock size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
+                      {broadcast.scheduled_at ? formatDate(broadcast.scheduled_at) : formatDate(broadcast.created_at)}
+                    </div>
+                    
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
+                      <Users size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
+                      {broadcast.sent_count} / {broadcast.total_users}
+                    </div>
+                  </div>
+
+                  {broadcast.status === 'completed' && broadcast.completed_at && (
+                    <div style={{
+                      marginTop: '8px',
+                      padding: '8px',
+                      background: 'var(--success-light)',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: 'var(--font-size-xs)',
+                      color: 'var(--success)',
+                    }}>
+                      ✓ Завершено: {formatDate(broadcast.completed_at)}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

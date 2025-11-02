@@ -49,9 +49,21 @@ __decorate([
     __metadata("design:type", Boolean)
 ], Message.prototype, "is_read", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', default: 'sent' }),
+    __metadata("design:type", String)
+], Message.prototype, "status", void 0);
+__decorate([
     (0, typeorm_1.CreateDateColumn)(),
     __metadata("design:type", Date)
 ], Message.prototype, "created_at", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'timestamp', nullable: true }),
+    __metadata("design:type", Object)
+], Message.prototype, "delivered_at", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'timestamp', nullable: true }),
+    __metadata("design:type", Object)
+], Message.prototype, "read_at", void 0);
 exports.Message = Message = __decorate([
     (0, typeorm_1.Entity)('messages')
 ], Message);

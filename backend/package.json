@@ -21,7 +21,7 @@
     "migration:create": "npm run typeorm -- migration:create",
     "migration:run": "dotenv -e ../.env -- npm run typeorm -- migration:run -d src/config/typeorm.config.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/config/typeorm.config.ts",
-    "seed": "ts-node src/database/seed.ts",
+    "seed": "dotenv -e ../.env -- ts-node src/database/seed.ts",
     "cli:add-admin": "dotenv -e ../.env -- ts-node src/cli/add-admin.ts",
     "setup-webhook": "ts-node scripts/setup-webhook.ts"
   },

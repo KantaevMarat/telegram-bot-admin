@@ -18,6 +18,7 @@ import TasksPage from './pages/TasksPage';
 import ChatsPage from './pages/ChatsPage';
 import AdminsPage from './pages/AdminsPage';
 import UserAppPage from './pages/UserAppPage';
+import { ChannelsPage } from './pages/ChannelsPage';
 
 function App() {
   const { isAuthenticated, refreshToken } = useAuthStore();
@@ -26,7 +27,15 @@ function App() {
     // Auto-login in development mode
     if (import.meta.env.DEV && !isAuthenticated) {
       console.log('🚀 Auto-login in development mode...');
-      refreshToken();
+      refreshToken().then(() => {
+        // Проверяем после обновления токена
+        const authState = useAuthStore.getState();
+        if (authState.isAuthenticated) {
+          console.log('✅ Auto-login successful, should redirect now');
+        } else {
+          console.warn('⚠️ Auto-login failed, user needs to login manually');
+        }
+      });
     }
   }, [isAuthenticated, refreshToken]);
 
@@ -53,6 +62,7 @@ function App() {
               <Route path="/scenarios" element={<ScenariosPage />} />
               <Route path="/tasks" element={<TasksPage />} />
               <Route path="/chats" element={<ChatsPage />} />
+              <Route path="/channels" element={<ChannelsPage />} />
               <Route path="/admins" element={<AdminsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

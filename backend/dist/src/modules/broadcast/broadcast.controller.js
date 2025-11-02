@@ -23,19 +23,51 @@ let BroadcastController = class BroadcastController {
     constructor(broadcastService) {
         this.broadcastService = broadcastService;
     }
-    async broadcast(broadcastDto) {
+    async createBroadcast(broadcastDto) {
         return await this.broadcastService.sendBroadcast(broadcastDto);
+    }
+    async getAllBroadcasts() {
+        return await this.broadcastService.getAllBroadcasts();
+    }
+    async getBroadcast(id) {
+        return await this.broadcastService.getBroadcastById(id);
+    }
+    async deleteBroadcast(id) {
+        return await this.broadcastService.deleteBroadcast(id);
     }
 };
 exports.BroadcastController = BroadcastController;
 __decorate([
     (0, common_1.Post)(),
-    (0, swagger_1.ApiOperation)({ summary: 'Send broadcast to all users' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Create and send/schedule broadcast' }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [broadcast_dto_1.BroadcastDto]),
     __metadata("design:returntype", Promise)
-], BroadcastController.prototype, "broadcast", null);
+], BroadcastController.prototype, "createBroadcast", null);
+__decorate([
+    (0, common_1.Get)(),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all broadcasts' }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], BroadcastController.prototype, "getAllBroadcasts", null);
+__decorate([
+    (0, common_1.Get)(':id'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get broadcast by ID' }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], BroadcastController.prototype, "getBroadcast", null);
+__decorate([
+    (0, common_1.Delete)(':id'),
+    (0, swagger_1.ApiOperation)({ summary: 'Delete scheduled broadcast' }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], BroadcastController.prototype, "deleteBroadcast", null);
 exports.BroadcastController = BroadcastController = __decorate([
     (0, swagger_1.ApiTags)('admin'),
     (0, common_1.Controller)('admin/broadcast'),

@@ -3,13 +3,15 @@ import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Admin } from '../../entities/admin.entity';
 import { User } from '../../entities/user.entity';
+import { TelegramAuthService } from './telegram-auth.service';
 export declare class AuthService {
     private adminRepo;
     private userRepo;
     private jwtService;
     private configService;
+    private telegramAuthService;
     private readonly logger;
-    constructor(adminRepo: Repository<Admin>, userRepo: Repository<User>, jwtService: JwtService, configService: ConfigService);
+    constructor(adminRepo: Repository<Admin>, userRepo: Repository<User>, jwtService: JwtService, configService: ConfigService, telegramAuthService: TelegramAuthService);
     validateTelegramWebAppData(initData: string): any;
     loginAdmin(initData: string): Promise<{
         access_token: string;

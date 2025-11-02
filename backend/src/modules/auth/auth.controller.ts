@@ -13,12 +13,25 @@ export class AuthController {
   @Post('telegram/admin')
   @ApiOperation({ summary: 'Login as admin using Telegram Web App data' })
   async loginAdmin(@Body() loginDto: LoginDto) {
+    this.logger.log(`📥 Admin login request received`);
+    this.logger.debug(`initData present: ${!!loginDto.initData}`);
+    this.logger.debug(`initData length: ${loginDto.initData?.length || 0}`);
+    this.logger.debug(`initData preview: ${loginDto.initData?.substring(0, 50) || 'N/A'}...`);
+    
     // Check if this is a development request (no initData or special format)
     if (!loginDto.initData || loginDto.initData === 'dev') {
-      this.logger.log('Development mode login detected');
+      this.logger.log('🔧 Development mode login detected');
       return await this.authService.devLogin(697184435);
     }
-    return await this.authService.loginAdmin(loginDto.initData);
+    
+    try {
+      const result = await this.authService.loginAdmin(loginDto.initData);
+      this.logger.log('✅ Admin login successful');
+      return result;
+    } catch (error) {
+      this.logger.error('❌ Admin login failed:', error.message);
+      throw error;
+    }
   }
 
   @Post('telegram/user')

@@ -17,6 +17,7 @@ import {
   LogOut,
   Home,
   RefreshCw,
+  Radio,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -53,6 +54,7 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/scenarios', icon: GitBranch, label: 'Сценарии', color: '#22d3ee' },
     { path: '/tasks', icon: CheckSquare, label: 'Задания', color: '#a855f7' },
     { path: '/chats', icon: MessageSquare, label: 'Чаты', color: '#10b981' },
+    { path: '/channels', icon: Radio, label: 'Каналы', color: '#14b8a6' },
     { path: '/admins', icon: Shield, label: 'Админы', color: '#ef4444' },
   ];
 

@@ -10,8 +10,10 @@ exports.BotModule = void 0;
 const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const bot_service_1 = require("./bot.service");
+const admin_bot_service_1 = require("./admin-bot.service");
 const bot_controller_1 = require("./bot.controller");
 const user_entity_1 = require("../../entities/user.entity");
+const admin_entity_1 = require("../../entities/admin.entity");
 const button_entity_1 = require("../../entities/button.entity");
 const task_entity_1 = require("../../entities/task.entity");
 const user_task_entity_1 = require("../../entities/user-task.entity");
@@ -23,6 +25,7 @@ const users_module_1 = require("../users/users.module");
 const stats_module_1 = require("../stats/stats.module");
 const settings_module_1 = require("../settings/settings.module");
 const messages_module_1 = require("../messages/messages.module");
+const channels_module_1 = require("../channels/channels.module");
 let BotModule = class BotModule {
 };
 exports.BotModule = BotModule;
@@ -31,6 +34,7 @@ exports.BotModule = BotModule = __decorate([
         imports: [
             typeorm_1.TypeOrmModule.forFeature([
                 user_entity_1.User,
+                admin_entity_1.Admin,
                 button_entity_1.Button,
                 task_entity_1.Task,
                 user_task_entity_1.UserTask,
@@ -42,11 +46,12 @@ exports.BotModule = BotModule = __decorate([
             users_module_1.UsersModule,
             stats_module_1.StatsModule,
             settings_module_1.SettingsModule,
-            messages_module_1.MessagesModule,
+            (0, common_1.forwardRef)(() => messages_module_1.MessagesModule),
+            channels_module_1.ChannelsModule,
         ],
         controllers: [bot_controller_1.BotController],
-        providers: [bot_service_1.BotService],
-        exports: [bot_service_1.BotService],
+        providers: [bot_service_1.BotService, admin_bot_service_1.AdminBotService],
+        exports: [bot_service_1.BotService, admin_bot_service_1.AdminBotService],
     })
 ], BotModule);
 //# sourceMappingURL=bot.module.js.map

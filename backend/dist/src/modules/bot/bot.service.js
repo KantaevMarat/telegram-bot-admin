@@ -32,8 +32,9 @@ const settings_service_1 = require("../settings/settings.service");
 const messages_service_1 = require("../messages/messages.service");
 const users_service_1 = require("../users/users.service");
 const sync_service_1 = require("../sync/sync.service");
+const channels_service_1 = require("../channels/channels.service");
 let BotService = BotService_1 = class BotService {
-    constructor(userRepo, buttonRepo, taskRepo, userTaskRepo, scenarioRepo, configService, fakeStatsService, settingsService, messagesService, usersService, syncService) {
+    constructor(userRepo, buttonRepo, taskRepo, userTaskRepo, scenarioRepo, configService, fakeStatsService, settingsService, messagesService, usersService, syncService, channelsService) {
         this.userRepo = userRepo;
         this.buttonRepo = buttonRepo;
         this.taskRepo = taskRepo;
@@ -45,6 +46,7 @@ let BotService = BotService_1 = class BotService {
         this.messagesService = messagesService;
         this.usersService = usersService;
         this.syncService = syncService;
+        this.channelsService = channelsService;
         this.logger = new common_1.Logger(BotService_1.name);
         this.botToken = '';
         this.pollingOffset = 0;
@@ -172,11 +174,27 @@ let BotService = BotService_1 = class BotService {
             await this.handleCommand(chatId, text, user);
         }
         else if (text?.startsWith('wallet ')) {
+            const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
+            if (!allSubscribed) {
+                await this.sendMessage(chatId, `🔔 *Обязательная подписка*\n\n` +
+                    `Для использования бота необходимо подписаться на наши каналы:\n\n` +
+                    unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n') +
+                    `\n\n_После подписки нажмите кнопку "Я подписался"_`, this.generateSubscriptionKeyboard(unsubscribedChannels, 'check_subscription'));
+                return;
+            }
             await this.handleWithdrawalRequest(chatId, user, text);
         }
         else {
             const handled = await this.handleReplyButton(chatId, text, user);
             if (handled) {
+                return;
+            }
+            const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
+            if (!allSubscribed) {
+                await this.sendMessage(chatId, `🔔 *Обязательная подписка*\n\n` +
+                    `Для использования бота необходимо подписаться на наши каналы:\n\n` +
+                    unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n') +
+                    `\n\n_После подписки нажмите кнопку "Я подписался"_`, this.generateSubscriptionKeyboard(unsubscribedChannels, 'check_subscription'));
                 return;
             }
             const scenario = await this.findMatchingScenario(text);
@@ -252,6 +270,14 @@ let BotService = BotService_1 = class BotService {
     }
     async handleCommand(chatId, command, user) {
         const cmd = command.split(' ')[0];
+        const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
+        if (!allSubscribed) {
+            await this.sendMessage(chatId, `🔔 *Обязательная подписка*\n\n` +
+                `Добро пожаловать! Для использования бота необходимо подписаться на наши каналы:\n\n` +
+                unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n') +
+                `\n\n_После подписки нажмите кнопку "Я подписался"_`, this.generateSubscriptionKeyboard(unsubscribedChannels, 'check_subscription'));
+            return;
+        }
         switch (cmd) {
             case '/start':
                 await this.sendWelcomeMessage(chatId, user);
@@ -351,6 +377,28 @@ let BotService = BotService_1 = class BotService {
         const user = await this.userRepo.findOne({ where: { tg_id: tgId } });
         if (!user) {
             await this.sendMessage(chatId, 'Пользователь не найден. Используйте /start');
+            return;
+        }
+        if (data !== 'check_subscription' && data !== 'noop' && data !== 'menu') {
+            const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(tgId);
+            if (!allSubscribed) {
+                await this.sendMessage(chatId, `🔔 *Обязательная подписка*\n\n` +
+                    `Для использования бота необходимо подписаться на наши каналы:\n\n` +
+                    unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n') +
+                    `\n\n_После подписки нажмите кнопку "Я подписался"_`, this.generateSubscriptionKeyboard(unsubscribedChannels, data));
+                return;
+            }
+        }
+        if (data === 'check_subscription') {
+            const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(tgId);
+            if (!allSubscribed) {
+                await this.sendMessage(chatId, `❌ *Вы еще не подписались на все каналы!*\n\n` +
+                    `Осталось подписаться на:\n` +
+                    unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n'), this.generateSubscriptionKeyboard(unsubscribedChannels, 'check_subscription'));
+            }
+            else {
+                await this.sendMessage(chatId, '✅ Отлично! Все подписки подтверждены!', await this.getReplyKeyboard());
+            }
             return;
         }
         if (data === 'tasks') {
@@ -495,6 +543,14 @@ let BotService = BotService_1 = class BotService {
         return result;
     }
     async handleReplyButton(chatId, text, user) {
+        const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
+        if (!allSubscribed) {
+            await this.sendMessage(chatId, `🔔 *Обязательная подписка*\n\n` +
+                `Для использования бота необходимо подписаться на наши каналы:\n\n` +
+                unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n') +
+                `\n\n_После подписки нажмите кнопку "Я подписался"_`, this.generateSubscriptionKeyboard(unsubscribedChannels, 'check_subscription'));
+            return true;
+        }
         switch (text) {
             case '📋 Задания':
                 await this.sendAvailableTasks(chatId, user);
@@ -537,6 +593,70 @@ let BotService = BotService_1 = class BotService {
         }
         catch (error) {
             this.logger.error(`Failed to send message to ${chatId}:`, error.message);
+        }
+    }
+    async sendMessageWithMedia(chatId, text, mediaUrl, mediaType) {
+        try {
+            if (!mediaType) {
+                if (mediaUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                    mediaType = 'photo';
+                }
+                else if (mediaUrl.match(/\.(mp4|webm|ogg)$/i)) {
+                    mediaType = 'video';
+                }
+                else {
+                    mediaType = 'document';
+                }
+            }
+            let method;
+            let mediaField;
+            switch (mediaType) {
+                case 'photo':
+                    method = 'sendPhoto';
+                    mediaField = 'photo';
+                    break;
+                case 'video':
+                    method = 'sendVideo';
+                    mediaField = 'video';
+                    break;
+                default:
+                    method = 'sendDocument';
+                    mediaField = 'document';
+                    break;
+            }
+            const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
+            const urlParts = mediaUrl.split('/');
+            const encodedFilename = urlParts[urlParts.length - 1];
+            const decodedFilename = decodeURIComponent(encodedFilename);
+            const cleanFilename = decodedFilename.includes('-')
+                ? decodedFilename.substring(decodedFilename.indexOf('-') + 1)
+                : decodedFilename;
+            await axios_1.default.post(url, {
+                chat_id: chatId,
+                [mediaField]: mediaUrl,
+                caption: text || `📎 ${cleanFilename}`,
+                parse_mode: 'HTML',
+            });
+            this.logger.log(`Sent ${mediaType} message to ${chatId}`);
+        }
+        catch (error) {
+            this.logger.error(`Failed to send media message to ${chatId}:`, error.response?.data || error.message);
+            try {
+                const urlParts = mediaUrl.split('/');
+                const encodedFilename = urlParts[urlParts.length - 1];
+                const decodedFilename = decodeURIComponent(encodedFilename);
+                const cleanFilename = decodedFilename.includes('-')
+                    ? decodedFilename.substring(decodedFilename.indexOf('-') + 1)
+                    : decodedFilename;
+                const fallbackText = text
+                    ? `${text}\n\n📎 Файл: ${cleanFilename}\n\n⚠️ Для получения файла используйте ссылку:\n${mediaUrl}`
+                    : `📎 Отправлен файл: ${cleanFilename}\n\n⚠️ Для получения файла используйте ссылку:\n${mediaUrl}`;
+                await this.sendMessage(chatId, fallbackText);
+            }
+            catch (fallbackError) {
+                this.logger.error(`Failed to send fallback message:`, fallbackError);
+                await this.sendMessage(chatId, text || '📎 Отправлен файл');
+            }
         }
     }
     async answerCallbackQuery(callbackQueryId, text) {
@@ -1159,25 +1279,64 @@ let BotService = BotService_1 = class BotService {
             await this.sendMessage(chatId, 'Произошла ошибка. Попробуйте позже.');
         }
     }
+    async checkMandatoryChannels(userId) {
+        try {
+            const activeChannels = await this.channelsService.findActive();
+            if (activeChannels.length === 0) {
+                return { allSubscribed: true, unsubscribedChannels: [] };
+            }
+            const unsubscribedChannels = [];
+            for (const channel of activeChannels) {
+                const isSubscribed = await this.checkChannelSubscription(userId, channel.channel_id);
+                if (!isSubscribed) {
+                    unsubscribedChannels.push(channel);
+                }
+            }
+            return {
+                allSubscribed: unsubscribedChannels.length === 0,
+                unsubscribedChannels,
+            };
+        }
+        catch (error) {
+            this.logger.error('Error checking mandatory channels:', error);
+            return { allSubscribed: true, unsubscribedChannels: [] };
+        }
+    }
+    generateSubscriptionKeyboard(channels, callbackAction = 'check_subscription') {
+        const buttons = [];
+        channels.forEach(channel => {
+            const url = channel.url || `https://t.me/${channel.username || channel.channel_id.replace('@', '')}`;
+            buttons.push([{ text: `📢 ${channel.title}`, url }]);
+        });
+        buttons.push([{ text: '✅ Я подписался', callback_data: callbackAction }]);
+        return { inline_keyboard: buttons };
+    }
     async checkChannelSubscription(userId, channelId) {
         try {
+            this.logger.debug(`🔍 Checking subscription: user=${userId}, channel=${channelId}`);
             const response = await axios_1.default.get(`https://api.telegram.org/bot${this.botToken}/getChatMember`, {
                 params: {
                     chat_id: channelId,
                     user_id: userId,
                 },
             });
+            this.logger.debug(`📡 Telegram API response:`, JSON.stringify(response.data, null, 2));
             if (response.data.ok) {
                 const status = response.data.result.status;
                 const isSubscribed = ['creator', 'administrator', 'member'].includes(status);
-                this.logger.log(`Subscription check: user ${userId}, channel ${channelId}, status ${status}, subscribed: ${isSubscribed}`);
+                this.logger.log(`✅ Subscription check: user ${userId}, channel ${channelId}, status=${status}, subscribed=${isSubscribed}`);
                 return isSubscribed;
             }
-            this.logger.warn(`Failed to check subscription: ${response.data.description || 'Unknown error'}`);
+            this.logger.warn(`⚠️ Failed to check subscription: ${response.data.description || 'Unknown error'}`);
+            this.logger.warn(`Response:`, JSON.stringify(response.data, null, 2));
             return false;
         }
         catch (error) {
-            this.logger.error(`Error checking channel subscription:`, error.response?.data || error.message);
+            this.logger.error(`❌ Error checking channel subscription for user ${userId}, channel ${channelId}:`);
+            this.logger.error(`Error details:`, error.response?.data || error.message);
+            if (error.response?.data) {
+                this.logger.error(`Full error response:`, JSON.stringify(error.response.data, null, 2));
+            }
             return false;
         }
     }
@@ -1200,6 +1359,7 @@ exports.BotService = BotService = BotService_1 = __decorate([
         settings_service_1.SettingsService,
         messages_service_1.MessagesService,
         users_service_1.UsersService,
-        sync_service_1.SyncService])
+        sync_service_1.SyncService,
+        channels_service_1.ChannelsService])
 ], BotService);
 //# sourceMappingURL=bot.service.js.map

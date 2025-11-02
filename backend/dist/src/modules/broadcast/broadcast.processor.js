@@ -8,6 +8,9 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -18,16 +21,18 @@ const bullmq_1 = require("@nestjs/bullmq");
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const axios_1 = __importDefault(require("axios"));
+const broadcast_service_1 = require("./broadcast.service");
 let BroadcastProcessor = BroadcastProcessor_1 = class BroadcastProcessor extends bullmq_1.WorkerHost {
-    constructor(configService) {
+    constructor(configService, broadcastService) {
         super();
         this.configService = configService;
+        this.broadcastService = broadcastService;
         this.logger = new common_1.Logger(BroadcastProcessor_1.name);
         this.botToken = '';
         this.botToken = this.configService.get('TELEGRAM_BOT_TOKEN') || '';
     }
     async process(job) {
-        const { users, text, media_urls } = job.data;
+        const { broadcastId, users, text, media_urls } = job.data;
         let successCount = 0;
         let errorCount = 0;
         for (const user of users) {
@@ -41,6 +46,9 @@ let BroadcastProcessor = BroadcastProcessor_1 = class BroadcastProcessor extends
             }
         }
         this.logger.log(`Batch completed: ${successCount} success, ${errorCount} errors`);
+        if (broadcastId) {
+            await this.broadcastService.updateBroadcastProgress(broadcastId, successCount, errorCount);
+        }
         return { successCount, errorCount };
     }
     async sendMessage(chatId, text, mediaUrls) {
@@ -75,6 +83,8 @@ let BroadcastProcessor = BroadcastProcessor_1 = class BroadcastProcessor extends
 exports.BroadcastProcessor = BroadcastProcessor;
 exports.BroadcastProcessor = BroadcastProcessor = BroadcastProcessor_1 = __decorate([
     (0, bullmq_1.Processor)('broadcast'),
-    __metadata("design:paramtypes", [config_1.ConfigService])
+    __param(1, (0, common_1.Inject)((0, common_1.forwardRef)(() => broadcast_service_1.BroadcastService))),
+    __metadata("design:paramtypes", [config_1.ConfigService,
+        broadcast_service_1.BroadcastService])
 ], BroadcastProcessor);
 //# sourceMappingURL=broadcast.processor.js.map

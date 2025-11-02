@@ -8,5 +8,8 @@ export declare class Message {
     media_url: string;
     media_type: string;
     is_read: boolean;
+    status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
     created_at: Date;
+    delivered_at: Date | null;
+    read_at: Date | null;
 }

@@ -1,4 +1,4 @@
 export declare class SendMessageDto {
-    text: string;
+    text?: string;
     media_url?: string;
 }

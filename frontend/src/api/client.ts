@@ -196,6 +196,9 @@ export const settingsHistoryApi = {
 // Broadcast API
 export const broadcastApi = {
   sendBroadcast: (data: any) => api.post('/admin/broadcast', data).then(res => res.data),
+  getAllBroadcasts: () => api.get('/admin/broadcast').then(res => res.data),
+  getBroadcast: (id: string) => api.get(`/admin/broadcast/${id}`).then(res => res.data),
+  deleteBroadcast: (id: string) => api.delete(`/admin/broadcast/${id}`).then(res => res.data),
 };
 
 // Buttons API

@@ -11,6 +11,7 @@ import { SettingsService } from '../settings/settings.service';
 import { MessagesService } from '../messages/messages.service';
 import { UsersService } from '../users/users.service';
 import { SyncService } from '../sync/sync.service';
+import { ChannelsService } from '../channels/channels.service';
 export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private userRepo;
     private buttonRepo;
@@ -23,11 +24,12 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private messagesService;
     private usersService;
     private syncService;
+    private channelsService;
     private readonly logger;
     private botToken;
     private pollingOffset;
     private pollingInterval;
-    constructor(userRepo: Repository<User>, buttonRepo: Repository<Button>, taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, scenarioRepo: Repository<Scenario>, configService: ConfigService, fakeStatsService: FakeStatsService, settingsService: SettingsService, messagesService: MessagesService, usersService: UsersService, syncService: SyncService);
+    constructor(userRepo: Repository<User>, buttonRepo: Repository<Button>, taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, scenarioRepo: Repository<Scenario>, configService: ConfigService, fakeStatsService: FakeStatsService, settingsService: SettingsService, messagesService: MessagesService, usersService: UsersService, syncService: SyncService, channelsService: ChannelsService);
     onModuleInit(): Promise<void>;
     onModuleDestroy(): Promise<void>;
     handleWebhook(update: any): Promise<void>;
@@ -46,6 +48,7 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private getReplyKeyboard;
     private handleReplyButton;
     sendMessage(chatId: string, text: string, replyMarkup?: any): Promise<void>;
+    sendMessageWithMedia(chatId: string, text: string, mediaUrl: string, mediaType?: string): Promise<void>;
     private answerCallbackQuery;
     setWebhook(webhookUrl: string): Promise<any>;
     private sendBalance;
@@ -62,5 +65,12 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private handleWithdrawalRequest;
     private findMatchingScenario;
     private handleScenario;
+    checkMandatoryChannels(userId: string): Promise<{
+        allSubscribed: boolean;
+        unsubscribedChannels: any[];
+    }>;
+    generateSubscriptionKeyboard(channels: any[], callbackAction?: string): {
+        inline_keyboard: any[][];
+    };
     private checkChannelSubscription;
 }
