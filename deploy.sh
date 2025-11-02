@@ -48,6 +48,10 @@ fi
 echo "🛑 Stopping existing containers..."
 docker compose -f docker-compose.production.yml down -v
 
+# Remove old volumes to ensure fresh start
+echo "🗑️  Removing old volumes..."
+docker volume ls | grep telegram-bot-admin | awk '{print $2}' | xargs -r docker volume rm || true
+
 # Build images
 echo "🏗️  Building Docker images..."
 docker compose -f docker-compose.production.yml build --no-cache
