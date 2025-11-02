@@ -46,15 +46,15 @@ fi
 
 # Stop existing containers
 echo "🛑 Stopping existing containers..."
-docker compose -f docker compose.production.yml down
+docker compose -f docker-compose.production.yml down
 
 # Build images
 echo "🏗️  Building Docker images..."
-docker compose -f docker compose.production.yml build --no-cache
+docker compose -f docker-compose.production.yml build --no-cache
 
 # Start database services first
 echo "🗄️  Starting database services..."
-docker compose -f docker compose.production.yml up -d postgres redis minio
+docker compose -f docker-compose.production.yml up -d postgres redis minio
 
 # Wait for databases to be healthy
 echo "⏳ Waiting for databases to be ready..."
@@ -62,27 +62,27 @@ sleep 15
 
 # Run migrations
 echo "📊 Running database migrations..."
-docker compose -f docker compose.production.yml run --rm backend npm run migration:run
+docker compose -f docker-compose.production.yml run --rm backend npm run migration:run
 
 # Seed database (if needed - comment out if already seeded)
 # echo "🌱 Seeding database..."
-# docker compose -f docker compose.production.yml run --rm backend npm run seed
+# docker compose -f docker-compose.production.yml run --rm backend npm run seed
 
 # Start all services
 echo "🚀 Starting all services..."
-docker compose -f docker compose.production.yml up -d
+docker compose -f docker-compose.production.yml up -d
 
 # Wait for services to start
 sleep 10
 
 # Check health
 echo "🏥 Checking services health..."
-docker compose -f docker compose.production.yml ps
+docker compose -f docker-compose.production.yml ps
 
 # Show logs
 echo ""
 echo "📋 Recent logs:"
-docker compose -f docker compose.production.yml logs --tail=20
+docker compose -f docker-compose.production.yml logs --tail=20
 
 echo ""
 echo -e "${GREEN}✅ Deployment completed successfully!${NC}"
@@ -92,9 +92,9 @@ echo "   Frontend: $FRONTEND_URL"
 echo "   Backend:  $API_URL"
 echo ""
 echo "📊 To view logs, run:"
-echo "   docker compose -f docker compose.production.yml logs -f"
+echo "   docker compose -f docker-compose.production.yml logs -f"
 echo ""
 echo "🔧 To add yourself as admin, run:"
-echo "   docker compose -f docker compose.production.yml run --rm backend npm run cli:add-admin YOUR_TELEGRAM_ID"
+echo "   docker compose -f docker-compose.production.yml run --rm backend npm run cli:add-admin YOUR_TELEGRAM_ID"
 
 
