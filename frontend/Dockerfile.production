@@ -15,7 +15,7 @@ ENV VITE_TELEGRAM_BOT_USERNAME=$VITE_TELEGRAM_BOT_USERNAME
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci --no-optional || npm install --no-optional
 
 # Copy source code
 COPY . .
