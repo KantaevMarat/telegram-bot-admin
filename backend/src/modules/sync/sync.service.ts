@@ -48,6 +48,7 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
   private async connectRedis() {
     const redisHost = this.configService.get('REDIS_HOST', 'localhost');
     const redisPort = this.configService.get('REDIS_PORT', 6379);
+    const redisPassword = this.configService.get('REDIS_PASSWORD');
 
     this.logger.log(`Connecting to Redis at ${redisHost}:${redisPort}...`);
 
@@ -59,6 +60,7 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
           port: redisPort,
           connectTimeout: 5000,
         },
+        password: redisPassword,
       }) as RedisClientType;
 
       // Subscriber client
@@ -68,6 +70,7 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
           port: redisPort,
           connectTimeout: 5000,
         },
+        password: redisPassword,
       }) as RedisClientType;
 
       // Add error handlers to prevent unhandled rejections

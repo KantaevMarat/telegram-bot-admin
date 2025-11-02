@@ -12,7 +12,7 @@ const typeOrmConfig = (configService) => {
         migrations: [__dirname + '/../database/migrations/*{.ts,.js}'],
         synchronize: false,
         logging: configService.get('NODE_ENV') === 'development',
-        ssl: configService.get('NODE_ENV') === 'production' ? { rejectUnauthorized: false } : false,
+        ssl: configService.get('DB_SSL') === 'true' ? { rejectUnauthorized: false } : false,
     };
 };
 exports.typeOrmConfig = typeOrmConfig;
