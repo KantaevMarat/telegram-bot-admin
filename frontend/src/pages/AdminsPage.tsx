@@ -89,7 +89,9 @@ export default function AdminsPage() {
     e.preventDefault();
     
     if (editingAdmin) {
-      updateMutation.mutate({ id: editingAdmin.id, data: formData });
+      // Для обновления отправляем только role (без tg_id)
+      const updateData = { role: formData.role };
+      updateMutation.mutate({ id: editingAdmin.id, data: updateData });
     } else {
       createMutation.mutate(formData);
     }

@@ -5,10 +5,11 @@ import { BroadcastService } from './broadcast.service';
 import { BroadcastController } from './broadcast.controller';
 import { BroadcastProcessor } from './broadcast.processor';
 import { User } from '../../entities/user.entity';
+import { Broadcast } from '../../entities/broadcast.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, Broadcast]),
     BullModule.registerQueue({
       name: 'broadcast',
     }),

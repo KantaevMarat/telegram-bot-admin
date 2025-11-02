@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+</head>
+<body>
+    <h1>Testing API Connection</h1>
+    <div id="result"></div>
+    
+    <script>
+        async function testAPI() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing API...<br>';
+            
+            try {
+                const response = await fetch('https://myproh5-api.loca.lt/api', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                resultDiv.innerHTML += `Status: ${response.status}<br>`;
+                resultDiv.innerHTML += `StatusText: ${response.statusText}<br>`;
+                
+                const text = await response.text();
+                resultDiv.innerHTML += `Response: ${text}<br>`;
+                
+            } catch (error) {
+                resultDiv.innerHTML += `Error: ${error.message}<br>`;
+                console.error('API Error:', error);
+            }
+        }
+        
+        testAPI();
+    </script>
+</body>
+</html>
+

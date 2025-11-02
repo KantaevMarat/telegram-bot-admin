@@ -24,7 +24,7 @@ async function bootstrap() {
     app.enableCors({
         origin: true,
         credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     });
     app.useGlobalPipes(new common_1.ValidationPipe({
@@ -49,6 +49,7 @@ async function bootstrap() {
     await app.listen(port);
     console.log(`🚀 Application is running on: http://localhost:${port}`);
     console.log(`📚 Swagger docs available at: http://localhost:${port}/api/docs`);
+    console.log(`🤖 Admin bot polling started automatically`);
 }
 bootstrap();
 //# sourceMappingURL=main.js.map

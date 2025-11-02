@@ -1,11 +1,13 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, ValidateIf } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class SendMessageDto {
-  @ApiProperty({ description: 'Message text' })
+  @ApiProperty({ description: 'Message text', required: false })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  text: string;
+  @ValidateIf((o) => !o.media_url || o.text)
+  @IsNotEmpty({ message: 'Text is required when media_url is not provided' })
+  text?: string;
 
   @ApiProperty({ description: 'Media URL', required: false })
   @IsOptional()

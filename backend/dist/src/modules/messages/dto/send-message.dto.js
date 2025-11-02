@@ -16,9 +16,11 @@ class SendMessageDto {
 }
 exports.SendMessageDto = SendMessageDto;
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Message text' }),
+    (0, swagger_1.ApiProperty)({ description: 'Message text', required: false }),
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.IsNotEmpty)(),
+    (0, class_validator_1.ValidateIf)((o) => !o.media_url || o.text),
+    (0, class_validator_1.IsNotEmpty)({ message: 'Text is required when media_url is not provided' }),
     __metadata("design:type", String)
 ], SendMessageDto.prototype, "text", void 0);
 __decorate([

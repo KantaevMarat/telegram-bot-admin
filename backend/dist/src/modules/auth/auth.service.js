@@ -55,12 +55,14 @@ const config_1 = require("@nestjs/config");
 const crypto = __importStar(require("crypto"));
 const admin_entity_1 = require("../../entities/admin.entity");
 const user_entity_1 = require("../../entities/user.entity");
+const telegram_auth_service_1 = require("./telegram-auth.service");
 let AuthService = AuthService_1 = class AuthService {
-    constructor(adminRepo, userRepo, jwtService, configService) {
+    constructor(adminRepo, userRepo, jwtService, configService, telegramAuthService) {
         this.adminRepo = adminRepo;
         this.userRepo = userRepo;
         this.jwtService = jwtService;
         this.configService = configService;
+        this.telegramAuthService = telegramAuthService;
         this.logger = new common_1.Logger(AuthService_1.name);
     }
     validateTelegramWebAppData(initData) {
@@ -109,38 +111,56 @@ let AuthService = AuthService_1 = class AuthService {
         }
     }
     async loginAdmin(initData) {
-        this.logger.log('Admin login attempt');
-        const userData = this.validateTelegramWebAppData(initData);
-        this.logger.debug(`User data validated: ID ${userData.id}`);
-        const admin = await this.adminRepo.findOne({
-            where: { tg_id: userData.id.toString() },
-        });
-        if (!admin) {
-            this.logger.warn(`Admin not found for TG ID: ${userData.id}`);
-            throw new common_1.UnauthorizedException('Not authorized as admin');
-        }
-        this.logger.debug(`Admin found: ${admin.username || admin.tg_id}, role: ${admin.role}`);
-        admin.username = userData.username || admin.username;
-        admin.first_name = userData.first_name || admin.first_name;
-        await this.adminRepo.save(admin);
-        const payload = {
-            sub: admin.id,
-            tg_id: admin.tg_id,
-            role: admin.role,
-            type: 'admin',
-        };
-        const result = {
-            access_token: this.jwtService.sign(payload),
-            admin: {
-                id: admin.id,
+        this.logger.log('🔐 Admin login attempt');
+        try {
+            const telegramData = this.telegramAuthService.validateInitData(initData);
+            const userData = telegramData.user;
+            if (!userData) {
+                this.logger.error('❌ User data not found in initData');
+                throw new common_1.UnauthorizedException('User data not found in initData');
+            }
+            this.logger.log(`✅ User data validated: ID ${userData.id}, Name: ${userData.first_name}`);
+            const admin = await this.adminRepo.findOne({
+                where: { tg_id: userData.id.toString() },
+            });
+            if (!admin) {
+                this.logger.warn(`⚠️ Admin not found for TG ID: ${userData.id}`);
+                this.logger.warn(`💡 Add yourself as admin: npm run cli:add-admin ${userData.id} admin`);
+                const allAdmins = await this.adminRepo.find();
+                this.logger.debug(`📋 Total admins in DB: ${allAdmins.length}`);
+                allAdmins.forEach(a => this.logger.debug(`  - Admin: tg_id="${a.tg_id}", username="${a.username || 'N/A'}"`));
+                throw new common_1.UnauthorizedException(`Not authorized as admin. Your Telegram ID: ${userData.id}`);
+            }
+            this.logger.debug(`Admin found: ${admin.username || admin.tg_id}, role: ${admin.role}`);
+            admin.username = userData.username || admin.username;
+            admin.first_name = userData.first_name || admin.first_name;
+            await this.adminRepo.save(admin);
+            const payload = {
+                sub: admin.id,
                 tg_id: admin.tg_id,
-                username: admin.username,
-                first_name: admin.first_name,
                 role: admin.role,
-            },
-        };
-        this.logger.log(`Admin login successful: ${admin.username || admin.tg_id}`);
-        return result;
+                type: 'admin',
+            };
+            const result = {
+                access_token: this.jwtService.sign(payload),
+                admin: {
+                    id: admin.id,
+                    tg_id: admin.tg_id,
+                    username: admin.username,
+                    first_name: admin.first_name,
+                    role: admin.role,
+                },
+            };
+            this.logger.log(`Admin login successful: ${admin.username || admin.tg_id}`);
+            return result;
+        }
+        catch (error) {
+            if (error instanceof common_1.UnauthorizedException) {
+                throw error;
+            }
+            this.logger.error('❌ Error during admin login:', error.message);
+            throw new common_1.UnauthorizedException(`Login failed: ${error.message}`);
+        }
     }
     async loginUser(initData) {
         const userData = this.validateTelegramWebAppData(initData);
@@ -257,6 +277,7 @@ exports.AuthService = AuthService = AuthService_1 = __decorate([
     __metadata("design:paramtypes", [typeorm_2.Repository,
         typeorm_2.Repository,
         jwt_1.JwtService,
-        config_1.ConfigService])
+        config_1.ConfigService,
+        telegram_auth_service_1.TelegramAuthService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { chatsApi } from '../api/client';
-import { MessageSquare, Send, User, Clock, CheckCircle } from 'lucide-react';
+import { chatsApi, mediaApi } from '../api/client';
+import { 
+  MessageSquare, Send, User, Clock, Search, Filter, Image, Paperclip, 
+  X, FileText, Film, Check, CheckCheck, ArrowLeft, Loader2 
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSyncRefetch } from '../hooks/useSync';
 
@@ -26,13 +29,36 @@ interface Message {
   id: string;
   text: string;
   from_admin: boolean;
+  from_admin_tg_id?: string;
   created_at: string;
+  media_url?: string;
+  media_type?: string;
+  status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+  read_at?: string;
+  delivered_at?: string;
 }
+
+// Шаблоны быстрых ответов
+const QUICK_REPLIES = [
+  'Здравствуйте! Чем могу помочь?',
+  'Спасибо за обращение!',
+  'Ваш запрос принят в обработку',
+  'Пожалуйста, уточните ваш вопрос',
+  'Проблема решена?',
+];
 
 export default function ChatsPage() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [messageText, setMessageText] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterUnread, setFilterUnread] = useState(false);
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [showMobileSidebar, setShowMobileSidebar] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
   // Список чатов с автообновлением каждые 5 секунд
@@ -45,7 +71,7 @@ export default function ChatsPage() {
   // 🔄 Auto-refresh chats on new messages
   useSyncRefetch(['messages.created'], refetchChats);
 
-  // Сообщения выбранного чата с автообновлением каждые 3 секунды
+  // Сообщения выбранного чата с автообновлением каждые 3 секунд
   const { data: messages, isLoading: messagesLoading, refetch: refetchMessages } = useQuery({
     queryKey: ['messages', selectedUserId],
     queryFn: () => chatsApi.getMessages(selectedUserId!, 100),
@@ -58,12 +84,18 @@ export default function ChatsPage() {
 
   // Отправка сообщения
   const sendMutation = useMutation({
-    mutationFn: (text: string) => chatsApi.sendMessage(selectedUserId!, { text }),
+    mutationFn: async ({ text, media_url }: { text: string; media_url?: string }) => {
+      return chatsApi.sendMessage(selectedUserId!, { text, media_url });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', selectedUserId] });
       queryClient.invalidateQueries({ queryKey: ['chats'] });
       setMessageText('');
+      setSelectedFile(null);
+      setShowQuickReplies(false);
       scrollToBottom();
+      // Возвращаем фокус на поле ввода
+      setTimeout(() => messageInputRef.current?.focus(), 100);
     },
     onError: () => toast.error('Ошибка отправки сообщения'),
   });
@@ -77,14 +109,132 @@ export default function ChatsPage() {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (messageText.trim() && !sendMutation.isPending) {
-      sendMutation.mutate(messageText.trim());
+  // Фокус на поле ввода при выборе чата
+  useEffect(() => {
+    if (selectedUserId) {
+      messageInputRef.current?.focus();
+    }
+  }, [selectedUserId]);
+
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if ((!messageText.trim() && !selectedFile) || sendMutation.isPending || uploadingFile) {
+      return;
+    }
+
+    let media_url: string | undefined;
+
+    // Загружаем файл если он выбран
+    if (selectedFile) {
+      try {
+        setUploadingFile(true);
+        const result = await mediaApi.uploadFile(selectedFile);
+        media_url = result.url;
+      } catch (error) {
+        toast.error('Ошибка загрузки файла');
+        setUploadingFile(false);
+        return;
+      } finally {
+        setUploadingFile(false);
+      }
+    }
+
+    sendMutation.mutate({ 
+      text: messageText.trim() || (selectedFile ? '' : 'Сообщение'), 
+      media_url 
+    });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Отправка по Enter (но не Shift+Enter)
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
     }
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Проверка размера файла (макс 10 МБ)
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error('Файл слишком большой (максимум 10 МБ)');
+        return;
+      }
+      setSelectedFile(file);
+    }
+  };
+
+  const handleQuickReply = (text: string) => {
+    setMessageText(text);
+    setShowQuickReplies(false);
+    messageInputRef.current?.focus();
+  };
+
+  const handleSelectChat = (userId: string) => {
+    setSelectedUserId(userId);
+    setShowMobileSidebar(false); // Скрываем sidebar на мобильных при выборе чата
+  };
+
+  const handleBackToList = () => {
+    setShowMobileSidebar(true);
+    setSelectedUserId(null);
+  };
+
+  // Фильтрация чатов
+  const filteredChats = chats?.filter((chat: Chat) => {
+    const matchesSearch = 
+      !searchQuery ||
+      chat.user?.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      chat.user?.first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      chat.user?.tg_id?.toString().includes(searchQuery);
+    
+    const matchesFilter = !filterUnread || chat.unread_count > 0;
+    
+    return matchesSearch && matchesFilter;
+  });
+
   const selectedChat = chats?.find((chat: Chat) => chat.user_id === selectedUserId);
+
+  // Функция рендеринга статуса сообщения
+  const renderMessageStatus = (message: Message) => {
+    // Показывать статус только для сообщений от админа
+    const isFromAdmin = message.from_admin_tg_id !== null && message.from_admin_tg_id !== undefined;
+    if (!isFromAdmin) return null;
+
+    // Определяем статус
+    let status = message.status || 'sent';
+    
+    // Если нет явного статуса, определяем по временным меткам
+    if (!message.status) {
+      if (message.read_at) {
+        status = 'read';
+      } else if (message.delivered_at) {
+        status = 'delivered';
+      } else {
+        status = 'sent';
+      }
+    }
+
+    switch (status) {
+      case 'sending':
+        return <Loader2 size={14} className="spinning" style={{ opacity: 0.5 }} />;
+      case 'sent':
+        return <Check size={14} style={{ opacity: 0.5 }} />;
+      case 'delivered':
+        return <CheckCheck size={14} style={{ opacity: 0.5 }} />;
+      case 'read':
+        return <CheckCheck size={14} style={{ color: '#10b981', fontWeight: 'bold' }} />;
+      case 'failed':
+        return <X size={14} style={{ color: '#ef4444' }} />;
+      default:
+        return <Check size={14} style={{ opacity: 0.5 }} />;
+    }
+  };
+
+  const getUserDisplayName = (chat: Chat) => {
+    return chat.user?.username || chat.user?.first_name || `User ${chat.user?.tg_id || chat.user_id}`;
+  };
 
   if (chatsLoading) {
     return (
@@ -103,9 +253,9 @@ export default function ChatsPage() {
   }
 
   return (
-    <div className="page">
-      {/* Page Header */}
-      <header className="page-header">
+    <div className="page chats-page">
+      {/* Page Header - только на desktop */}
+      <header className="page-header chats-page__header">
         <div className="page-title-section">
           <h1 className="page-title">Чаты</h1>
           <p className="page-subtitle">Прямое общение с пользователями</p>
@@ -114,98 +264,67 @@ export default function ChatsPage() {
       
       <div className="chats-layout">
         {/* Список чатов */}
-        <div className="card chats-sidebar">
+        <div className={`card chats-sidebar ${showMobileSidebar ? 'chats-sidebar--visible' : 'chats-sidebar--hidden'}`}>
           <div className="chats-sidebar__header">
             <h3 className="chats-sidebar__title">
-              Чаты ({chats?.length || 0})
+              Чаты ({filteredChats?.length || 0})
             </h3>
+            
+            {/* Поиск */}
+            <div className="chats-search">
+              <Search size={18} className="chats-search__icon" />
+              <input
+                type="text"
+                className="form-input chats-search__input"
+                placeholder="Поиск по имени или ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            
+            {/* Фильтр */}
+            <button
+              className={`btn ${filterUnread ? 'btn--primary' : 'btn--secondary'} chats-sidebar__filter`}
+              onClick={() => setFilterUnread(!filterUnread)}
+            >
+              <Filter size={16} />
+              <span>{filterUnread ? 'Все чаты' : 'Непрочитанные'}</span>
+            </button>
           </div>
           
           <div className="chats-sidebar__list">
-            {!chats || chats.length === 0 ? (
+            {!filteredChats || filteredChats.length === 0 ? (
               <div className="empty-chat-state">
                 <MessageSquare size={48} className="empty-chat-state__icon" />
-                <p>Нет активных чатов</p>
+                <p>{searchQuery || filterUnread ? 'Ничего не найдено' : 'Нет активных чатов'}</p>
               </div>
             ) : (
-              chats.map((chat: Chat) => (
+              filteredChats.map((chat: Chat) => (
                 <div
                   key={chat.user_id}
-                  onClick={() => setSelectedUserId(chat.user_id)}
-                  style={{
-                    padding: '16px 20px',
-                    borderBottom: '1px solid var(--border)',
-                    cursor: 'pointer',
-                    background: selectedUserId === chat.user_id ? 'var(--accent-light)' : 'transparent',
-                    transition: 'background 0.2s',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (selectedUserId !== chat.user_id) {
-                      e.currentTarget.style.background = 'var(--bg-secondary)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (selectedUserId !== chat.user_id) {
-                      e.currentTarget.style.background = 'transparent';
-                    }
-                  }}
+                  onClick={() => handleSelectChat(chat.user_id)}
+                  className={`chat-item ${selectedUserId === chat.user_id ? 'chat-item--active' : ''}`}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '50%',
-                      background: 'var(--accent)',
-                      color: 'white',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}>
-                      <User size={20} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
-                        alignItems: 'center',
-                        marginBottom: '4px'
-                      }}>
-                        <span style={{ 
-                          fontWeight: 'var(--font-weight-semibold)', 
-                          color: 'var(--text-primary)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
-                        }}>
-                          {chat.user?.username || chat.user?.first_name || `User ${chat.user?.tg_id || chat.user_id}`}
+                  <div className="chat-item__avatar">
+                    <User size={20} />
+                  </div>
+                  <div className="chat-item__content">
+                    <div className="chat-item__header">
+                      <span className="chat-item__name">
+                        {getUserDisplayName(chat)}
+                      </span>
+                      {chat.unread_count > 0 && (
+                        <span className="chat-item__badge">
+                          {chat.unread_count}
                         </span>
-                        {chat.unread_count > 0 && (
-                          <span style={{
-                            background: 'var(--accent)',
-                            color: 'white',
-                            borderRadius: '10px',
-                            padding: '2px 8px',
-                            fontSize: 'var(--font-size-xs)',
-                            fontWeight: 'var(--font-weight-semibold)',
-                          }}>
-                            {chat.unread_count}
-                          </span>
-                        )}
-                      </div>
-                      {chat.last_message && (
-                        <div style={{
-                          fontSize: 'var(--font-size-sm)',
-                          color: 'var(--text-secondary)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}>
-                          {chat.last_message.from_admin && <span style={{ color: 'var(--accent)' }}>Вы: </span>}
-                          {chat.last_message.text}
-                        </div>
                       )}
                     </div>
+                    {chat.last_message && (
+                      <div className="chat-item__last-message">
+                        {chat.last_message.from_admin && <span className="chat-item__you">Вы: </span>}
+                        {chat.last_message.text}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))
@@ -214,33 +333,33 @@ export default function ChatsPage() {
         </div>
 
         {/* Окно чата */}
-        <div className="card chat-window">
+        <div className={`card chat-window ${!showMobileSidebar ? 'chat-window--visible' : ''}`}>
           {!selectedUserId ? (
             <div className="empty-chat-state">
               <MessageSquare size={64} className="empty-chat-state__icon" />
-              <p style={{ fontSize: 'var(--font-size-lg)' }}>Выберите чат</p>
+              <p className="empty-chat-state__text">Выберите чат</p>
             </div>
           ) : (
             <>
               {/* Заголовок чата */}
               <div className="chat-window__header">
-                <div style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '50%',
-                  background: 'var(--accent)',
-                  color: 'white',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
+                <button 
+                  className="btn btn--icon chat-window__back"
+                  onClick={handleBackToList}
+                  title="Назад к списку"
+                >
+                  <ArrowLeft size={20} />
+                </button>
+                
+                <div className="chat-window__avatar">
                   <User size={20} />
                 </div>
-                <div>
-                  <div style={{ fontWeight: 'var(--font-weight-semibold)', color: 'var(--text-primary)' }}>
-                    {selectedChat?.user?.username || selectedChat?.user?.first_name || `User ${selectedChat?.user?.tg_id || selectedChat?.user_id}`}
+                
+                <div className="chat-window__user-info">
+                  <div className="chat-window__user-name">
+                    {getUserDisplayName(selectedChat!)}
                   </div>
-                  <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
+                  <div className="chat-window__user-id">
                     ID: {selectedChat?.user?.tg_id || selectedChat?.user_id}
                   </div>
                 </div>
@@ -249,79 +368,177 @@ export default function ChatsPage() {
               {/* Сообщения */}
               <div className="chat-messages">
                 {messagesLoading ? (
-                  <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>
-                    Загрузка сообщений...
+                  <div className="chat-messages__loading">
+                    <Loader2 size={32} className="spinning" />
+                    <span>Загрузка сообщений...</span>
                   </div>
                 ) : !messages || messages.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>
-                    Нет сообщений
+                  <div className="chat-messages__empty">
+                    <MessageSquare size={48} />
+                    <span>Нет сообщений</span>
+                    <p>Начните диалог с пользователем</p>
                   </div>
                 ) : (
-                  messages.map((msg: Message) => (
+                  messages.map((msg: Message) => {
+                    const isFromAdmin = msg.from_admin_tg_id !== null && msg.from_admin_tg_id !== undefined;
+                    return (
                     <div
                       key={msg.id}
-                      style={{
-                        display: 'flex',
-                        justifyContent: msg.from_admin ? 'flex-end' : 'flex-start',
-                      }}
+                      className={`message ${isFromAdmin ? 'message--outgoing' : 'message--incoming'}`}
                     >
-                      <div style={{
-                        maxWidth: '70%',
-                        padding: '12px 16px',
-                        borderRadius: '12px',
-                        background: msg.from_admin ? 'var(--accent)' : 'var(--bg-secondary)',
-                        color: msg.from_admin ? 'white' : 'var(--text-primary)',
-                      }}>
-                        <div style={{ marginBottom: '4px', wordBreak: 'break-word' }}>
-                          {msg.text}
-                        </div>
-                        <div style={{
-                          fontSize: 'var(--font-size-xs)',
-                          opacity: 0.7,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          justifyContent: 'flex-end',
-                        }}>
-                          <Clock size={12} />
-                          {new Date(msg.created_at).toLocaleTimeString('ru-RU', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                      <div className="message__bubble">
+                        {/* Медиа */}
+                        {msg.media_url && (
+                          <div className="message__media">
+                            {msg.media_type === 'photo' || msg.media_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                              <img
+                                src={msg.media_url}
+                                alt="Медиа"
+                                className="message__image"
+                              />
+                            ) : msg.media_type === 'video' || msg.media_url.match(/\.(mp4|webm|ogg)$/i) ? (
+                              <video
+                                src={msg.media_url}
+                                controls
+                                className="message__video"
+                              />
+                            ) : (
+                              <a
+                                href={msg.media_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="message__file"
+                              >
+                                <FileText size={20} />
+                                <span>Файл</span>
+                              </a>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Текст сообщения */}
+                        {msg.text && (
+                          <div className="message__text">
+                            {msg.text}
+                          </div>
+                        )}
+                        
+                        {/* Время и статус */}
+                        <div className="message__meta">
+                          <span className="message__time">
+                            {new Date(msg.created_at).toLocaleTimeString('ru-RU', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                          <span className="message__status">
+                            {renderMessageStatus(msg)}
+                          </span>
                         </div>
                       </div>
                     </div>
-                  ))
+                    );
+                  })
                 )}
                 <div ref={messagesEndRef} />
               </div>
 
+              {/* Быстрые ответы */}
+              {showQuickReplies && (
+                <div className="quick-replies">
+                  {QUICK_REPLIES.map((reply, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      className="btn btn--secondary quick-replies__item"
+                      onClick={() => handleQuickReply(reply)}
+                    >
+                      {reply}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Предпросмотр файла */}
+              {selectedFile && (
+                <div className="file-preview">
+                  <div className="file-preview__content">
+                    {selectedFile.type.startsWith('image/') ? (
+                      <Image size={20} className="file-preview__icon" />
+                    ) : selectedFile.type.startsWith('video/') ? (
+                      <Film size={20} className="file-preview__icon" />
+                    ) : (
+                      <FileText size={20} className="file-preview__icon" />
+                    )}
+                    <span className="file-preview__name">
+                      {selectedFile.name} <span className="file-preview__size">({(selectedFile.size / 1024).toFixed(1)} КБ)</span>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFile(null)}
+                    className="btn btn--icon file-preview__remove"
+                    title="Удалить файл"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+
               {/* Форма отправки */}
-              <form
-                onSubmit={handleSendMessage}
-                style={{
-                  padding: '20px',
-                  borderTop: '1px solid var(--border)',
-                  display: 'flex',
-                  gap: '12px',
-                }}
-              >
+              <form onSubmit={handleSendMessage} className="chat-input">
                 <input
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={handleFileSelect}
+                  className="chat-input__file-input"
+                  accept="image/*,video/*,.pdf,.doc,.docx,.txt"
+                />
+                
+                <button
+                  type="button"
+                  className="btn btn--icon chat-input__btn"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sendMutation.isPending || uploadingFile}
+                  title="Прикрепить файл"
+                >
+                  <Paperclip size={20} />
+                </button>
+
+                <button
+                  type="button"
+                  className={`btn btn--icon chat-input__btn ${showQuickReplies ? 'chat-input__btn--active' : ''}`}
+                  onClick={() => setShowQuickReplies(!showQuickReplies)}
+                  disabled={sendMutation.isPending || uploadingFile}
+                  title="Быстрые ответы"
+                >
+                  <MessageSquare size={20} />
+                </button>
+
+                <input
+                  ref={messageInputRef}
                   type="text"
-                  className="form-input"
+                  className="form-input chat-input__input"
                   placeholder="Введите сообщение..."
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
-                  disabled={sendMutation.isPending}
-                  style={{ flex: 1 }}
+                  onKeyDown={handleKeyDown}
+                  disabled={sendMutation.isPending || uploadingFile}
                 />
+
                 <button
                   type="submit"
-                  className="btn btn--primary"
-                  disabled={!messageText.trim() || sendMutation.isPending}
+                  className="btn btn--primary chat-input__send"
+                  disabled={(!messageText.trim() && !selectedFile) || sendMutation.isPending || uploadingFile}
+                  title="Отправить (Enter)"
                 >
-                  <Send size={16} />
-                  Отправить
+                  {uploadingFile ? (
+                    <Loader2 size={20} className="spinning" />
+                  ) : sendMutation.isPending ? (
+                    <Loader2 size={20} className="spinning" />
+                  ) : (
+                    <Send size={20} />
+                  )}
                 </button>
               </form>
             </>

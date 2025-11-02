@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { Admin } from '../../entities/admin.entity';
 import { User } from '../../entities/user.entity';
+import { TelegramAuthService } from './telegram-auth.service';
 
 @Injectable()
 export class AuthService {
@@ -18,6 +19,7 @@ export class AuthService {
     private userRepo: Repository<User>,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private telegramAuthService: TelegramAuthService,
   ) {}
 
   /**
@@ -89,22 +91,39 @@ export class AuthService {
   }
 
   /**
-   * Login as admin
+   * Login as admin (using ADMIN_BOT_TOKEN or TELEGRAM_BOT_TOKEN)
    */
   async loginAdmin(initData: string) {
-    this.logger.log('Admin login attempt');
+    this.logger.log('🔐 Admin login attempt');
 
-    const userData = this.validateTelegramWebAppData(initData);
-    this.logger.debug(`User data validated: ID ${userData.id}`);
+    try {
+      // Use TelegramAuthService for validation (tries both ADMIN and USER bot tokens)
+      const telegramData = this.telegramAuthService.validateInitData(initData);
+      const userData = telegramData.user;
 
-    const admin = await this.adminRepo.findOne({
-      where: { tg_id: userData.id.toString() },
-    });
+      if (!userData) {
+        this.logger.error('❌ User data not found in initData');
+        throw new UnauthorizedException('User data not found in initData');
+      }
 
-    if (!admin) {
-      this.logger.warn(`Admin not found for TG ID: ${userData.id}`);
-      throw new UnauthorizedException('Not authorized as admin');
-    }
+      this.logger.log(`✅ User data validated: ID ${userData.id}, Name: ${userData.first_name}`);
+
+      // Ищем админа в БД
+      const admin = await this.adminRepo.findOne({
+        where: { tg_id: userData.id.toString() },
+      });
+
+      if (!admin) {
+        this.logger.warn(`⚠️ Admin not found for TG ID: ${userData.id}`);
+        this.logger.warn(`💡 Add yourself as admin: npm run cli:add-admin ${userData.id} admin`);
+        
+        // Показываем всех админов для отладки
+        const allAdmins = await this.adminRepo.find();
+        this.logger.debug(`📋 Total admins in DB: ${allAdmins.length}`);
+        allAdmins.forEach(a => this.logger.debug(`  - Admin: tg_id="${a.tg_id}", username="${a.username || 'N/A'}"`));
+        
+        throw new UnauthorizedException(`Not authorized as admin. Your Telegram ID: ${userData.id}`);
+      }
 
     this.logger.debug(`Admin found: ${admin.username || admin.tg_id}, role: ${admin.role}`);
 
@@ -131,9 +150,18 @@ export class AuthService {
       },
     };
 
-    this.logger.log(`Admin login successful: ${admin.username || admin.tg_id}`);
+      this.logger.log(`Admin login successful: ${admin.username || admin.tg_id}`);
 
-    return result;
+      return result;
+    } catch (error) {
+      // Если это уже UnauthorizedException - пробрасываем дальше
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      // Иначе логируем и пробрасываем как UnauthorizedException
+      this.logger.error('❌ Error during admin login:', error.message);
+      throw new UnauthorizedException(`Login failed: ${error.message}`);
+    }
   }
 
   /**

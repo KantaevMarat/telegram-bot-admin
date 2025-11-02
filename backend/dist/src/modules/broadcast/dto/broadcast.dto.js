@@ -28,6 +28,12 @@ __decorate([
     __metadata("design:type", Array)
 ], BroadcastDto.prototype, "media_urls", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Scheduled time (ISO 8601)', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], BroadcastDto.prototype, "scheduled_at", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ description: 'Batch size', required: false, default: 30 }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsNumber)(),

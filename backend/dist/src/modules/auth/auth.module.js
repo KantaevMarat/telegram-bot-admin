@@ -16,6 +16,7 @@ const auth_service_1 = require("./auth.service");
 const auth_controller_1 = require("./auth.controller");
 const debug_controller_1 = require("./debug.controller");
 const jwt_strategy_1 = require("./strategies/jwt.strategy");
+const telegram_auth_service_1 = require("./telegram-auth.service");
 const admin_entity_1 = require("../../entities/admin.entity");
 const user_entity_1 = require("../../entities/user.entity");
 let AuthModule = class AuthModule {
@@ -38,8 +39,8 @@ exports.AuthModule = AuthModule = __decorate([
             }),
         ],
         controllers: [auth_controller_1.AuthController, debug_controller_1.DebugController],
-        providers: [auth_service_1.AuthService, jwt_strategy_1.JwtStrategy],
-        exports: [auth_service_1.AuthService, jwt_strategy_1.JwtStrategy, passport_1.PassportModule],
+        providers: [auth_service_1.AuthService, jwt_strategy_1.JwtStrategy, telegram_auth_service_1.TelegramAuthService],
+        exports: [auth_service_1.AuthService, jwt_strategy_1.JwtStrategy, telegram_auth_service_1.TelegramAuthService, passport_1.PassportModule],
     })
 ], AuthModule);
 //# sourceMappingURL=auth.module.js.map

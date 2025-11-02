@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsNumber } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsArray, IsNumber, IsDateString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class BroadcastDto {
@@ -11,6 +11,11 @@ export class BroadcastDto {
   @IsOptional()
   @IsArray()
   media_urls?: string[];
+
+  @ApiProperty({ description: 'Scheduled time (ISO 8601)', required: false })
+  @IsOptional()
+  @IsDateString()
+  scheduled_at?: string;
 
   @ApiProperty({ description: 'Batch size', required: false, default: 30 })
   @IsOptional()

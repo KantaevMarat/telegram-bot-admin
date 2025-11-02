@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { DebugController } from './debug.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { TelegramAuthService } from './telegram-auth.service';
 import { Admin } from '../../entities/admin.entity';
 import { User } from '../../entities/user.entity';
 
@@ -26,7 +27,7 @@ import { User } from '../../entities/user.entity';
     }),
   ],
   controllers: [AuthController, DebugController],
-  providers: [AuthService, JwtStrategy],
-  exports: [AuthService, JwtStrategy, PassportModule],
+  providers: [AuthService, JwtStrategy, TelegramAuthService],
+  exports: [AuthService, JwtStrategy, TelegramAuthService, PassportModule],
 })
 export class AuthModule {}

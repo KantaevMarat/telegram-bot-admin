@@ -5,6 +5,12 @@ import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import App from './App';
 import './index.css';
+import { useTelegramStore } from './store/telegramStore';
+
+// Initialize Telegram Web App
+console.log('🚀 Initializing Telegram Web App...');
+const telegramStore = useTelegramStore.getState();
+telegramStore.initialize();
 
 const queryClient = new QueryClient({
   defaultOptions: {

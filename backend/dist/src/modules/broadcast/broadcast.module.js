@@ -14,13 +14,14 @@ const broadcast_service_1 = require("./broadcast.service");
 const broadcast_controller_1 = require("./broadcast.controller");
 const broadcast_processor_1 = require("./broadcast.processor");
 const user_entity_1 = require("../../entities/user.entity");
+const broadcast_entity_1 = require("../../entities/broadcast.entity");
 let BroadcastModule = class BroadcastModule {
 };
 exports.BroadcastModule = BroadcastModule;
 exports.BroadcastModule = BroadcastModule = __decorate([
     (0, common_1.Module)({
         imports: [
-            typeorm_1.TypeOrmModule.forFeature([user_entity_1.User]),
+            typeorm_1.TypeOrmModule.forFeature([user_entity_1.User, broadcast_entity_1.Broadcast]),
             bullmq_1.BullModule.registerQueue({
                 name: 'broadcast',
             }),

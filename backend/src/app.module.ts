@@ -8,7 +8,6 @@ import { AdminModule } from './modules/admin/admin.module';
 import { BotModule } from './modules/bot/bot.module';
 import { UsersModule } from './modules/users/users.module';
 import { StatsModule } from './modules/stats/stats.module';
-import { MediaModule } from './modules/media/media.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { ButtonsModule } from './modules/buttons/buttons.module';
 import { ScenariosModule } from './modules/scenarios/scenarios.module';
@@ -18,6 +17,7 @@ import { BalanceModule } from './modules/balance/balance.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { BroadcastModule } from './modules/broadcast/broadcast.module';
 import { SyncModule } from './modules/sync/sync.module';
+import { ChannelsModule } from './modules/channels/channels.module';
 import { typeOrmConfig } from './config/typeorm.config';
 
 @Module({
@@ -59,7 +59,6 @@ import { typeOrmConfig } from './config/typeorm.config';
     BotModule,
     UsersModule,
     StatsModule,
-    MediaModule,
     MessagesModule,
     ButtonsModule,
     ScenariosModule,
@@ -68,6 +67,7 @@ import { typeOrmConfig } from './config/typeorm.config';
     BalanceModule,
     SettingsModule,
     BroadcastModule,
+    ChannelsModule,
   ],
 })
 export class AppModule {}

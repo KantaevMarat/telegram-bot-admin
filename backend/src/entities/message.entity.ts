@@ -35,6 +35,15 @@ export class Message {
   @Column({ type: 'boolean', default: false })
   is_read: boolean;
 
+  @Column({ type: 'varchar', default: 'sent' })
+  status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+
   @CreateDateColumn()
   created_at: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  delivered_at: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  read_at: Date | null;
 }

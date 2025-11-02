@@ -13,6 +13,7 @@ import { SettingsService } from '../settings/settings.service';
 import { MessagesService } from '../messages/messages.service';
 import { UsersService } from '../users/users.service';
 import { SyncService } from '../sync/sync.service';
+import { ChannelsService } from '../channels/channels.service';
 
 @Injectable()
 export class BotService implements OnModuleInit, OnModuleDestroy {
@@ -38,6 +39,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private messagesService: MessagesService,
     private usersService: UsersService,
     private syncService: SyncService,
+    private channelsService: ChannelsService,
   ) {
     this.logger.log('BotService constructor called');
     this.botToken = this.configService.get('TELEGRAM_BOT_TOKEN') || '';
@@ -202,12 +204,42 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     if (text?.startsWith('/')) {
       await this.handleCommand(chatId, text, user);
     } else if (text?.startsWith('wallet ')) {
+      // ✅ Check mandatory channel subscriptions for withdrawal
+      const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
+      
+      if (!allSubscribed) {
+        await this.sendMessage(
+          chatId,
+          `🔔 *Обязательная подписка*\n\n` +
+          `Для использования бота необходимо подписаться на наши каналы:\n\n` +
+          unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n') +
+          `\n\n_После подписки нажмите кнопку "Я подписался"_`,
+          this.generateSubscriptionKeyboard(unsubscribedChannels, 'check_subscription'),
+        );
+        return;
+      }
+      
       // Handle withdrawal request
       await this.handleWithdrawalRequest(chatId, user, text);
     } else {
       // Handle ReplyKeyboard button clicks
       const handled = await this.handleReplyButton(chatId, text, user);
       if (handled) {
+        return;
+      }
+
+      // ✅ Check mandatory channel subscriptions for scenarios and regular messages
+      const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
+      
+      if (!allSubscribed) {
+        await this.sendMessage(
+          chatId,
+          `🔔 *Обязательная подписка*\n\n` +
+          `Для использования бота необходимо подписаться на наши каналы:\n\n` +
+          unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n') +
+          `\n\n_После подписки нажмите кнопку "Я подписался"_`,
+          this.generateSubscriptionKeyboard(unsubscribedChannels, 'check_subscription'),
+        );
         return;
       }
 
@@ -302,6 +334,21 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
   private async handleCommand(chatId: string, command: string, user: User) {
     const cmd = command.split(' ')[0];
+
+    // ✅ Check mandatory channel subscriptions for ALL commands (including /start!)
+    const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
+    
+    if (!allSubscribed) {
+      await this.sendMessage(
+        chatId,
+        `🔔 *Обязательная подписка*\n\n` +
+        `Добро пожаловать! Для использования бота необходимо подписаться на наши каналы:\n\n` +
+        unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n') +
+        `\n\n_После подписки нажмите кнопку "Я подписался"_`,
+        this.generateSubscriptionKeyboard(unsubscribedChannels, 'check_subscription'),
+      );
+      return;
+    }
 
     switch (cmd) {
       case '/start':
@@ -435,6 +482,41 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const user = await this.userRepo.findOne({ where: { tg_id: tgId } });
     if (!user) {
       await this.sendMessage(chatId, 'Пользователь не найден. Используйте /start');
+      return;
+    }
+
+    // ✅ Check mandatory channel subscriptions (skip for check_subscription action itself)
+    if (data !== 'check_subscription' && data !== 'noop' && data !== 'menu') {
+      const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(tgId);
+      
+      if (!allSubscribed) {
+        await this.sendMessage(
+          chatId,
+          `🔔 *Обязательная подписка*\n\n` +
+          `Для использования бота необходимо подписаться на наши каналы:\n\n` +
+          unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n') +
+          `\n\n_После подписки нажмите кнопку "Я подписался"_`,
+          this.generateSubscriptionKeyboard(unsubscribedChannels, data),
+        );
+        return;
+      }
+    }
+
+    // Handle subscription check
+    if (data === 'check_subscription') {
+      const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(tgId);
+      
+      if (!allSubscribed) {
+        await this.sendMessage(
+          chatId,
+          `❌ *Вы еще не подписались на все каналы!*\n\n` +
+          `Осталось подписаться на:\n` +
+          unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n'),
+          this.generateSubscriptionKeyboard(unsubscribedChannels, 'check_subscription'),
+        );
+      } else {
+        await this.sendMessage(chatId, '✅ Отлично! Все подписки подтверждены!', await this.getReplyKeyboard());
+      }
       return;
     }
 
@@ -619,6 +701,21 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
    * Поддерживает как дефолтные, так и кастомные кнопки из БД
    */
   private async handleReplyButton(chatId: string, text: string, user: User): Promise<boolean> {
+    // ✅ Check mandatory channel subscriptions for ALL actions (no exceptions)
+    const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
+    
+    if (!allSubscribed) {
+      await this.sendMessage(
+        chatId,
+        `🔔 *Обязательная подписка*\n\n` +
+        `Для использования бота необходимо подписаться на наши каналы:\n\n` +
+        unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n') +
+        `\n\n_После подписки нажмите кнопку "Я подписался"_`,
+        this.generateSubscriptionKeyboard(unsubscribedChannels, 'check_subscription'),
+      );
+      return true;
+    }
+
     // Check default buttons first
     switch (text) {
       case '📋 Задания':
@@ -672,6 +769,90 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       });
     } catch (error) {
       this.logger.error(`Failed to send message to ${chatId}:`, error.message);
+    }
+  }
+
+  /**
+   * Send message with media (photo, video, or document)
+   */
+  async sendMessageWithMedia(chatId: string, text: string, mediaUrl: string, mediaType?: string) {
+    try {
+      // Determine media type from URL if not provided
+      if (!mediaType) {
+        if (mediaUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+          mediaType = 'photo';
+        } else if (mediaUrl.match(/\.(mp4|webm|ogg)$/i)) {
+          mediaType = 'video';
+        } else {
+          mediaType = 'document';
+        }
+      }
+
+      // Select appropriate Telegram API method
+      let method: string;
+      let mediaField: string;
+
+      switch (mediaType) {
+        case 'photo':
+          method = 'sendPhoto';
+          mediaField = 'photo';
+          break;
+        case 'video':
+          method = 'sendVideo';
+          mediaField = 'video';
+          break;
+        default:
+          method = 'sendDocument';
+          mediaField = 'document';
+          break;
+      }
+
+      const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
+
+      // Extract and clean filename from URL
+      const urlParts = mediaUrl.split('/');
+      const encodedFilename = urlParts[urlParts.length - 1];
+      const decodedFilename = decodeURIComponent(encodedFilename);
+      
+      // Remove UUID prefix (format: uuid-filename.ext)
+      const cleanFilename = decodedFilename.includes('-') 
+        ? decodedFilename.substring(decodedFilename.indexOf('-') + 1) 
+        : decodedFilename;
+
+      await axios.post(url, {
+        chat_id: chatId,
+        [mediaField]: mediaUrl,
+        caption: text || `📎 ${cleanFilename}`,
+        parse_mode: 'HTML',
+      });
+
+      this.logger.log(`Sent ${mediaType} message to ${chatId}`);
+    } catch (error) {
+      this.logger.error(`Failed to send media message to ${chatId}:`, error.response?.data || error.message);
+      
+      // Fallback to text message with clean filename
+      try {
+        const urlParts = mediaUrl.split('/');
+        const encodedFilename = urlParts[urlParts.length - 1];
+        
+        // Декодируем URL-encoded строку
+        const decodedFilename = decodeURIComponent(encodedFilename);
+        
+        // Убираем UUID префикс (формат: uuid-filename.ext)
+        const cleanFilename = decodedFilename.includes('-') 
+          ? decodedFilename.substring(decodedFilename.indexOf('-') + 1) 
+          : decodedFilename;
+        
+        const fallbackText = text 
+          ? `${text}\n\n📎 Файл: ${cleanFilename}\n\n⚠️ Для получения файла используйте ссылку:\n${mediaUrl}`
+          : `📎 Отправлен файл: ${cleanFilename}\n\n⚠️ Для получения файла используйте ссылку:\n${mediaUrl}`;
+        
+        await this.sendMessage(chatId, fallbackText);
+      } catch (fallbackError) {
+        // Если даже fallback не сработал
+        this.logger.error(`Failed to send fallback message:`, fallbackError);
+        await this.sendMessage(chatId, text || '📎 Отправлен файл');
+      }
     }
   }
 
@@ -1486,6 +1667,63 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Check mandatory channel subscriptions from database
+   * @param userId Telegram user ID
+   * @returns Object with subscribed status and list of unsubscribed channels
+   */
+  async checkMandatoryChannels(userId: string): Promise<{ 
+    allSubscribed: boolean; 
+    unsubscribedChannels: any[];
+  }> {
+    try {
+      const activeChannels = await this.channelsService.findActive();
+      
+      if (activeChannels.length === 0) {
+        return { allSubscribed: true, unsubscribedChannels: [] };
+      }
+
+      const unsubscribedChannels: any[] = [];
+
+      for (const channel of activeChannels) {
+        const isSubscribed = await this.checkChannelSubscription(userId, channel.channel_id);
+        if (!isSubscribed) {
+          unsubscribedChannels.push(channel);
+        }
+      }
+
+      return {
+        allSubscribed: unsubscribedChannels.length === 0,
+        unsubscribedChannels,
+      };
+    } catch (error) {
+      this.logger.error('Error checking mandatory channels:', error);
+      // In case of error, allow action to proceed
+      return { allSubscribed: true, unsubscribedChannels: [] };
+    }
+  }
+
+  /**
+   * Generate inline keyboard with subscription buttons
+   * @param channels Array of channels to subscribe
+   * @param callbackAction Action to perform after subscription (e.g. 'tasks', 'work')
+   * @returns Inline keyboard markup
+   */
+  generateSubscriptionKeyboard(channels: any[], callbackAction: string = 'check_subscription') {
+    const buttons: any[][] = [];
+    
+    // Add channel buttons (with URL)
+    channels.forEach(channel => {
+      const url = channel.url || `https://t.me/${channel.username || channel.channel_id.replace('@', '')}`;
+      buttons.push([{ text: `📢 ${channel.title}`, url }]);
+    });
+
+    // Add confirmation button (with callback_data)
+    buttons.push([{ text: '✅ Я подписался', callback_data: callbackAction }]);
+
+    return { inline_keyboard: buttons };
+  }
+
+  /**
    * Check if user is subscribed to a Telegram channel
    * @param userId Telegram user ID (without chatId prefix)
    * @param channelId Channel ID (e.g. @channel_name or -1001234567890)
@@ -1493,6 +1731,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
    */
   private async checkChannelSubscription(userId: string, channelId: string): Promise<boolean> {
     try {
+      this.logger.debug(`🔍 Checking subscription: user=${userId}, channel=${channelId}`);
+      
       const response = await axios.get(
         `https://api.telegram.org/bot${this.botToken}/getChatMember`,
         {
@@ -1503,24 +1743,31 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         },
       );
 
+      this.logger.debug(`📡 Telegram API response:`, JSON.stringify(response.data, null, 2));
+
       if (response.data.ok) {
         const status = response.data.result.status;
         // User is subscribed if status is: creator, administrator, or member
         const isSubscribed = ['creator', 'administrator', 'member'].includes(status);
         
         this.logger.log(
-          `Subscription check: user ${userId}, channel ${channelId}, status ${status}, subscribed: ${isSubscribed}`,
+          `✅ Subscription check: user ${userId}, channel ${channelId}, status=${status}, subscribed=${isSubscribed}`,
         );
         
         return isSubscribed;
       }
 
       this.logger.warn(
-        `Failed to check subscription: ${response.data.description || 'Unknown error'}`,
+        `⚠️ Failed to check subscription: ${response.data.description || 'Unknown error'}`,
       );
+      this.logger.warn(`Response:`, JSON.stringify(response.data, null, 2));
       return false;
     } catch (error) {
-      this.logger.error(`Error checking channel subscription:`, error.response?.data || error.message);
+      this.logger.error(`❌ Error checking channel subscription for user ${userId}, channel ${channelId}:`);
+      this.logger.error(`Error details:`, error.response?.data || error.message);
+      if (error.response?.data) {
+        this.logger.error(`Full error response:`, JSON.stringify(error.response.data, null, 2));
+      }
       // In case of error (e.g. bot is not admin in channel), return false
       return false;
     }
