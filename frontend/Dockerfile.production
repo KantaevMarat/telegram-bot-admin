@@ -1,35 +1,8 @@
 # Production Dockerfile for Frontend
-FROM node:20-alpine AS builder
-
-WORKDIR /app
-
-# Build arguments
-ARG VITE_API_URL
-ARG VITE_TELEGRAM_BOT_USERNAME
-
-# Set environment variables for build
-ENV VITE_API_URL=$VITE_API_URL
-ENV VITE_TELEGRAM_BOT_USERNAME=$VITE_TELEGRAM_BOT_USERNAME
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm ci --no-optional || npm install --no-optional
-
-# Copy source code
-COPY . .
-
-# Build application
-RUN npm run build
-
-# ================================
-# Production Stage with Nginx
-# ================================
 FROM nginx:alpine AS production
 
-# Copy built files from builder
-COPY --from=builder /app/dist /usr/share/nginx/html
+# Copy built files (already built locally)
+COPY dist /usr/share/nginx/html
 
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
