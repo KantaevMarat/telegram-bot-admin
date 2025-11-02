@@ -24,12 +24,12 @@ cd "$PROJECT_DIR"
 
 # Backup PostgreSQL
 echo "💾 Backing up PostgreSQL database..."
-docker-compose -f docker-compose.production.yml exec -T postgres pg_dump -U telegram_bot_user telegram_bot_db | gzip > "$BACKUP_DIR/db_$DATE.sql.gz"
+docker compose -f docker compose.production.yml exec -T postgres pg_dump -U telegram_bot_user telegram_bot_db | gzip > "$BACKUP_DIR/db_$DATE.sql.gz"
 echo -e "${GREEN}✅ Database backup completed${NC}"
 
 # Backup MinIO data
 echo "💾 Backing up MinIO storage..."
-docker-compose -f docker-compose.production.yml exec -T minio tar czf - /data > "$BACKUP_DIR/minio_$DATE.tar.gz"
+docker compose -f docker compose.production.yml exec -T minio tar czf - /data > "$BACKUP_DIR/minio_$DATE.tar.gz"
 echo -e "${GREEN}✅ MinIO backup completed${NC}"
 
 # Backup .env.production (without passwords for security)
