@@ -9,7 +9,11 @@ const getApiUrl = () => {
   // Priority 1: Check environment variable (highest priority)
   // But ignore Docker-internal hostnames when running in browser
   if (import.meta.env.VITE_API_URL) {
-    const envApiUrl = import.meta.env.VITE_API_URL.replace('/api', '') + '/api';
+    // Ensure /api suffix exists
+    let envApiUrl = import.meta.env.VITE_API_URL;
+    if (!envApiUrl.endsWith('/api')) {
+      envApiUrl = envApiUrl + '/api';
+    }
     
     // Check if this is a Docker-internal hostname
     const isDockerInternal = envApiUrl.includes('tg-backend') || 
