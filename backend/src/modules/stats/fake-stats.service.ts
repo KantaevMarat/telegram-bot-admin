@@ -201,6 +201,14 @@ export class FakeStatsService {
       paid_usdt: isNaN(newFakePaid) ? defaultValues.paid_usdt : Math.round(newFakePaid * 100) / 100,
     });
 
+    // Log changes for debugging
+    const onlineChange = ((newFakeStats.online - previousFake.online) / previousFake.online * 100).toFixed(2);
+    const activeChange = ((newFakeStats.active - previousFake.active) / previousFake.active * 100).toFixed(2);
+    const paidChange = ((newFakeStats.paid_usdt - previousFake.paid_usdt) / previousFake.paid_usdt * 100).toFixed(2);
+    
+    this.logger.log(`📊 Previous: online=${previousFake.online}, active=${previousFake.active}, paid=${previousFake.paid_usdt}`);
+    this.logger.log(`📊 New: online=${newFakeStats.online} (${onlineChange}%), active=${newFakeStats.active} (${activeChange}%), paid=${newFakeStats.paid_usdt} (${paidChange}%)`);
+
     await this.fakeStatsRepo.save(newFakeStats);
     this.logger.log(`✅ Fake stats updated: online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);
 
@@ -219,45 +227,57 @@ export class FakeStatsService {
     noiseStdDev: number,
     onlyGrowth = false,
   ): number {
-    // Calculate target range (±maxDeltaPercent from real value)
-    // If realValue is 0 or very small, use previousValue as base for variation
-    const baseValue = realValue > 0 ? realValue : previousValue;
-    const targetMin = baseValue * (1 - maxDeltaPercent / 100);
-    const targetMax = baseValue * (1 + maxDeltaPercent / 100);
-
-    // Generate trend (more significant drift towards target)
-    const trend = this.randomUniform(trendMin, trendMax);
-    const target = (targetMin + targetMax) / 2;
+    // For fake stats, always use previousValue as base for variation
+    // Real value is only used as a reference, not as the base
+    const baseValue = previousValue;
     
-    // Increased drift speed for more noticeable changes (was 0.1, now 0.3)
-    const drift = (target - previousValue) * 0.3;
+    // Calculate variation range as percentage of previous value (not real value)
+    // This ensures we always get meaningful variations even when real stats are small
+    const variationPercent = maxDeltaPercent / 100;
+    const targetMin = baseValue * (1 - variationPercent);
+    const targetMax = baseValue * (1 + variationPercent);
+
+    // Generate trend (more significant drift)
+    const trend = this.randomUniform(trendMin, trendMax);
+    
+    // Add significant random variation (±5-15% of previous value)
+    const randomVariation = previousValue * this.randomUniform(-0.15, 0.15);
     
     // Add more significant noise
     const noise = this.randomGaussian(0, noiseStdDev * previousValue);
     
-    // Add additional random variation for more noticeable changes (±2-5% of previous value)
-    const additionalVariation = previousValue * this.randomUniform(-0.05, 0.05);
-
-    // Calculate new value
-    let newValue = previousValue + drift + trend * previousValue + noise + additionalVariation;
+    // Calculate new value with multiple sources of variation
+    let newValue = previousValue + trend * previousValue + randomVariation + noise;
 
     // Clamp to target range
     newValue = this.clamp(newValue, targetMin, targetMax);
 
-    // Ensure minimum change of at least 1-3% to make it noticeable
-    const minChange = previousValue * 0.01;
+    // ALWAYS ensure minimum change of at least 3-8% to make it VERY noticeable
+    const minChange = previousValue * 0.03; // 3% minimum
     const actualChange = Math.abs(newValue - previousValue);
+    
     if (actualChange < minChange && !onlyGrowth) {
-      // Force a noticeable change
+      // Force a noticeable change (3-8% of previous value)
       const direction = Math.random() > 0.5 ? 1 : -1;
-      newValue = previousValue + direction * this.randomUniform(minChange, minChange * 3);
+      const forcedChange = previousValue * this.randomUniform(0.03, 0.08);
+      newValue = previousValue + direction * forcedChange;
       newValue = this.clamp(newValue, targetMin, targetMax);
     }
 
     // If only growth, ensure it's not less than previous
     if (onlyGrowth && newValue < previousValue) {
-      newValue = previousValue * (1 + Math.abs(noise) * 0.5 + Math.random() * 0.02); // Small growth
+      // Force growth (3-8% increase)
+      const growth = previousValue * this.randomUniform(0.03, 0.08);
+      newValue = previousValue + growth;
       newValue = this.clamp(newValue, previousValue, targetMax);
+    }
+
+    // Final check: if change is still too small, force a larger change
+    const finalChange = Math.abs(newValue - previousValue);
+    if (finalChange < previousValue * 0.02 && !onlyGrowth) {
+      const direction = Math.random() > 0.5 ? 1 : -1;
+      newValue = previousValue * (1 + direction * this.randomUniform(0.02, 0.06));
+      newValue = this.clamp(newValue, targetMin, targetMax);
     }
 
     return newValue;

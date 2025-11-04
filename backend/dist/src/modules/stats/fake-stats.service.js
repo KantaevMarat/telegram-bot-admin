@@ -135,31 +135,43 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
             active: Math.round(isNaN(newFakeActive) ? defaultValues.active : newFakeActive),
             paid_usdt: isNaN(newFakePaid) ? defaultValues.paid_usdt : Math.round(newFakePaid * 100) / 100,
         });
+        const onlineChange = ((newFakeStats.online - previousFake.online) / previousFake.online * 100).toFixed(2);
+        const activeChange = ((newFakeStats.active - previousFake.active) / previousFake.active * 100).toFixed(2);
+        const paidChange = ((newFakeStats.paid_usdt - previousFake.paid_usdt) / previousFake.paid_usdt * 100).toFixed(2);
+        this.logger.log(`📊 Previous: online=${previousFake.online}, active=${previousFake.active}, paid=${previousFake.paid_usdt}`);
+        this.logger.log(`📊 New: online=${newFakeStats.online} (${onlineChange}%), active=${newFakeStats.active} (${activeChange}%), paid=${newFakeStats.paid_usdt} (${paidChange}%)`);
         await this.fakeStatsRepo.save(newFakeStats);
         this.logger.log(`✅ Fake stats updated: online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);
         return newFakeStats;
     }
     smoothRandomWalk(previousValue, realValue, maxDeltaPercent, trendMin, trendMax, noiseStdDev, onlyGrowth = false) {
-        const baseValue = realValue > 0 ? realValue : previousValue;
-        const targetMin = baseValue * (1 - maxDeltaPercent / 100);
-        const targetMax = baseValue * (1 + maxDeltaPercent / 100);
+        const baseValue = previousValue;
+        const variationPercent = maxDeltaPercent / 100;
+        const targetMin = baseValue * (1 - variationPercent);
+        const targetMax = baseValue * (1 + variationPercent);
         const trend = this.randomUniform(trendMin, trendMax);
-        const target = (targetMin + targetMax) / 2;
-        const drift = (target - previousValue) * 0.3;
+        const randomVariation = previousValue * this.randomUniform(-0.15, 0.15);
         const noise = this.randomGaussian(0, noiseStdDev * previousValue);
-        const additionalVariation = previousValue * this.randomUniform(-0.05, 0.05);
-        let newValue = previousValue + drift + trend * previousValue + noise + additionalVariation;
+        let newValue = previousValue + trend * previousValue + randomVariation + noise;
         newValue = this.clamp(newValue, targetMin, targetMax);
-        const minChange = previousValue * 0.01;
+        const minChange = previousValue * 0.03;
         const actualChange = Math.abs(newValue - previousValue);
         if (actualChange < minChange && !onlyGrowth) {
             const direction = Math.random() > 0.5 ? 1 : -1;
-            newValue = previousValue + direction * this.randomUniform(minChange, minChange * 3);
+            const forcedChange = previousValue * this.randomUniform(0.03, 0.08);
+            newValue = previousValue + direction * forcedChange;
             newValue = this.clamp(newValue, targetMin, targetMax);
         }
         if (onlyGrowth && newValue < previousValue) {
-            newValue = previousValue * (1 + Math.abs(noise) * 0.5 + Math.random() * 0.02);
+            const growth = previousValue * this.randomUniform(0.03, 0.08);
+            newValue = previousValue + growth;
             newValue = this.clamp(newValue, previousValue, targetMax);
+        }
+        const finalChange = Math.abs(newValue - previousValue);
+        if (finalChange < previousValue * 0.02 && !onlyGrowth) {
+            const direction = Math.random() > 0.5 ? 1 : -1;
+            newValue = previousValue * (1 + direction * this.randomUniform(0.02, 0.06));
+            newValue = this.clamp(newValue, targetMin, targetMax);
         }
         return newValue;
     }
