@@ -103,14 +103,14 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
         this.logger.log(`Previous fake stats: online=${previousFake.online}, active=${previousFake.active}`);
         if (realStats.users_count === 0) {
             const defaultValues = {
-                online: 1250 + Math.floor(Math.random() * 100 - 50),
-                active: 8420 + Math.floor(Math.random() * 200 - 100),
-                paid_usdt: 45678.5 + (Math.random() * 1000 - 500),
+                online: 1250 + Math.floor(Math.random() * 600 - 300),
+                active: 8420 + Math.floor(Math.random() * 2000 - 1000),
+                paid_usdt: 45678.5 + (Math.random() * 6000 - 3000),
             };
             const newFakeStats = this.fakeStatsRepo.create({
-                online: Math.max(1000, defaultValues.online),
+                online: Math.max(800, defaultValues.online),
                 active: Math.max(5000, defaultValues.active),
-                paid_usdt: Math.max(40000, Math.round(defaultValues.paid_usdt * 100) / 100),
+                paid_usdt: Math.max(35000, Math.round(defaultValues.paid_usdt * 100) / 100),
             });
             await this.fakeStatsRepo.save(newFakeStats);
             this.logger.log(`✅ Fake stats updated (default values): online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);

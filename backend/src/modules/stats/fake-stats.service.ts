@@ -129,18 +129,18 @@ export class FakeStatsService {
     const previousFake = await this.getLatestFakeStats();
     this.logger.log(`Previous fake stats: online=${previousFake.online}, active=${previousFake.active}`);
 
-    // If database is empty (no real users), use default values with small random variations
+    // If database is empty (no real users), use default values with large random variations
     if (realStats.users_count === 0) {
       const defaultValues = {
-        online: 1250 + Math.floor(Math.random() * 100 - 50), // ±50
-        active: 8420 + Math.floor(Math.random() * 200 - 100), // ±100
-        paid_usdt: 45678.5 + (Math.random() * 1000 - 500), // ±500
+        online: 1250 + Math.floor(Math.random() * 600 - 300), // ±300 (950-1550)
+        active: 8420 + Math.floor(Math.random() * 2000 - 1000), // ±1000 (7420-9420)
+        paid_usdt: 45678.5 + (Math.random() * 6000 - 3000), // ±3000 (42678-48678)
       };
 
       const newFakeStats = this.fakeStatsRepo.create({
-        online: Math.max(1000, defaultValues.online), // minimum 1000
+        online: Math.max(800, defaultValues.online), // minimum 800
         active: Math.max(5000, defaultValues.active), // minimum 5000
-        paid_usdt: Math.max(40000, Math.round(defaultValues.paid_usdt * 100) / 100), // minimum 40000
+        paid_usdt: Math.max(35000, Math.round(defaultValues.paid_usdt * 100) / 100), // minimum 35000
       });
 
       await this.fakeStatsRepo.save(newFakeStats);
