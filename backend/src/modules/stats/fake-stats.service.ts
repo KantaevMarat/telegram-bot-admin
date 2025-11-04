@@ -212,15 +212,27 @@ export class FakeStatsService {
       true, // Only allow growth for paid stats
     );
 
+    // Log paid_usdt calculation details for debugging
+    const basePaidNum = Number(basePaid);
+    const newFakePaidNum = Number(newFakePaid);
+    const paidChangeBeforeRound = newFakePaidNum - basePaidNum;
+    const paidChangePercentBeforeRound = basePaidNum > 0 ? (paidChangeBeforeRound / basePaidNum * 100).toFixed(4) : '0.00';
+    this.logger.log(`💰 paid_usdt: base=${basePaidNum.toFixed(2)}, newBeforeRound=${newFakePaidNum.toFixed(4)}, change=${paidChangeBeforeRound.toFixed(4)} (${paidChangePercentBeforeRound}%)`);
+
     const newFakeStats = this.fakeStatsRepo.create({
       online: Math.round(isNaN(newFakeOnline) ? defaultValues.online : newFakeOnline),
       active: Math.round(isNaN(newFakeActive) ? defaultValues.active : newFakeActive),
       paid_usdt: isNaN(newFakePaid) ? defaultValues.paid_usdt : Math.round(newFakePaid * 100) / 100,
     });
 
+    // Log after rounding
+    const paidAfterRound = Number(newFakeStats.paid_usdt);
+    const paidChangeAfterRound = paidAfterRound - basePaidNum;
+    const paidChangePercentAfterRound = basePaidNum > 0 ? (paidChangeAfterRound / basePaidNum * 100).toFixed(4) : '0.00';
+    this.logger.log(`💰 paid_usdt after round: ${paidAfterRound.toFixed(2)}, change=${paidChangeAfterRound.toFixed(2)} (${paidChangePercentAfterRound}%)`);
+
     // Log changes for debugging (using base values for percentage calculation)
-    // Ensure all values are numbers
-    const basePaidNum = Number(basePaid);
+    // Ensure all values are numbers (basePaidNum already declared above)
     const previousPaidNum = Number(previousFake.paid_usdt);
     const newPaidNum = Number(newFakeStats.paid_usdt);
     
@@ -321,8 +333,12 @@ export class FakeStatsService {
       const absoluteMinChange = previousValue * 0.02; // 2% absolute minimum
       if (finalChangeForGrowth < absoluteMinChange) {
         // Force minimum growth
-        newValue = previousValue * 1.02; // At least 2% growth
-        newValue = this.clamp(newValue, previousValue, targetMax);
+        const forcedValue = previousValue * 1.02; // At least 2% growth
+        newValue = this.clamp(forcedValue, previousValue, targetMax);
+        // Log if we had to force growth
+        if (Math.abs(newValue - forcedValue) > 0.01) {
+          // This would indicate targetMax was too restrictive
+        }
       }
     }
 

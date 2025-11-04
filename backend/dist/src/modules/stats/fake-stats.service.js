@@ -140,12 +140,20 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
         const paidTrendMin = Math.random() < 0.7 ? 0 : trendMin;
         const paidTrendMax = trendMax * 2;
         const newFakePaid = this.smoothRandomWalk(basePaid, realStats.total_earned, maxDeltaPercent, paidTrendMin, paidTrendMax, noiseStdDev * 1.2, true);
+        const basePaidNum = Number(basePaid);
+        const newFakePaidNum = Number(newFakePaid);
+        const paidChangeBeforeRound = newFakePaidNum - basePaidNum;
+        const paidChangePercentBeforeRound = basePaidNum > 0 ? (paidChangeBeforeRound / basePaidNum * 100).toFixed(4) : '0.00';
+        this.logger.log(`💰 paid_usdt: base=${basePaidNum.toFixed(2)}, newBeforeRound=${newFakePaidNum.toFixed(4)}, change=${paidChangeBeforeRound.toFixed(4)} (${paidChangePercentBeforeRound}%)`);
         const newFakeStats = this.fakeStatsRepo.create({
             online: Math.round(isNaN(newFakeOnline) ? defaultValues.online : newFakeOnline),
             active: Math.round(isNaN(newFakeActive) ? defaultValues.active : newFakeActive),
             paid_usdt: isNaN(newFakePaid) ? defaultValues.paid_usdt : Math.round(newFakePaid * 100) / 100,
         });
-        const basePaidNum = Number(basePaid);
+        const paidAfterRound = Number(newFakeStats.paid_usdt);
+        const paidChangeAfterRound = paidAfterRound - basePaidNum;
+        const paidChangePercentAfterRound = basePaidNum > 0 ? (paidChangeAfterRound / basePaidNum * 100).toFixed(4) : '0.00';
+        this.logger.log(`💰 paid_usdt after round: ${paidAfterRound.toFixed(2)}, change=${paidChangeAfterRound.toFixed(2)} (${paidChangePercentAfterRound}%)`);
         const previousPaidNum = Number(previousFake.paid_usdt);
         const newPaidNum = Number(newFakeStats.paid_usdt);
         const onlineChangePercent = baseOnline > 0 ? ((newFakeStats.online - baseOnline) / baseOnline * 100).toFixed(2) : '0.00';
@@ -202,8 +210,10 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
             const finalChangeForGrowth = newValue - previousValue;
             const absoluteMinChange = previousValue * 0.02;
             if (finalChangeForGrowth < absoluteMinChange) {
-                newValue = previousValue * 1.02;
-                newValue = this.clamp(newValue, previousValue, targetMax);
+                const forcedValue = previousValue * 1.02;
+                newValue = this.clamp(forcedValue, previousValue, targetMax);
+                if (Math.abs(newValue - forcedValue) > 0.01) {
+                }
             }
         }
         return newValue;
