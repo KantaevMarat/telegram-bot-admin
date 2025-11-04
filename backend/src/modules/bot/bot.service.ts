@@ -88,7 +88,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.logger.log('✅ BotService subscribed to sync events');
 
     // Start polling for development
-    if (process.env.NODE_ENV === 'development') {
+    if (this.botToken) { const webhookUrl = this.configService.get(`'TELEGRAM_WEBHOOK_URL'`); if (!webhookUrl || process.env.NODE_ENV === `'development'`) {
       this.startPolling();
     }
   }
