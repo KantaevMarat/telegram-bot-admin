@@ -145,12 +145,15 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
             active: Math.round(isNaN(newFakeActive) ? defaultValues.active : newFakeActive),
             paid_usdt: isNaN(newFakePaid) ? defaultValues.paid_usdt : Math.round(newFakePaid * 100) / 100,
         });
+        const basePaidNum = Number(basePaid);
+        const previousPaidNum = Number(previousFake.paid_usdt);
+        const newPaidNum = Number(newFakeStats.paid_usdt);
         const onlineChangePercent = baseOnline > 0 ? ((newFakeStats.online - baseOnline) / baseOnline * 100).toFixed(2) : '0.00';
         const activeChangePercent = baseActive > 0 ? ((newFakeStats.active - baseActive) / baseActive * 100).toFixed(2) : '0.00';
-        const paidChangePercent = basePaid > 0 ? ((newFakeStats.paid_usdt - basePaid) / basePaid * 100).toFixed(2) : '0.00';
-        this.logger.log(`📊 Base (used): online=${baseOnline}, active=${baseActive}, paid=${basePaid.toFixed(2)}`);
-        this.logger.log(`📊 Previous (from DB): online=${previousFake.online}, active=${previousFake.active}, paid=${previousFake.paid_usdt.toFixed(2)}`);
-        this.logger.log(`📊 New: online=${newFakeStats.online} (${onlineChangePercent}%), active=${newFakeStats.active} (${activeChangePercent}%), paid=${newFakeStats.paid_usdt.toFixed(2)} (${paidChangePercent}%)`);
+        const paidChangePercent = basePaidNum > 0 ? ((newPaidNum - basePaidNum) / basePaidNum * 100).toFixed(2) : '0.00';
+        this.logger.log(`📊 Base (used): online=${baseOnline}, active=${baseActive}, paid=${basePaidNum.toFixed(2)}`);
+        this.logger.log(`📊 Previous (from DB): online=${previousFake.online}, active=${previousFake.active}, paid=${previousPaidNum.toFixed(2)}`);
+        this.logger.log(`📊 New: online=${newFakeStats.online} (${onlineChangePercent}%), active=${newFakeStats.active} (${activeChangePercent}%), paid=${newPaidNum.toFixed(2)} (${paidChangePercent}%)`);
         await this.fakeStatsRepo.save(newFakeStats);
         this.logger.log(`✅ Fake stats updated: online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);
         return newFakeStats;
