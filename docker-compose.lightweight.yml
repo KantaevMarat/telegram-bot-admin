@@ -9,6 +9,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-tg_app}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      TZ: Europe/Moscow
+      PGTZ: Europe/Moscow
     ports:
       - "15432:5432"
     volumes:
@@ -80,6 +82,7 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-telegram-media}
+      TZ: Europe/Moscow
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     volumes:
