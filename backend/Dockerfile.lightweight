@@ -1,0 +1,33 @@
+# Lightweight Production Dockerfile
+# Uses pre-built files from git (no build on server)
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install ONLY production dependencies (no build tools)
+RUN npm install --omit=dev --legacy-peer-deps && \
+    npm cache clean --force
+
+# Copy pre-built dist folder
+COPY dist ./dist
+
+# Copy source files (needed for TypeORM migrations)
+COPY src ./src
+
+# Create uploads directory
+RUN mkdir -p /app/uploads
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
+
+# Start application using pre-built files
+CMD ["node", "dist/src/main.js"]
+
