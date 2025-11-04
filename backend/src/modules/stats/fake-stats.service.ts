@@ -227,7 +227,7 @@ export class FakeStatsService {
 
     const totalEarnedResult = await this.userRepo
       .createQueryBuilder('user')
-      .select('COALESCE(SUM(user.earned), 0)', 'total')
+      .select('COALESCE(SUM(user.total_earned), 0)', 'total')
       .getRawOne();
 
     const totalEarned = parseFloat(totalEarnedResult?.total || '0');
