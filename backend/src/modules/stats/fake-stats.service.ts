@@ -168,10 +168,17 @@ export class FakeStatsService {
       true, // Only allow growth for paid stats
     );
 
+    // Use default values if result is NaN (happens when database is empty)
+    const defaultValues = {
+      online: 1250,
+      active: 8420,
+      paid_usdt: 45678.5,
+    };
+
     const newFakeStats = this.fakeStatsRepo.create({
-      online: Math.round(newFakeOnline),
-      active: Math.round(newFakeActive),
-      paid_usdt: Math.round(newFakePaid * 100) / 100,
+      online: Math.round(isNaN(newFakeOnline) ? defaultValues.online : newFakeOnline),
+      active: Math.round(isNaN(newFakeActive) ? defaultValues.active : newFakeActive),
+      paid_usdt: isNaN(newFakePaid) ? defaultValues.paid_usdt : Math.round(newFakePaid * 100) / 100,
     });
 
     await this.fakeStatsRepo.save(newFakeStats);
