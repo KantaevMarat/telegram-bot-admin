@@ -24,11 +24,23 @@ let AuthController = AuthController_1 = class AuthController {
         this.logger = new common_1.Logger(AuthController_1.name);
     }
     async loginAdmin(loginDto) {
+        this.logger.log(`📥 Admin login request received`);
+        this.logger.debug(`initData present: ${!!loginDto.initData}`);
+        this.logger.debug(`initData length: ${loginDto.initData?.length || 0}`);
+        this.logger.debug(`initData preview: ${loginDto.initData?.substring(0, 50) || 'N/A'}...`);
         if (!loginDto.initData || loginDto.initData === 'dev') {
-            this.logger.log('Development mode login detected');
+            this.logger.log('🔧 Development mode login detected');
             return await this.authService.devLogin(697184435);
         }
-        return await this.authService.loginAdmin(loginDto.initData);
+        try {
+            const result = await this.authService.loginAdmin(loginDto.initData);
+            this.logger.log('✅ Admin login successful');
+            return result;
+        }
+        catch (error) {
+            this.logger.error('❌ Admin login failed:', error.message);
+            throw error;
+        }
     }
     async loginUser(loginDto) {
         return await this.authService.loginUser(loginDto.initData);

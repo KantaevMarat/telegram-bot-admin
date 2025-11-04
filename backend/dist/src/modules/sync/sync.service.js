@@ -30,6 +30,7 @@ let SyncService = SyncService_1 = class SyncService {
     async connectRedis() {
         const redisHost = this.configService.get('REDIS_HOST', 'localhost');
         const redisPort = this.configService.get('REDIS_PORT', 6379);
+        const redisPassword = this.configService.get('REDIS_PASSWORD');
         this.logger.log(`Connecting to Redis at ${redisHost}:${redisPort}...`);
         try {
             this.publisherClient = (0, redis_1.createClient)({
@@ -38,6 +39,7 @@ let SyncService = SyncService_1 = class SyncService {
                     port: redisPort,
                     connectTimeout: 5000,
                 },
+                password: redisPassword,
             });
             this.subscriberClient = (0, redis_1.createClient)({
                 socket: {
@@ -45,6 +47,7 @@ let SyncService = SyncService_1 = class SyncService {
                     port: redisPort,
                     connectTimeout: 5000,
                 },
+                password: redisPassword,
             });
             this.publisherClient.on('error', (err) => {
                 this.logger.warn('Redis Publisher error:', err.message);

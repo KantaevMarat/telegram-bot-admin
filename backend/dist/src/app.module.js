@@ -17,7 +17,6 @@ const admin_module_1 = require("./modules/admin/admin.module");
 const bot_module_1 = require("./modules/bot/bot.module");
 const users_module_1 = require("./modules/users/users.module");
 const stats_module_1 = require("./modules/stats/stats.module");
-const media_module_1 = require("./modules/media/media.module");
 const messages_module_1 = require("./modules/messages/messages.module");
 const buttons_module_1 = require("./modules/buttons/buttons.module");
 const scenarios_module_1 = require("./modules/scenarios/scenarios.module");
@@ -51,6 +50,7 @@ exports.AppModule = AppModule = __decorate([
                     connection: {
                         host: configService.get('REDIS_HOST', 'localhost'),
                         port: configService.get('REDIS_PORT', 6379),
+                        password: configService.get('REDIS_PASSWORD'),
                     },
                 }),
                 inject: [config_1.ConfigService],
@@ -61,7 +61,6 @@ exports.AppModule = AppModule = __decorate([
             bot_module_1.BotModule,
             users_module_1.UsersModule,
             stats_module_1.StatsModule,
-            media_module_1.MediaModule,
             messages_module_1.MessagesModule,
             buttons_module_1.ButtonsModule,
             scenarios_module_1.ScenariosModule,

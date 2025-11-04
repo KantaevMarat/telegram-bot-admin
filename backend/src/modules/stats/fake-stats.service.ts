@@ -227,7 +227,7 @@ export class FakeStatsService {
 
     const totalEarnedResult = await this.userRepo
       .createQueryBuilder('user')
-      .select('COALESCE(SUM(user.total_earned), 0)', 'total')
+      .select('COALESCE(SUM(user.earned), 0)', 'total')
       .getRawOne();
 
     const totalEarned = parseFloat(totalEarnedResult?.total || '0');
@@ -273,4 +273,20 @@ export class FakeStatsService {
   private clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
   }
+}    // Box-Muller requires u1 > 0
+    while (u1 <= Number.EPSILON) {
+      u1 = Math.random();
+    }
+    
+    const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    return z0 * stdDev + mean;
+  }
+
+  /**
+   * Utility: Clamp value between min and max
+   */
+  private clamp(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
+  }
 }
+
