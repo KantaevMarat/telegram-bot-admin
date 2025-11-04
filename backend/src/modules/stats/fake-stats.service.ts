@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { FakeStats } from '../../entities/fake-stats.entity';
 import { RealStatsSnapshot } from '../../entities/real-stats-snapshot.entity';
@@ -22,25 +22,27 @@ export class FakeStatsService {
   ) {}
 
   /**
-   * Cron job that runs every 4 hours to update fake statistics
+   * Cron job that runs every hour to update fake statistics
    */
-  @Cron('0 * * * *') // Every hour
-  async updateFakeStatsCron() {
+  @Cron('0 * * * *')
+  async updateFakeStatsCron(): Promise<void> {
     this.logger.log('🔄 Running fake stats update (cron)...');
-    await this.generateAndSaveFakeStats();
+    try {
+      await this.generateAndSaveFakeStats();
+    } catch (error) {
+      this.logger.error('❌ Error updating fake stats:', error);
+    }
   }
 
   /**
-   * Manual trigger for fake stats regeneration
+   * Manually regenerate fake stats
    */
-  async regenerateFakeStats() {
+  async regenerateFakeStats(): Promise<FakeStats> {
     try {
       this.logger.log('🔄 Manually regenerating fake stats...');
-      const result = await this.generateAndSaveFakeStats();
-      this.logger.log('✅ Fake stats regenerated successfully');
-      return result;
+      return await this.generateAndSaveFakeStats();
     } catch (error) {
-      this.logger.error('❌ Error in regenerateFakeStats:', error.message);
+      this.logger.error('❌ Error regenerating fake stats:', error);
       this.logger.error('Stack trace:', error.stack);
       throw error;
     }
@@ -75,19 +77,39 @@ export class FakeStatsService {
   }
 
   /**
-   * Initialize fake stats based on real stats
+   * Initialize fake stats with default values if database is empty
    */
   private async initializeFakeStats(): Promise<FakeStats> {
     const realStats = await this.getRealStats();
 
+    // Use default values if database is empty (new project)
+    const defaultValues = {
+      online: 1250,
+      active: 8420,
+      paid_usdt: 45678.5,
+    };
+
+    // If real stats are empty, use default values; otherwise calculate from real stats
+    const online = realStats.users_count > 0
+      ? Math.round(realStats.users_count * 0.8) // 80% of users "online"
+      : defaultValues.online;
+    
+    const active = realStats.users_count > 0
+      ? Math.round(realStats.users_count * 1.2) // 120% to show growth
+      : defaultValues.active;
+    
+    const paid_usdt = realStats.total_earned > 0
+      ? realStats.total_earned * 1.15 // 15% more to look impressive
+      : defaultValues.paid_usdt;
+
     const fakeStats = this.fakeStatsRepo.create({
-      online: Math.round(realStats.users_count * 0.8), // 80% of users "online"
-      active: Math.round(realStats.users_count * 1.2), // 120% to show growth
-      paid_usdt: realStats.total_earned * 1.15, // 15% more to look impressive
+      online,
+      active,
+      paid_usdt,
     });
 
     await this.fakeStatsRepo.save(fakeStats);
-    this.logger.log('✅ Initialized fake stats');
+    this.logger.log('✅ Initialized fake stats', { online, active, paid_usdt });
 
     return fakeStats;
   }
@@ -149,21 +171,17 @@ export class FakeStatsService {
     const newFakeStats = this.fakeStatsRepo.create({
       online: Math.round(newFakeOnline),
       active: Math.round(newFakeActive),
-      paid_usdt: Math.round(newFakePaid * 100) / 100, // Round to 2 decimals
+      paid_usdt: Math.round(newFakePaid * 100) / 100,
     });
 
     await this.fakeStatsRepo.save(newFakeStats);
-
-    this.logger.log(
-      `✅ Fake stats updated: online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`,
-    );
+    this.logger.log(`✅ Fake stats updated: online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);
 
     return newFakeStats;
   }
 
   /**
-   * Smooth random walk algorithm
-   * Formula: new_value = clamp(previous * (1 + drift + noise + seasonal), min, max)
+   * Smooth random walk algorithm for generating realistic stats progression
    */
   private smoothRandomWalk(
     previousValue: number,
@@ -174,117 +192,83 @@ export class FakeStatsService {
     noiseStdDev: number,
     onlyGrowth = false,
   ): number {
-    // Handle edge cases: if real value is 0 or very small, use small default
-    if (realValue <= 0) {
-      realValue = 10; // Default minimum value
-    }
-    
-    // If previous value is 0 or very small, initialize it based on real value
-    if (previousValue <= 0) {
-      previousValue = realValue * 0.8; // Start at 80% of real value
-    }
+    // Calculate target range (±maxDeltaPercent from real value)
+    const targetMin = realValue * (1 - maxDeltaPercent / 100);
+    const targetMax = realValue * (1 + maxDeltaPercent / 100);
 
-    // Random drift (trend component)
-    const drift = this.randomUniform(trendMin, trendMax);
+    // Generate trend (slight drift towards target)
+    const trend = this.randomUniform(trendMin, trendMax);
+    const target = (targetMin + targetMax) / 2;
+    const drift = (target - previousValue) * 0.1; // Slow drift towards target
 
-    // Gaussian noise
-    const noise = this.randomGaussian(0, noiseStdDev);
-
-    // Seasonal component (sin wave based on hour of day)
-    const hour = new Date().getHours();
-    const seasonal = Math.sin((hour * Math.PI) / 12) * 0.01; // ±1% seasonal variation
+    // Add noise
+    const noise = this.randomGaussian(0, noiseStdDev * previousValue);
 
     // Calculate new value
-    let multiplier = 1 + drift + noise + seasonal;
+    let newValue = previousValue + drift + trend * previousValue + noise;
 
-    // If only growth is allowed, ensure multiplier >= 1
-    if (onlyGrowth && multiplier < 1) {
-      multiplier = 1 + Math.abs(drift) * 0.5 + Math.abs(noise) * 0.5;
-    }
+    // Clamp to target range
+    newValue = this.clamp(newValue, targetMin, targetMax);
 
-    let newValue = previousValue * multiplier;
-
-    // Apply bounds: stay within ±maxDeltaPercent of real value
-    const minBound = realValue * (1 - maxDeltaPercent / 100);
-    const maxBound = realValue * (1 + maxDeltaPercent / 100);
-
-    newValue = this.clamp(newValue, minBound, maxBound);
-
-    // Final safety check: ensure result is a valid number
-    if (isNaN(newValue) || !isFinite(newValue)) {
-      this.logger.warn(`Invalid newValue detected, using realValue instead. Previous: ${previousValue}, Real: ${realValue}`);
-      newValue = realValue;
+    // If only growth, ensure it's not less than previous
+    if (onlyGrowth && newValue < previousValue) {
+      newValue = previousValue * (1 + Math.abs(noise) * 0.5); // Small growth
+      newValue = this.clamp(newValue, previousValue, targetMax);
     }
 
     return newValue;
   }
 
   /**
-   * Get current real statistics
+   * Get real statistics from database
    */
-  private async getRealStats() {
+  private async getRealStats(): Promise<{ users_count: number; total_earned: number }> {
     const usersCount = await this.userRepo.count();
-
-    const totalBalanceResult = await this.userRepo
-      .createQueryBuilder('user')
-      .select('COALESCE(SUM(user.balance_usdt), 0)', 'total')
-      .getRawOne();
 
     const totalEarnedResult = await this.userRepo
       .createQueryBuilder('user')
       .select('COALESCE(SUM(user.total_earned), 0)', 'total')
       .getRawOne();
 
-    const oneDayAgo = new Date();
-    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
-    
-    const activeUsers24h = await this.userRepo
-      .createQueryBuilder('user')
-      .where('user.updated_at > :oneDayAgo', { oneDayAgo })
-      .getCount();
+    const totalEarned = parseFloat(totalEarnedResult?.total || '0');
 
     return {
-      users_count: usersCount || 0,
-      total_balance: parseFloat(totalBalanceResult?.total || '0'),
-      total_earned: parseFloat(totalEarnedResult?.total || '0'),
-      active_users_24h: activeUsers24h || 0,
+      users_count: usersCount,
+      total_earned: totalEarned,
     };
   }
 
   /**
-   * Save real stats snapshot for history
+   * Save snapshot of real stats
    */
-  private async saveRealStatsSnapshot(realStats: any) {
-    const snapshot = this.realStatsRepo.create(realStats);
+  private async saveRealStatsSnapshot(realStats: { users_count: number; total_earned: number }): Promise<void> {
+    const snapshot = this.realStatsRepo.create({
+      users_count: realStats.users_count,
+      total_earned: realStats.total_earned,
+    });
+
     await this.realStatsRepo.save(snapshot);
   }
 
   /**
-   * Utility: Random uniform distribution
+   * Generate uniform random number
    */
   private randomUniform(min: number, max: number): number {
-    return Math.random() * (max - min) + min;
+    return min + Math.random() * (max - min);
   }
 
   /**
-   * Utility: Random Gaussian (normal) distribution (Box-Muller transform)
+   * Generate Gaussian (normal) random number using Box-Muller transform
    */
   private randomGaussian(mean: number, stdDev: number): number {
-    // Ensure u1 and u2 are never exactly 0 (would cause log(0) = -Infinity)
-    let u1 = Math.random();
-    let u2 = Math.random();
-    
-    // Box-Muller requires u1 > 0
-    while (u1 <= Number.EPSILON) {
-      u1 = Math.random();
-    }
-    
+    const u1 = Math.random();
+    const u2 = Math.random();
     const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-    return z0 * stdDev + mean;
+    return mean + z0 * stdDev;
   }
 
   /**
-   * Utility: Clamp value between min and max
+   * Clamp value between min and max
    */
   private clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
