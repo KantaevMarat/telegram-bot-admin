@@ -116,15 +116,15 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
             this.logger.log(`✅ Fake stats updated (default values): online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);
             return newFakeStats;
         }
-        const maxDeltaPercent = this.configService.get('FAKE_STATS_MAX_DELTA_PERCENT', 15);
-        const trendMin = this.configService.get('FAKE_STATS_TREND_MIN', -0.02);
-        const trendMax = this.configService.get('FAKE_STATS_TREND_MAX', 0.03);
-        const noiseStdDev = this.configService.get('FAKE_STATS_NOISE_STDDEV', 0.01);
+        const maxDeltaPercent = this.configService.get('FAKE_STATS_MAX_DELTA_PERCENT', 30);
+        const trendMin = this.configService.get('FAKE_STATS_TREND_MIN', -0.08);
+        const trendMax = this.configService.get('FAKE_STATS_TREND_MAX', 0.12);
+        const noiseStdDev = this.configService.get('FAKE_STATS_NOISE_STDDEV', 0.05);
         const newFakeOnline = this.smoothRandomWalk(previousFake.online, realStats.users_count, maxDeltaPercent, trendMin, trendMax, noiseStdDev);
         const newFakeActive = this.smoothRandomWalk(previousFake.active, realStats.users_count, maxDeltaPercent, trendMin, trendMax, noiseStdDev);
         const paidTrendMin = Math.random() < 0.7 ? 0 : trendMin;
-        const paidTrendMax = trendMax * 1.5;
-        const newFakePaid = this.smoothRandomWalk(previousFake.paid_usdt, realStats.total_earned, maxDeltaPercent, paidTrendMin, paidTrendMax, noiseStdDev * 0.5, true);
+        const paidTrendMax = trendMax * 2;
+        const newFakePaid = this.smoothRandomWalk(previousFake.paid_usdt, realStats.total_earned, maxDeltaPercent, paidTrendMin, paidTrendMax, noiseStdDev * 1.2, true);
         const defaultValues = {
             online: 1250,
             active: 8420,
@@ -140,16 +140,25 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
         return newFakeStats;
     }
     smoothRandomWalk(previousValue, realValue, maxDeltaPercent, trendMin, trendMax, noiseStdDev, onlyGrowth = false) {
-        const targetMin = realValue * (1 - maxDeltaPercent / 100);
-        const targetMax = realValue * (1 + maxDeltaPercent / 100);
+        const baseValue = realValue > 0 ? realValue : previousValue;
+        const targetMin = baseValue * (1 - maxDeltaPercent / 100);
+        const targetMax = baseValue * (1 + maxDeltaPercent / 100);
         const trend = this.randomUniform(trendMin, trendMax);
         const target = (targetMin + targetMax) / 2;
-        const drift = (target - previousValue) * 0.1;
+        const drift = (target - previousValue) * 0.3;
         const noise = this.randomGaussian(0, noiseStdDev * previousValue);
-        let newValue = previousValue + drift + trend * previousValue + noise;
+        const additionalVariation = previousValue * this.randomUniform(-0.05, 0.05);
+        let newValue = previousValue + drift + trend * previousValue + noise + additionalVariation;
         newValue = this.clamp(newValue, targetMin, targetMax);
+        const minChange = previousValue * 0.01;
+        const actualChange = Math.abs(newValue - previousValue);
+        if (actualChange < minChange && !onlyGrowth) {
+            const direction = Math.random() > 0.5 ? 1 : -1;
+            newValue = previousValue + direction * this.randomUniform(minChange, minChange * 3);
+            newValue = this.clamp(newValue, targetMin, targetMax);
+        }
         if (onlyGrowth && newValue < previousValue) {
-            newValue = previousValue * (1 + Math.abs(noise) * 0.5);
+            newValue = previousValue * (1 + Math.abs(noise) * 0.5 + Math.random() * 0.02);
             newValue = this.clamp(newValue, previousValue, targetMax);
         }
         return newValue;
