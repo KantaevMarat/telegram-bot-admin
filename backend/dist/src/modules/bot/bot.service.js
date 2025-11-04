@@ -54,16 +54,16 @@ let BotService = BotService_1 = class BotService {
         this.pollingOffset = 0;
         this.pollingInterval = null;
         this.logger.log('BotService constructor called');
-        this.botToken = this.configService.get('TELEGRAM_BOT_TOKEN') || this.configService.get('CLIENT_BOT_TOKEN') || '';
+        const clientToken = this.configService.get('CLIENT_BOT_TOKEN');
+        const telegramToken = this.configService.get('TELEGRAM_BOT_TOKEN');
+        this.botToken = clientToken || telegramToken || '';
         this.logger.log(`Bot token loaded: ${this.botToken ? 'YES' : 'NO'}`);
         this.logger.log(`Bot token preview: ${this.botToken ? this.botToken.substring(0, 10) + '...' : 'EMPTY'}`);
-        const telegramToken = this.configService.get('TELEGRAM_BOT_TOKEN');
-        const clientToken = this.configService.get('CLIENT_BOT_TOKEN');
-        if (telegramToken) {
-            this.logger.log(`✅ Using TELEGRAM_BOT_TOKEN (${telegramToken.substring(0, 10)}...)`);
+        if (clientToken) {
+            this.logger.log(`✅ Using CLIENT_BOT_TOKEN for client bot (${clientToken.substring(0, 10)}...)`);
         }
-        else if (clientToken) {
-            this.logger.log(`✅ Using CLIENT_BOT_TOKEN (${clientToken.substring(0, 10)}...)`);
+        else if (telegramToken) {
+            this.logger.log(`⚠️ Using TELEGRAM_BOT_TOKEN as fallback (${telegramToken.substring(0, 10)}...)`);
         }
         if (!this.botToken) {
             this.logger.error('⚠️ Neither TELEGRAM_BOT_TOKEN nor CLIENT_BOT_TOKEN is set!');
