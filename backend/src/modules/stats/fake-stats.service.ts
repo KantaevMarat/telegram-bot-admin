@@ -120,14 +120,14 @@ export class FakeStatsService {
   private async generateAndSaveFakeStats(): Promise<FakeStats> {
     this.logger.log('Step 1: Getting real stats...');
     const realStats = await this.getRealStats();
-    this.logger.log(Real stats: users=$\{realStats.users_count}, earned=$\{realStats.total_earned});
+    this.logger.log(`Real stats: users=${realStats.users_count}, earned=${realStats.total_earned}`);
     
     this.logger.log('Step 2: Saving real stats snapshot...');
     await this.saveRealStatsSnapshot(realStats);
 
     this.logger.log('Step 3: Getting latest fake stats...');
     const previousFake = await this.getLatestFakeStats();
-    this.logger.log(Previous fake stats: online=$\{previousFake.online}, active=$\{previousFake.active});
+    this.logger.log(`Previous fake stats: online=${previousFake.online}, active=${previousFake.active}`);
 
     // Configuration parameters
     const maxDeltaPercent = this.configService.get<number>('FAKE_STATS_MAX_DELTA_PERCENT', 15);
@@ -175,7 +175,7 @@ export class FakeStatsService {
     });
 
     await this.fakeStatsRepo.save(newFakeStats);
-    this.logger.log(✅ Fake stats updated: online=$\{newFakeStats.online}, active=$\{newFakeStats.active}, paid=$\{newFakeStats.paid_usdt});
+    this.logger.log(`✅ Fake stats updated: online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);
 
     return newFakeStats;
   }
