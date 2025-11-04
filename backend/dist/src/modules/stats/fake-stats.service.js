@@ -101,6 +101,21 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
         this.logger.log('Step 3: Getting latest fake stats...');
         const previousFake = await this.getLatestFakeStats();
         this.logger.log(`Previous fake stats: online=${previousFake.online}, active=${previousFake.active}`);
+        if (realStats.users_count === 0) {
+            const defaultValues = {
+                online: 1250 + Math.floor(Math.random() * 100 - 50),
+                active: 8420 + Math.floor(Math.random() * 200 - 100),
+                paid_usdt: 45678.5 + (Math.random() * 1000 - 500),
+            };
+            const newFakeStats = this.fakeStatsRepo.create({
+                online: Math.max(1000, defaultValues.online),
+                active: Math.max(5000, defaultValues.active),
+                paid_usdt: Math.max(40000, Math.round(defaultValues.paid_usdt * 100) / 100),
+            });
+            await this.fakeStatsRepo.save(newFakeStats);
+            this.logger.log(`✅ Fake stats updated (default values): online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);
+            return newFakeStats;
+        }
         const maxDeltaPercent = this.configService.get('FAKE_STATS_MAX_DELTA_PERCENT', 15);
         const trendMin = this.configService.get('FAKE_STATS_TREND_MIN', -0.02);
         const trendMax = this.configService.get('FAKE_STATS_TREND_MAX', 0.03);
