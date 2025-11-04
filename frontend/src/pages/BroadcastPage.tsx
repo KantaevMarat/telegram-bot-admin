@@ -309,7 +309,7 @@ export default function BroadcastPage() {
               )}
 
               {/* Кнопки выбора файла */}
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
                 {/* Кнопка загрузки фото */}
                 <button
                   type="button"
@@ -332,10 +332,17 @@ export default function BroadcastPage() {
                   }}
                   disabled={uploadingFile || createMutation.isPending}
                   className="btn btn--secondary"
-                  style={{ flex: 1, minWidth: '140px' }}
+                  style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '12px 20px',
+                    minWidth: '180px',
+                    justifyContent: 'center'
+                  }}
                 >
-                  <Image size={16} />
-                  Загрузить фото
+                  <Image size={18} />
+                  <span>Загрузить фото</span>
                 </button>
 
                 {/* Кнопка загрузки видео */}
@@ -360,10 +367,17 @@ export default function BroadcastPage() {
                   }}
                   disabled={uploadingFile || createMutation.isPending}
                   className="btn btn--secondary"
-                  style={{ flex: 1, minWidth: '140px' }}
+                  style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '12px 20px',
+                    minWidth: '180px',
+                    justifyContent: 'center'
+                  }}
                 >
-                  <Film size={16} />
-                  Загрузить видео
+                  <Film size={18} />
+                  <span>Загрузить видео</span>
                 </button>
               </div>
 
