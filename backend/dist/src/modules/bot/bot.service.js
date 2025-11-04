@@ -617,15 +617,22 @@ let BotService = BotService_1 = class BotService {
     async sendMessage(chatId, text, replyMarkup) {
         const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
         try {
-            await axios_1.default.post(url, {
+            this.logger.debug(`📤 Sending message to ${chatId}, text length: ${text?.length || 0}`);
+            const response = await axios_1.default.post(url, {
                 chat_id: chatId,
                 text,
                 parse_mode: 'HTML',
                 reply_markup: replyMarkup,
             });
+            this.logger.debug(`✅ Message sent successfully to ${chatId}`);
+            return response.data;
         }
         catch (error) {
-            this.logger.error(`Failed to send message to ${chatId}:`, error.message);
+            this.logger.error(`❌ Failed to send message to ${chatId}:`, error.message);
+            if (error.response?.data) {
+                this.logger.error(`Telegram API error:`, JSON.stringify(error.response.data));
+            }
+            throw error;
         }
     }
     async sendMessageWithMedia(chatId, text, mediaUrl, mediaType) {
