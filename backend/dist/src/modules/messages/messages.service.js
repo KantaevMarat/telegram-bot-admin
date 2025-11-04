@@ -114,12 +114,13 @@ let MessagesService = MessagesService_1 = class MessagesService {
         }
         return savedMessage;
     }
-    async createUserMessage(userId, text, mediaUrl) {
+    async createUserMessage(userId, text, mediaUrl, mediaType) {
         const message = this.messageRepo.create({
             user_id: userId,
             from_admin_tg_id: null,
-            text,
+            text: text || '',
             media_url: mediaUrl,
+            media_type: mediaType,
             is_read: false,
         });
         const savedMessage = await this.messageRepo.save(message);

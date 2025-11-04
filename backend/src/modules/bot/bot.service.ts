@@ -221,6 +221,51 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // Handle media (photo, video, document) - save without responding
+    const hasPhoto = message.photo && message.photo.length > 0;
+    const hasVideo = message.video;
+    const hasDocument = message.document;
+    const caption = message.caption || '';
+
+    if (hasPhoto || hasVideo || hasDocument) {
+      try {
+        let fileId: string;
+        let mediaType: string;
+        let fileName: string | undefined;
+
+        if (hasPhoto) {
+          // Get the largest photo
+          const largestPhoto = message.photo[message.photo.length - 1];
+          fileId = largestPhoto.file_id;
+          mediaType = 'photo';
+        } else if (hasVideo) {
+          fileId = message.video.file_id;
+          mediaType = 'video';
+          fileName = message.video.file_name;
+        } else if (hasDocument) {
+          fileId = message.document.file_id;
+          mediaType = 'document';
+          fileName = message.document.file_name;
+        } else {
+          return; // Should not happen
+        }
+
+        // Get file path from Telegram
+        const fileUrl = await this.getFileUrl(fileId);
+        
+        // Save media message without responding
+        await this.messagesService.createUserMessage(user.id, caption, fileUrl, mediaType);
+        this.logger.log(`Saved ${mediaType} from user ${chatId} (file: ${fileUrl})`);
+        
+        // Don't send any response - just save the media
+        return;
+      } catch (error) {
+        this.logger.error(`Failed to save media from user ${chatId}:`, error);
+        // Don't respond on error either
+        return;
+      }
+    }
+
     // Handle commands
     if (text?.startsWith('/')) {
       await this.handleCommand(chatId, text, user);
@@ -826,6 +871,29 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       if (error.response?.data) {
         this.logger.error(`Telegram API error:`, JSON.stringify(error.response.data));
       }
+      throw error;
+    }
+  }
+
+  /**
+   * Get file URL from Telegram file_id
+   */
+  private async getFileUrl(fileId: string): Promise<string> {
+    try {
+      // Get file info from Telegram
+      const getFileUrl = `https://api.telegram.org/bot${this.botToken}/getFile`;
+      const response = await axios.post(getFileUrl, {
+        file_id: fileId,
+      });
+
+      const filePath = response.data.result.file_path;
+      
+      // Build full URL
+      const fileUrl = `https://api.telegram.org/file/bot${this.botToken}/${filePath}`;
+      
+      return fileUrl;
+    } catch (error) {
+      this.logger.error(`Failed to get file URL for file_id ${fileId}:`, error);
       throw error;
     }
   }

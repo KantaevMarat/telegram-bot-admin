@@ -50,6 +50,7 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private getReplyKeyboard;
     private handleReplyButton;
     sendMessage(chatId: string, text: string, replyMarkup?: any): Promise<any>;
+    private getFileUrl;
     sendMessageWithMedia(chatId: string, text: string, mediaUrl: string, mediaType?: string): Promise<void>;
     sendBalanceChangeNotification(chatId: string, balanceBefore: number, balanceAfter: number, delta: number, reason: string, comment?: string): Promise<void>;
     private answerCallbackQuery;

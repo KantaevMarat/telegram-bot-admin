@@ -187,6 +187,43 @@ let BotService = BotService_1 = class BotService {
             await this.sendMessage(chatId, 'Ваш аккаунт заблокирован.');
             return;
         }
+        const hasPhoto = message.photo && message.photo.length > 0;
+        const hasVideo = message.video;
+        const hasDocument = message.document;
+        const caption = message.caption || '';
+        if (hasPhoto || hasVideo || hasDocument) {
+            try {
+                let fileId;
+                let mediaType;
+                let fileName;
+                if (hasPhoto) {
+                    const largestPhoto = message.photo[message.photo.length - 1];
+                    fileId = largestPhoto.file_id;
+                    mediaType = 'photo';
+                }
+                else if (hasVideo) {
+                    fileId = message.video.file_id;
+                    mediaType = 'video';
+                    fileName = message.video.file_name;
+                }
+                else if (hasDocument) {
+                    fileId = message.document.file_id;
+                    mediaType = 'document';
+                    fileName = message.document.file_name;
+                }
+                else {
+                    return;
+                }
+                const fileUrl = await this.getFileUrl(fileId);
+                await this.messagesService.createUserMessage(user.id, caption, fileUrl, mediaType);
+                this.logger.log(`Saved ${mediaType} from user ${chatId} (file: ${fileUrl})`);
+                return;
+            }
+            catch (error) {
+                this.logger.error(`Failed to save media from user ${chatId}:`, error);
+                return;
+            }
+        }
         if (text?.startsWith('/')) {
             await this.handleCommand(chatId, text, user);
         }
@@ -632,6 +669,21 @@ let BotService = BotService_1 = class BotService {
             if (error.response?.data) {
                 this.logger.error(`Telegram API error:`, JSON.stringify(error.response.data));
             }
+            throw error;
+        }
+    }
+    async getFileUrl(fileId) {
+        try {
+            const getFileUrl = `https://api.telegram.org/bot${this.botToken}/getFile`;
+            const response = await axios_1.default.post(getFileUrl, {
+                file_id: fileId,
+            });
+            const filePath = response.data.result.file_path;
+            const fileUrl = `https://api.telegram.org/file/bot${this.botToken}/${filePath}`;
+            return fileUrl;
+        }
+        catch (error) {
+            this.logger.error(`Failed to get file URL for file_id ${fileId}:`, error);
             throw error;
         }
     }

@@ -127,12 +127,13 @@ export class MessagesService {
     return savedMessage;
   }
 
-  async createUserMessage(userId: string, text: string, mediaUrl?: string) {
+  async createUserMessage(userId: string, text: string, mediaUrl?: string, mediaType?: string) {
     const message = this.messageRepo.create({
       user_id: userId,
       from_admin_tg_id: null,
-      text,
+      text: text || '',
       media_url: mediaUrl,
+      media_type: mediaType,
       is_read: false,
     });
 

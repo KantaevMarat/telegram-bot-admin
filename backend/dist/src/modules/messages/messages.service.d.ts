@@ -13,6 +13,6 @@ export declare class MessagesService {
     getChats(): Promise<any[]>;
     getMessages(userId: string, limit?: number): Promise<Message[]>;
     sendMessage(userId: string, text: string | undefined, adminTgId: string, mediaUrl?: string): Promise<Message>;
-    createUserMessage(userId: string, text: string, mediaUrl?: string): Promise<Message>;
+    createUserMessage(userId: string, text: string, mediaUrl?: string, mediaType?: string): Promise<Message>;
     getUnreadCount(): Promise<number>;
 }
