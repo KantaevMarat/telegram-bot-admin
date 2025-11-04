@@ -21,6 +21,7 @@ const message_entity_1 = require("../../entities/message.entity");
 const scenario_entity_1 = require("../../entities/scenario.entity");
 const fake_stats_entity_1 = require("../../entities/fake-stats.entity");
 const settings_entity_1 = require("../../entities/settings.entity");
+const balance_log_entity_1 = require("../../entities/balance-log.entity");
 const users_module_1 = require("../users/users.module");
 const stats_module_1 = require("../stats/stats.module");
 const settings_module_1 = require("../settings/settings.module");
@@ -42,6 +43,7 @@ exports.BotModule = BotModule = __decorate([
                 scenario_entity_1.Scenario,
                 fake_stats_entity_1.FakeStats,
                 settings_entity_1.Settings,
+                balance_log_entity_1.BalanceLog,
             ]),
             users_module_1.UsersModule,
             stats_module_1.StatsModule,

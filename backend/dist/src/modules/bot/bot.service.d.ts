@@ -6,6 +6,7 @@ import { Button } from '../../entities/button.entity';
 import { Task } from '../../entities/task.entity';
 import { UserTask } from '../../entities/user-task.entity';
 import { Scenario } from '../../entities/scenario.entity';
+import { BalanceLog } from '../../entities/balance-log.entity';
 import { FakeStatsService } from '../stats/fake-stats.service';
 import { SettingsService } from '../settings/settings.service';
 import { MessagesService } from '../messages/messages.service';
@@ -18,6 +19,7 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private taskRepo;
     private userTaskRepo;
     private scenarioRepo;
+    private balanceLogRepo;
     private configService;
     private fakeStatsService;
     private settingsService;
@@ -29,7 +31,7 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private botToken;
     private pollingOffset;
     private pollingInterval;
-    constructor(userRepo: Repository<User>, buttonRepo: Repository<Button>, taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, scenarioRepo: Repository<Scenario>, configService: ConfigService, fakeStatsService: FakeStatsService, settingsService: SettingsService, messagesService: MessagesService, usersService: UsersService, syncService: SyncService, channelsService: ChannelsService);
+    constructor(userRepo: Repository<User>, buttonRepo: Repository<Button>, taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, scenarioRepo: Repository<Scenario>, balanceLogRepo: Repository<BalanceLog>, configService: ConfigService, fakeStatsService: FakeStatsService, settingsService: SettingsService, messagesService: MessagesService, usersService: UsersService, syncService: SyncService, channelsService: ChannelsService);
     onModuleInit(): Promise<void>;
     onModuleDestroy(): Promise<void>;
     handleWebhook(update: any): Promise<void>;
@@ -49,6 +51,7 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private handleReplyButton;
     sendMessage(chatId: string, text: string, replyMarkup?: any): Promise<void>;
     sendMessageWithMedia(chatId: string, text: string, mediaUrl: string, mediaType?: string): Promise<void>;
+    sendBalanceChangeNotification(chatId: string, balanceBefore: number, balanceAfter: number, delta: number, reason: string, comment?: string): Promise<void>;
     private answerCallbackQuery;
     setWebhook(webhookUrl: string): Promise<any>;
     private sendBalance;

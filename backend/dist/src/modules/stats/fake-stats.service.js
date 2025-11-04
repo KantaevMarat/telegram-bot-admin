@@ -32,17 +32,20 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
     }
     async updateFakeStatsCron() {
         this.logger.log('🔄 Running fake stats update (cron)...');
-        await this.generateAndSaveFakeStats();
+        try {
+            await this.generateAndSaveFakeStats();
+        }
+        catch (error) {
+            this.logger.error('❌ Error updating fake stats:', error);
+        }
     }
     async regenerateFakeStats() {
         try {
             this.logger.log('🔄 Manually regenerating fake stats...');
-            const result = await this.generateAndSaveFakeStats();
-            this.logger.log('✅ Fake stats regenerated successfully');
-            return result;
+            return await this.generateAndSaveFakeStats();
         }
         catch (error) {
-            this.logger.error('❌ Error in regenerateFakeStats:', error.message);
+            this.logger.error('❌ Error regenerating fake stats:', error);
             this.logger.error('Stack trace:', error.stack);
             throw error;
         }
@@ -66,13 +69,27 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
     }
     async initializeFakeStats() {
         const realStats = await this.getRealStats();
+        const defaultValues = {
+            online: 1250,
+            active: 8420,
+            paid_usdt: 45678.5,
+        };
+        const online = realStats.users_count > 0
+            ? Math.round(realStats.users_count * 0.8)
+            : defaultValues.online;
+        const active = realStats.users_count > 0
+            ? Math.round(realStats.users_count * 1.2)
+            : defaultValues.active;
+        const paid_usdt = realStats.total_earned > 0
+            ? realStats.total_earned * 1.15
+            : defaultValues.paid_usdt;
         const fakeStats = this.fakeStatsRepo.create({
-            online: Math.round(realStats.users_count * 0.8),
-            active: Math.round(realStats.users_count * 1.2),
-            paid_usdt: realStats.total_earned * 1.15,
+            online,
+            active,
+            paid_usdt,
         });
         await this.fakeStatsRepo.save(fakeStats);
-        this.logger.log('✅ Initialized fake stats');
+        this.logger.log('✅ Initialized fake stats', { online, active, paid_usdt });
         return fakeStats;
     }
     async generateAndSaveFakeStats() {
@@ -103,68 +120,47 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
         return newFakeStats;
     }
     smoothRandomWalk(previousValue, realValue, maxDeltaPercent, trendMin, trendMax, noiseStdDev, onlyGrowth = false) {
-        if (realValue <= 0) {
-            realValue = 10;
-        }
-        if (previousValue <= 0) {
-            previousValue = realValue * 0.8;
-        }
-        const drift = this.randomUniform(trendMin, trendMax);
-        const noise = this.randomGaussian(0, noiseStdDev);
-        const hour = new Date().getHours();
-        const seasonal = Math.sin((hour * Math.PI) / 12) * 0.01;
-        let multiplier = 1 + drift + noise + seasonal;
-        if (onlyGrowth && multiplier < 1) {
-            multiplier = 1 + Math.abs(drift) * 0.5 + Math.abs(noise) * 0.5;
-        }
-        let newValue = previousValue * multiplier;
-        const minBound = realValue * (1 - maxDeltaPercent / 100);
-        const maxBound = realValue * (1 + maxDeltaPercent / 100);
-        newValue = this.clamp(newValue, minBound, maxBound);
-        if (isNaN(newValue) || !isFinite(newValue)) {
-            this.logger.warn(`Invalid newValue detected, using realValue instead. Previous: ${previousValue}, Real: ${realValue}`);
-            newValue = realValue;
+        const targetMin = realValue * (1 - maxDeltaPercent / 100);
+        const targetMax = realValue * (1 + maxDeltaPercent / 100);
+        const trend = this.randomUniform(trendMin, trendMax);
+        const target = (targetMin + targetMax) / 2;
+        const drift = (target - previousValue) * 0.1;
+        const noise = this.randomGaussian(0, noiseStdDev * previousValue);
+        let newValue = previousValue + drift + trend * previousValue + noise;
+        newValue = this.clamp(newValue, targetMin, targetMax);
+        if (onlyGrowth && newValue < previousValue) {
+            newValue = previousValue * (1 + Math.abs(noise) * 0.5);
+            newValue = this.clamp(newValue, previousValue, targetMax);
         }
         return newValue;
     }
     async getRealStats() {
         const usersCount = await this.userRepo.count();
-        const totalBalanceResult = await this.userRepo
-            .createQueryBuilder('user')
-            .select('COALESCE(SUM(user.balance_usdt), 0)', 'total')
-            .getRawOne();
         const totalEarnedResult = await this.userRepo
             .createQueryBuilder('user')
-            .select('COALESCE(SUM(user.total_earned), 0)', 'total')
+            .select('COALESCE(SUM(user.earned), 0)', 'total')
             .getRawOne();
-        const oneDayAgo = new Date();
-        oneDayAgo.setDate(oneDayAgo.getDate() - 1);
-        const activeUsers24h = await this.userRepo
-            .createQueryBuilder('user')
-            .where('user.updated_at > :oneDayAgo', { oneDayAgo })
-            .getCount();
+        const totalEarned = parseFloat(totalEarnedResult?.total || '0');
         return {
-            users_count: usersCount || 0,
-            total_balance: parseFloat(totalBalanceResult?.total || '0'),
-            total_earned: parseFloat(totalEarnedResult?.total || '0'),
-            active_users_24h: activeUsers24h || 0,
+            users_count: usersCount,
+            total_earned: totalEarned,
         };
     }
     async saveRealStatsSnapshot(realStats) {
-        const snapshot = this.realStatsRepo.create(realStats);
+        const snapshot = this.realStatsRepo.create({
+            users_count: realStats.users_count,
+            total_earned: realStats.total_earned,
+        });
         await this.realStatsRepo.save(snapshot);
     }
     randomUniform(min, max) {
-        return Math.random() * (max - min) + min;
+        return min + Math.random() * (max - min);
     }
     randomGaussian(mean, stdDev) {
-        let u1 = Math.random();
-        let u2 = Math.random();
-        while (u1 <= Number.EPSILON) {
-            u1 = Math.random();
-        }
+        const u1 = Math.random();
+        const u2 = Math.random();
         const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-        return z0 * stdDev + mean;
+        return mean + z0 * stdDev;
     }
     clamp(value, min, max) {
         return Math.max(min, Math.min(max, value));

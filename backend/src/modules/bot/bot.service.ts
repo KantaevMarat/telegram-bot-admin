@@ -8,6 +8,7 @@ import { Button } from '../../entities/button.entity';
 import { Task } from '../../entities/task.entity';
 import { UserTask } from '../../entities/user-task.entity';
 import { Scenario } from '../../entities/scenario.entity';
+import { BalanceLog } from '../../entities/balance-log.entity';
 import { FakeStatsService } from '../stats/fake-stats.service';
 import { SettingsService } from '../settings/settings.service';
 import { MessagesService } from '../messages/messages.service';
@@ -33,6 +34,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private userTaskRepo: Repository<UserTask>,
     @InjectRepository(Scenario)
     private scenarioRepo: Repository<Scenario>,
+    @InjectRepository(BalanceLog)
+    private balanceLogRepo: Repository<BalanceLog>,
     private configService: ConfigService,
     private fakeStatsService: FakeStatsService,
     private settingsService: SettingsService,
@@ -310,10 +313,40 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         const refBonus = await this.settingsService.getValue('ref_bonus', '10');
         const bonusAmount = 5; // Fixed bonus for new referral
 
-        referrer.balance_usdt = parseFloat(referrer.balance_usdt.toString()) + bonusAmount;
+        const balanceBefore = parseFloat(referrer.balance_usdt.toString());
+        const balanceAfter = balanceBefore + bonusAmount;
+        
+        referrer.balance_usdt = balanceAfter;
         await this.userRepo.save(referrer);
 
+        // Log balance change
+        await this.balanceLogRepo.save({
+          user_id: referrer.id,
+          delta: bonusAmount,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          reason: 'referral_bonus',
+          comment: 'Бонус за приглашение реферала',
+        });
+
         this.logger.log(`Referral bonus ${bonusAmount} USDT given to user ${referrerTgId}`);
+
+        // Send notification (async, non-blocking)
+        this.sendBalanceChangeNotification(
+          referrerTgId,
+          balanceBefore,
+          balanceAfter,
+          bonusAmount,
+          'referral_bonus',
+          'Бонус за приглашение реферала',
+        ).catch(error => {
+          this.logger.error(`Failed to send referral bonus notification:`, error.message);
+        });
+
+        // Update fake stats (async, non-blocking)
+        this.fakeStatsService.regenerateFakeStats().catch(error => {
+          this.logger.error(`Failed to update fake stats after referral bonus:`, error.message);
+        });
       }
     } catch (error) {
       this.logger.error('Error giving referral bonus:', error);
@@ -874,6 +907,87 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Send balance change notification to user
+   * @param chatId User's Telegram ID
+   * @param balanceBefore Balance before change
+   * @param balanceAfter Balance after change
+   * @param delta Amount changed (positive for addition, negative for deduction)
+   * @param reason Type of operation (manual_adjustment, payout, task_reward, etc.)
+   * @param comment Optional admin comment/reason
+   */
+  async sendBalanceChangeNotification(
+    chatId: string,
+    balanceBefore: number,
+    balanceAfter: number,
+    delta: number,
+    reason: string,
+    comment?: string,
+  ) {
+    try {
+      this.logger.log(`Sending balance notification to ${chatId}: delta=${delta}, reason=${reason}`);
+
+      const isAddition = delta > 0;
+      const emoji = isAddition ? '💰' : '💸';
+      const operationType = isAddition ? 'Пополнение' : 'Списание';
+      const amountStr = isAddition ? `+${delta.toFixed(2)}` : delta.toFixed(2);
+
+      // Format reason for display
+      let reasonText = comment || 'Причина не указана';
+      
+      // Translate common reason codes to Russian
+      const reasonTranslations: Record<string, string> = {
+        'manual_adjustment': 'Ручная корректировка администратором',
+        'admin_add': 'Пополнение администратором',
+        'admin_deduct': 'Списание администратором',
+        'task_reward': 'Награда за выполнение задания',
+        'referral_bonus': 'Реферальный бонус',
+        'payout_request': 'Заявка на вывод средств',
+        'payout_rejected': 'Отклонение заявки на вывод',
+        'payout_completed': 'Завершение вывода средств',
+      };
+
+      if (!comment && reasonTranslations[reason]) {
+        reasonText = reasonTranslations[reason];
+      } else if (!comment) {
+        reasonText = reason;
+      }
+
+      const currentDate = new Date().toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      const message =
+        `${emoji} *${operationType} баланса*\n\n` +
+        `💵 Сумма: *${amountStr} USDT*\n` +
+        `📊 Было: ${balanceBefore.toFixed(2)} USDT\n` +
+        `📈 Стало: *${balanceAfter.toFixed(2)} USDT*\n\n` +
+        `📝 Причина: _${reasonText}_\n` +
+        `📅 Дата: ${currentDate}`;
+
+      await this.sendMessage(chatId, message);
+      
+      this.logger.log(`✅ Balance notification sent successfully to ${chatId}`);
+    } catch (error) {
+      // Handle common Telegram errors
+      if (error.response?.data?.error_code === 403) {
+        this.logger.warn(`User ${chatId} has blocked the bot - notification not sent`);
+      } else if (error.response?.data?.description?.includes('chat not found')) {
+        this.logger.warn(`Chat ${chatId} not found - notification not sent`);
+      } else {
+        this.logger.error(`Failed to send balance notification to ${chatId}:`, error.message);
+        if (error.response?.data) {
+          this.logger.error('Telegram API error:', JSON.stringify(error.response.data));
+        }
+      }
+      // Don't throw error - notification failure should not break the transaction
+    }
+  }
+
   private async answerCallbackQuery(callbackQueryId: string, text?: string) {
     const url = `https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`;
 
@@ -1183,10 +1297,25 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       await this.userTaskRepo.save(userTask);
 
       // Update user balance and stats (convert to number to avoid string concatenation)
-      user.balance_usdt = parseFloat(user.balance_usdt.toString()) + reward;
+      const balanceBefore = parseFloat(user.balance_usdt.toString());
+      const balanceAfter = balanceBefore + reward;
+      
+      user.balance_usdt = balanceAfter;
       user.total_earned = parseFloat(user.total_earned.toString()) + reward;
       user.tasks_completed = user.tasks_completed + 1;
       await this.userRepo.save(user);
+
+      // Log balance change
+      await this.balanceLogRepo.save({
+        user_id: user.id,
+        delta: reward,
+        balance_before: balanceBefore,
+        balance_after: balanceAfter,
+        reason: 'task_reward',
+        comment: `Награда за выполнение задания: ${task.title}`,
+      });
+
+      this.logger.log(`User ${user.tg_id} completed task ${task.id} and earned ${reward} USDT`);
 
       await this.sendMessage(
         chatId,
@@ -1201,6 +1330,23 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           ],
         },
       );
+
+      // Send balance change notification (async, non-blocking)
+      this.sendBalanceChangeNotification(
+        user.tg_id,
+        balanceBefore,
+        balanceAfter,
+        reward,
+        'task_reward',
+        `Награда за выполнение задания: ${task.title}`,
+      ).catch(error => {
+        this.logger.error(`Failed to send task reward notification:`, error.message);
+      });
+
+      // Update fake stats (async, non-blocking)
+      this.fakeStatsService.regenerateFakeStats().catch(error => {
+        this.logger.error(`Failed to update fake stats after task completion:`, error.message);
+      });
     }
   }
 
@@ -1505,10 +1651,23 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     await this.userTaskRepo.save(userTask);
 
     // Update user balance
-    user.balance_usdt = parseFloat(user.balance_usdt.toString()) + reward;
+    const balanceBefore = parseFloat(user.balance_usdt.toString());
+    const balanceAfter = balanceBefore + reward;
+    
+    user.balance_usdt = balanceAfter;
     user.total_earned = parseFloat(user.total_earned.toString()) + reward;
     user.tasks_completed = user.tasks_completed + 1;
     await this.userRepo.save(user);
+
+    // Log balance change
+    await this.balanceLogRepo.save({
+      user_id: user.id,
+      delta: reward,
+      balance_before: balanceBefore,
+      balance_after: balanceAfter,
+      reason: 'task_reward',
+      comment: `Награда за выполнение задания (верифицировано): ${task.title}`,
+    });
 
     const text =
       `✅ *Задание выполнено!*\n\n` +
@@ -1526,6 +1685,23 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     await this.sendMessage(chatId, text, keyboard);
 
     this.logger.log(`User ${user.tg_id} completed task ${taskId} and earned ${reward} USDT`);
+
+    // Send balance change notification (async, non-blocking)
+    this.sendBalanceChangeNotification(
+      user.tg_id,
+      balanceBefore,
+      balanceAfter,
+      reward,
+      'task_reward',
+      `Награда за выполнение задания (верифицировано): ${task.title}`,
+    ).catch(error => {
+      this.logger.error(`Failed to send task verification notification:`, error.message);
+    });
+
+    // Update fake stats (async, non-blocking)
+    this.fakeStatsService.regenerateFakeStats().catch(error => {
+      this.logger.error(`Failed to update fake stats after task verification:`, error.message);
+    });
   }
 
   private async handleWithdrawalRequest(chatId: string, user: User, text: string) {

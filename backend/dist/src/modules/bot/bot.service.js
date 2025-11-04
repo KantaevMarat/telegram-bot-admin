@@ -27,6 +27,7 @@ const button_entity_1 = require("../../entities/button.entity");
 const task_entity_1 = require("../../entities/task.entity");
 const user_task_entity_1 = require("../../entities/user-task.entity");
 const scenario_entity_1 = require("../../entities/scenario.entity");
+const balance_log_entity_1 = require("../../entities/balance-log.entity");
 const fake_stats_service_1 = require("../stats/fake-stats.service");
 const settings_service_1 = require("../settings/settings.service");
 const messages_service_1 = require("../messages/messages.service");
@@ -34,12 +35,13 @@ const users_service_1 = require("../users/users.service");
 const sync_service_1 = require("../sync/sync.service");
 const channels_service_1 = require("../channels/channels.service");
 let BotService = BotService_1 = class BotService {
-    constructor(userRepo, buttonRepo, taskRepo, userTaskRepo, scenarioRepo, configService, fakeStatsService, settingsService, messagesService, usersService, syncService, channelsService) {
+    constructor(userRepo, buttonRepo, taskRepo, userTaskRepo, scenarioRepo, balanceLogRepo, configService, fakeStatsService, settingsService, messagesService, usersService, syncService, channelsService) {
         this.userRepo = userRepo;
         this.buttonRepo = buttonRepo;
         this.taskRepo = taskRepo;
         this.userTaskRepo = userTaskRepo;
         this.scenarioRepo = scenarioRepo;
+        this.balanceLogRepo = balanceLogRepo;
         this.configService = configService;
         this.fakeStatsService = fakeStatsService;
         this.settingsService = settingsService;
@@ -52,11 +54,19 @@ let BotService = BotService_1 = class BotService {
         this.pollingOffset = 0;
         this.pollingInterval = null;
         this.logger.log('BotService constructor called');
-        this.botToken = this.configService.get('TELEGRAM_BOT_TOKEN') || '';
+        this.botToken = this.configService.get('TELEGRAM_BOT_TOKEN') || this.configService.get('CLIENT_BOT_TOKEN') || '';
         this.logger.log(`Bot token loaded: ${this.botToken ? 'YES' : 'NO'}`);
         this.logger.log(`Bot token preview: ${this.botToken ? this.botToken.substring(0, 10) + '...' : 'EMPTY'}`);
+        const telegramToken = this.configService.get('TELEGRAM_BOT_TOKEN');
+        const clientToken = this.configService.get('CLIENT_BOT_TOKEN');
+        if (telegramToken) {
+            this.logger.log(`✅ Using TELEGRAM_BOT_TOKEN (${telegramToken.substring(0, 10)}...)`);
+        }
+        else if (clientToken) {
+            this.logger.log(`✅ Using CLIENT_BOT_TOKEN (${clientToken.substring(0, 10)}...)`);
+        }
         if (!this.botToken) {
-            this.logger.error('TELEGRAM_BOT_TOKEN is not set!');
+            this.logger.error('⚠️ Neither TELEGRAM_BOT_TOKEN nor CLIENT_BOT_TOKEN is set!');
         }
     }
     async onModuleInit() {
@@ -85,8 +95,15 @@ let BotService = BotService_1 = class BotService {
         this.syncService.on('tasks.updated', () => this.syncService.invalidateCache('tasks'));
         this.syncService.on('tasks.deleted', () => this.syncService.invalidateCache('tasks'));
         this.logger.log('✅ BotService subscribed to sync events');
-        if (process.env.NODE_ENV === 'development') {
-            this.startPolling();
+        if (this.botToken) {
+            const webhookUrl = this.configService.get('TELEGRAM_WEBHOOK_URL');
+            if (!webhookUrl || process.env.NODE_ENV === 'development') {
+                this.logger.log('🤖 Starting bot polling (webhook not configured or development mode)');
+                this.startPolling();
+            }
+            else {
+                this.logger.log('📡 Webhook mode: polling disabled (use /api/bot/webhook)');
+            }
         }
     }
     async onModuleDestroy() {
@@ -110,7 +127,7 @@ let BotService = BotService_1 = class BotService {
         }
     }
     startPolling() {
-        this.logger.log('🤖 Starting bot polling for development...');
+        this.logger.log('🤖 Starting bot polling...');
         this.pollingInterval = setInterval(() => { }, 1000000);
         this.pollUpdates();
     }
@@ -236,9 +253,25 @@ let BotService = BotService_1 = class BotService {
             if (referrer) {
                 const refBonus = await this.settingsService.getValue('ref_bonus', '10');
                 const bonusAmount = 5;
-                referrer.balance_usdt = parseFloat(referrer.balance_usdt.toString()) + bonusAmount;
+                const balanceBefore = parseFloat(referrer.balance_usdt.toString());
+                const balanceAfter = balanceBefore + bonusAmount;
+                referrer.balance_usdt = balanceAfter;
                 await this.userRepo.save(referrer);
+                await this.balanceLogRepo.save({
+                    user_id: referrer.id,
+                    delta: bonusAmount,
+                    balance_before: balanceBefore,
+                    balance_after: balanceAfter,
+                    reason: 'referral_bonus',
+                    comment: 'Бонус за приглашение реферала',
+                });
                 this.logger.log(`Referral bonus ${bonusAmount} USDT given to user ${referrerTgId}`);
+                this.sendBalanceChangeNotification(referrerTgId, balanceBefore, balanceAfter, bonusAmount, 'referral_bonus', 'Бонус за приглашение реферала').catch(error => {
+                    this.logger.error(`Failed to send referral bonus notification:`, error.message);
+                });
+                this.fakeStatsService.regenerateFakeStats().catch(error => {
+                    this.logger.error(`Failed to update fake stats after referral bonus:`, error.message);
+                });
             }
         }
         catch (error) {
@@ -659,6 +692,61 @@ let BotService = BotService_1 = class BotService {
             }
         }
     }
+    async sendBalanceChangeNotification(chatId, balanceBefore, balanceAfter, delta, reason, comment) {
+        try {
+            this.logger.log(`Sending balance notification to ${chatId}: delta=${delta}, reason=${reason}`);
+            const isAddition = delta > 0;
+            const emoji = isAddition ? '💰' : '💸';
+            const operationType = isAddition ? 'Пополнение' : 'Списание';
+            const amountStr = isAddition ? `+${delta.toFixed(2)}` : delta.toFixed(2);
+            let reasonText = comment || 'Причина не указана';
+            const reasonTranslations = {
+                'manual_adjustment': 'Ручная корректировка администратором',
+                'admin_add': 'Пополнение администратором',
+                'admin_deduct': 'Списание администратором',
+                'task_reward': 'Награда за выполнение задания',
+                'referral_bonus': 'Реферальный бонус',
+                'payout_request': 'Заявка на вывод средств',
+                'payout_rejected': 'Отклонение заявки на вывод',
+                'payout_completed': 'Завершение вывода средств',
+            };
+            if (!comment && reasonTranslations[reason]) {
+                reasonText = reasonTranslations[reason];
+            }
+            else if (!comment) {
+                reasonText = reason;
+            }
+            const currentDate = new Date().toLocaleString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+            const message = `${emoji} *${operationType} баланса*\n\n` +
+                `💵 Сумма: *${amountStr} USDT*\n` +
+                `📊 Было: ${balanceBefore.toFixed(2)} USDT\n` +
+                `📈 Стало: *${balanceAfter.toFixed(2)} USDT*\n\n` +
+                `📝 Причина: _${reasonText}_\n` +
+                `📅 Дата: ${currentDate}`;
+            await this.sendMessage(chatId, message);
+            this.logger.log(`✅ Balance notification sent successfully to ${chatId}`);
+        }
+        catch (error) {
+            if (error.response?.data?.error_code === 403) {
+                this.logger.warn(`User ${chatId} has blocked the bot - notification not sent`);
+            }
+            else if (error.response?.data?.description?.includes('chat not found')) {
+                this.logger.warn(`Chat ${chatId} not found - notification not sent`);
+            }
+            else {
+                this.logger.error(`Failed to send balance notification to ${chatId}:`, error.message);
+                if (error.response?.data) {
+                    this.logger.error('Telegram API error:', JSON.stringify(error.response.data));
+                }
+            }
+        }
+    }
     async answerCallbackQuery(callbackQueryId, text) {
         const url = `https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`;
         try {
@@ -886,10 +974,21 @@ let BotService = BotService_1 = class BotService {
             userTask.reward = reward;
             userTask.completed_at = new Date();
             await this.userTaskRepo.save(userTask);
-            user.balance_usdt = parseFloat(user.balance_usdt.toString()) + reward;
+            const balanceBefore = parseFloat(user.balance_usdt.toString());
+            const balanceAfter = balanceBefore + reward;
+            user.balance_usdt = balanceAfter;
             user.total_earned = parseFloat(user.total_earned.toString()) + reward;
             user.tasks_completed = user.tasks_completed + 1;
             await this.userRepo.save(user);
+            await this.balanceLogRepo.save({
+                user_id: user.id,
+                delta: reward,
+                balance_before: balanceBefore,
+                balance_after: balanceAfter,
+                reason: 'task_reward',
+                comment: `Награда за выполнение задания: ${task.title}`,
+            });
+            this.logger.log(`User ${user.tg_id} completed task ${task.id} and earned ${reward} USDT`);
             await this.sendMessage(chatId, `✅ *Задание выполнено!*\n\n` +
                 `📋 ${task.title}\n` +
                 `💰 Получено: +${reward} USDT\n\n` +
@@ -898,6 +997,12 @@ let BotService = BotService_1 = class BotService {
                     [{ text: '📋 Другие задания', callback_data: 'tasks' }],
                     [{ text: '💰 Мой баланс', callback_data: 'balance' }],
                 ],
+            });
+            this.sendBalanceChangeNotification(user.tg_id, balanceBefore, balanceAfter, reward, 'task_reward', `Награда за выполнение задания: ${task.title}`).catch(error => {
+                this.logger.error(`Failed to send task reward notification:`, error.message);
+            });
+            this.fakeStatsService.regenerateFakeStats().catch(error => {
+                this.logger.error(`Failed to update fake stats after task completion:`, error.message);
             });
         }
     }
@@ -1158,10 +1263,20 @@ let BotService = BotService_1 = class BotService {
             status: 'completed',
         });
         await this.userTaskRepo.save(userTask);
-        user.balance_usdt = parseFloat(user.balance_usdt.toString()) + reward;
+        const balanceBefore = parseFloat(user.balance_usdt.toString());
+        const balanceAfter = balanceBefore + reward;
+        user.balance_usdt = balanceAfter;
         user.total_earned = parseFloat(user.total_earned.toString()) + reward;
         user.tasks_completed = user.tasks_completed + 1;
         await this.userRepo.save(user);
+        await this.balanceLogRepo.save({
+            user_id: user.id,
+            delta: reward,
+            balance_before: balanceBefore,
+            balance_after: balanceAfter,
+            reason: 'task_reward',
+            comment: `Награда за выполнение задания (верифицировано): ${task.title}`,
+        });
         const text = `✅ *Задание выполнено!*\n\n` +
             `💰 Вы получили: ${reward} USDT\n` +
             `💵 Ваш новый баланс: ${user.balance_usdt} USDT\n\n` +
@@ -1174,6 +1289,12 @@ let BotService = BotService_1 = class BotService {
         };
         await this.sendMessage(chatId, text, keyboard);
         this.logger.log(`User ${user.tg_id} completed task ${taskId} and earned ${reward} USDT`);
+        this.sendBalanceChangeNotification(user.tg_id, balanceBefore, balanceAfter, reward, 'task_reward', `Награда за выполнение задания (верифицировано): ${task.title}`).catch(error => {
+            this.logger.error(`Failed to send task verification notification:`, error.message);
+        });
+        this.fakeStatsService.regenerateFakeStats().catch(error => {
+            this.logger.error(`Failed to update fake stats after task verification:`, error.message);
+        });
     }
     async handleWithdrawalRequest(chatId, user, text) {
         const parts = text.split(' ');
@@ -1349,7 +1470,9 @@ exports.BotService = BotService = BotService_1 = __decorate([
     __param(2, (0, typeorm_1.InjectRepository)(task_entity_1.Task)),
     __param(3, (0, typeorm_1.InjectRepository)(user_task_entity_1.UserTask)),
     __param(4, (0, typeorm_1.InjectRepository)(scenario_entity_1.Scenario)),
+    __param(5, (0, typeorm_1.InjectRepository)(balance_log_entity_1.BalanceLog)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
