@@ -42,14 +42,24 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private channelsService: ChannelsService,
   ) {
     this.logger.log('BotService constructor called');
-    this.botToken = this.configService.get('TELEGRAM_BOT_TOKEN') || '';
+    // Support both TELEGRAM_BOT_TOKEN and CLIENT_BOT_TOKEN for flexibility
+    this.botToken = this.configService.get('TELEGRAM_BOT_TOKEN') || this.configService.get('CLIENT_BOT_TOKEN') || '';
     this.logger.log(`Bot token loaded: ${this.botToken ? 'YES' : 'NO'}`);
     this.logger.log(
       `Bot token preview: ${this.botToken ? this.botToken.substring(0, 10) + '...' : 'EMPTY'}`,
     );
+    
+    // Log which env var was used
+    const telegramToken = this.configService.get('TELEGRAM_BOT_TOKEN');
+    const clientToken = this.configService.get('CLIENT_BOT_TOKEN');
+    if (telegramToken) {
+      this.logger.log(`✅ Using TELEGRAM_BOT_TOKEN (${telegramToken.substring(0, 10)}...)`);
+    } else if (clientToken) {
+      this.logger.log(`✅ Using CLIENT_BOT_TOKEN (${clientToken.substring(0, 10)}...)`);
+    }
 
     if (!this.botToken) {
-      this.logger.error('TELEGRAM_BOT_TOKEN is not set!');
+      this.logger.error('⚠️ Neither TELEGRAM_BOT_TOKEN nor CLIENT_BOT_TOKEN is set!');
     }
   }
 
@@ -85,7 +95,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.syncService.on('tasks.updated', () => this.syncService.invalidateCache('tasks'));
     this.syncService.on('tasks.deleted', () => this.syncService.invalidateCache('tasks'));
 
-    this.logger.log('✅ BotService subscribed to sync events');
+        this.logger.log('✅ BotService subscribed to sync events');
 
     // Start polling if bot token is set
     // In production, if webhook is not configured, use polling
@@ -126,7 +136,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
    * Start polling for updates (for development)
    */
   private startPolling() {
-    this.logger.log('🤖 Starting bot polling for development...');
+    this.logger.log('🤖 Starting bot polling...');
     // Set interval to non-null to enable continuous polling
     this.pollingInterval = setInterval(() => {}, 1000000) as NodeJS.Timeout; // Dummy interval, actual polling is recursive
     this.pollUpdates(); // Start polling once

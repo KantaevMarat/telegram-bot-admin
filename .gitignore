@@ -9,6 +9,9 @@ node_modules/
 # Production
 /build
 /dist
+# But include pre-built dists for production deployment
+!/backend/dist
+!/frontend/dist
 
 # Misc
 .DS_Store
