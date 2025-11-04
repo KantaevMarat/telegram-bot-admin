@@ -87,9 +87,17 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     this.logger.log('✅ BotService subscribed to sync events');
 
-    // Start polling for development
-    if (process.env.NODE_ENV === 'development') {
-      this.startPolling();
+    // Start polling if bot token is set
+    // In production, if webhook is not configured, use polling
+    if (this.botToken) {
+      const webhookUrl = this.configService.get('TELEGRAM_WEBHOOK_URL');
+      // If webhook is not configured, use polling
+      if (!webhookUrl || process.env.NODE_ENV === 'development') {
+        this.logger.log('🤖 Starting bot polling (webhook not configured or development mode)');
+        this.startPolling();
+      } else {
+        this.logger.log('📡 Webhook mode: polling disabled (use /api/bot/webhook)');
+      }
     }
   }
 
@@ -1773,3 +1781,4 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 }
+
