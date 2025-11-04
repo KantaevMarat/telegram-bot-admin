@@ -216,6 +216,15 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
                 }
             }
         }
+        if (!isFinite(newValue) || isNaN(newValue)) {
+            if (onlyGrowth) {
+                newValue = previousValue * 1.03;
+            }
+            else {
+                newValue = previousValue * (1 + this.randomUniform(-0.05, 0.05));
+            }
+            newValue = this.clamp(newValue, targetMin, targetMax);
+        }
         return newValue;
     }
     async getRealStats() {
@@ -241,10 +250,20 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
         return min + Math.random() * (max - min);
     }
     randomGaussian(mean, stdDev) {
-        const u1 = Math.random();
+        let u1 = Math.random();
+        while (u1 <= 0 || u1 >= 1) {
+            u1 = Math.random();
+        }
+        if (u1 < 1e-10) {
+            u1 = 1e-10;
+        }
         const u2 = Math.random();
         const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-        return mean + z0 * stdDev;
+        const result = mean + z0 * stdDev;
+        if (!isFinite(result)) {
+            return mean + (Math.random() - 0.5) * stdDev * 2;
+        }
+        return result;
     }
     clamp(value, min, max) {
         return Math.max(min, Math.min(max, value));

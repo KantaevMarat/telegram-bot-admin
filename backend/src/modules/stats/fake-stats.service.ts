@@ -342,6 +342,18 @@ export class FakeStatsService {
       }
     }
 
+    // Final safety check: if newValue is NaN or invalid, use safe fallback
+    if (!isFinite(newValue) || isNaN(newValue)) {
+      // Fallback: simple growth for onlyGrowth, or simple variation otherwise
+      if (onlyGrowth) {
+        newValue = previousValue * 1.03; // 3% growth as fallback
+      } else {
+        newValue = previousValue * (1 + this.randomUniform(-0.05, 0.05)); // ±5% variation
+      }
+      // Ensure it's within bounds
+      newValue = this.clamp(newValue, targetMin, targetMax);
+    }
+
     return newValue;
   }
 
@@ -387,10 +399,27 @@ export class FakeStatsService {
    * Generate Gaussian (normal) random number using Box-Muller transform
    */
   private randomGaussian(mean: number, stdDev: number): number {
-    const u1 = Math.random();
+    // Ensure u1 is not too close to 0 to avoid log(0) = -Infinity
+    let u1 = Math.random();
+    while (u1 <= 0 || u1 >= 1) {
+      u1 = Math.random();
+    }
+    // Ensure u1 is not too small to avoid numerical issues
+    if (u1 < 1e-10) {
+      u1 = 1e-10;
+    }
+    
     const u2 = Math.random();
     const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-    return mean + z0 * stdDev;
+    const result = mean + z0 * stdDev;
+    
+    // Validate result is not NaN or Infinity
+    if (!isFinite(result)) {
+      // Fallback to uniform distribution if Gaussian fails
+      return mean + (Math.random() - 0.5) * stdDev * 2;
+    }
+    
+    return result;
   }
 
   /**
