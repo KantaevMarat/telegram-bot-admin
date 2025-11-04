@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { broadcastApi, mediaApi } from '../api/client';
 import toast from 'react-hot-toast';
@@ -26,7 +26,6 @@ export default function BroadcastPage() {
   const [uploadingFile, setUploadingFile] = useState(false);
   const [scheduledAt, setScheduledAt] = useState('');
   const [isScheduled, setIsScheduled] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Получение списка рассылок
   const { data: broadcasts = [] } = useQuery<Broadcast[]>({
@@ -48,9 +47,6 @@ export default function BroadcastPage() {
       setSelectedFile(null);
       setScheduledAt('');
       setIsScheduled(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
       queryClient.invalidateQueries({ queryKey: ['broadcasts'] });
     },
     onError: (err: any) => {
@@ -109,19 +105,6 @@ export default function BroadcastPage() {
       batchSize: 30,
       throttle: 1000,
     });
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // Проверка размера файла (макс 50 МБ для рассылки)
-      if (file.size > 50 * 1024 * 1024) {
-        toast.error('Файл слишком большой (максимум 50 МБ)');
-        return;
-      }
-      setSelectedFile(file);
-      setMediaUrl(''); // Очищаем URL, если выбрали файл
-    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -301,7 +284,7 @@ export default function BroadcastPage() {
                         color: 'var(--text-tertiary)',
                         marginTop: '2px'
                       }}>
-                        {(selectedFile.size / 1024 / 1024).toFixed(2)} МБ
+                        {(selectedFile.size / 1024 / 1024).toFixed(2)} МБ • {selectedFile.type.startsWith('image/') ? 'Фото' : selectedFile.type.startsWith('video/') ? 'Видео' : 'Файл'}
                       </div>
                     </div>
                   </div>
@@ -309,9 +292,6 @@ export default function BroadcastPage() {
                     type="button"
                     onClick={() => {
                       setSelectedFile(null);
-                      if (fileInputRef.current) {
-                        fileInputRef.current.value = '';
-                      }
                     }}
                     style={{
                       background: 'transparent',
@@ -328,49 +308,90 @@ export default function BroadcastPage() {
                 </div>
               )}
 
-              {/* Кнопка выбора файла */}
-              <div style={{ display: 'flex', gap: '8px' }}>
+              {/* Кнопки выбора файла */}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {/* Кнопка загрузки фото */}
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    input.onchange = (e: any) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        if (file.size > 50 * 1024 * 1024) {
+                          toast.error('Файл слишком большой (максимум 50 МБ)');
+                          return;
+                        }
+                        setSelectedFile(file);
+                        setMediaUrl('');
+                      }
+                    };
+                    input.click();
+                  }}
                   disabled={uploadingFile || createMutation.isPending}
                   className="btn btn--secondary"
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, minWidth: '140px' }}
                 >
-                  <Upload size={16} />
-                  {selectedFile ? 'Изменить файл' : 'Выбрать файл'}
+                  <Image size={16} />
+                  Загрузить фото
                 </button>
-                
-                {/* Или ввести URL */}
-                {!selectedFile && (
-                  <div className="search-input" style={{ flex: 1 }}>
+
+                {/* Кнопка загрузки видео */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'video/*';
+                    input.onchange = (e: any) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        if (file.size > 50 * 1024 * 1024) {
+                          toast.error('Файл слишком большой (максимум 50 МБ)');
+                          return;
+                        }
+                        setSelectedFile(file);
+                        setMediaUrl('');
+                      }
+                    };
+                    input.click();
+                  }}
+                  disabled={uploadingFile || createMutation.isPending}
+                  className="btn btn--secondary"
+                  style={{ flex: 1, minWidth: '140px' }}
+                >
+                  <Film size={16} />
+                  Загрузить видео
+                </button>
+              </div>
+
+              {/* Или ввести URL */}
+              {!selectedFile && (
+                <div style={{ marginTop: '12px' }}>
+                  <div className="search-input">
                     <Image size={18} className="search-input__icon" />
                     <input
                       type="url"
                       className="search-input__field"
                       value={mediaUrl}
-                      onChange={(e) => setMediaUrl(e.target.value)}
-                      placeholder="Или введите URL..."
+                      onChange={(e) => {
+                        setMediaUrl(e.target.value);
+                        setSelectedFile(null);
+                      }}
+                      placeholder="Или введите URL медиафайла..."
                     />
                   </div>
-                )}
-              </div>
-
-              {/* Скрытый input для файла */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,video/*"
-                onChange={handleFileSelect}
-                style={{ display: 'none' }}
-              />
+                </div>
+              )}
 
               <p style={{ 
                 margin: '8px 0 0 0', 
                 fontSize: 'var(--font-size-xs)', 
                 color: 'var(--text-tertiary)' 
               }}>
-                Поддерживаются фото (JPG, PNG, GIF) и видео (MP4, MOV, AVI). Максимум 50 МБ
+                📷 Фото: JPG, PNG, GIF • 🎬 Видео: MP4, MOV, AVI • Максимум 50 МБ
               </p>
             </div>
 
@@ -445,9 +466,6 @@ export default function BroadcastPage() {
                   setSelectedFile(null);
                   setScheduledAt('');
                   setIsScheduled(false);
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = '';
-                  }
                 }}
                 className="btn btn--secondary"
                 disabled={createMutation.isPending || uploadingFile}
