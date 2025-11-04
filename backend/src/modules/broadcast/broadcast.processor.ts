@@ -57,38 +57,55 @@ export class BroadcastProcessor extends WorkerHost {
   }
 
   private async sendMessage(chatId: string, text: string, mediaUrls?: string[]) {
-    const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
-
-    await axios.post(url, {
-      chat_id: chatId,
-      text,
-      parse_mode: 'HTML',
-    });
-
-    // Send media if provided
+    // If there's media, send text as caption to the first media
     if (mediaUrls && mediaUrls.length > 0) {
-      for (const mediaUrl of mediaUrls) {
-        await this.sendMedia(chatId, mediaUrl);
+      // Send first media with text as caption
+      await this.sendMedia(chatId, mediaUrls[0], text);
+      
+      // Send remaining media without caption
+      for (let i = 1; i < mediaUrls.length; i++) {
+        await this.sendMedia(chatId, mediaUrls[i]);
+      }
+    } else {
+      // If no media, send text as regular message
+      if (text) {
+        const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
+        await axios.post(url, {
+          chat_id: chatId,
+          text,
+          parse_mode: 'HTML',
+        });
       }
     }
   }
 
-  private async sendMedia(chatId: string, mediaUrl: string) {
+  private async sendMedia(chatId: string, mediaUrl: string, caption?: string) {
     // Determine media type from URL
     const ext = mediaUrl.split('.').pop()?.toLowerCase() || '';
     let method = 'sendPhoto';
+    let mediaField = 'photo';
 
-    if (['mp4', 'mov', 'avi'].includes(ext)) {
+    if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
       method = 'sendVideo';
-    } else if (['pdf', 'doc', 'docx'].includes(ext)) {
+      mediaField = 'video';
+    } else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
       method = 'sendDocument';
+      mediaField = 'document';
     }
 
     const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
 
-    await axios.post(url, {
+    const payload: any = {
       chat_id: chatId,
-      [method === 'sendPhoto' ? 'photo' : method === 'sendVideo' ? 'video' : 'document']: mediaUrl,
-    });
+      [mediaField]: mediaUrl,
+    };
+
+    // Add caption if provided (and not empty)
+    if (caption && caption.trim()) {
+      payload.caption = caption;
+      payload.parse_mode = 'HTML';
+    }
+
+    await axios.post(url, payload);
   }
 }
