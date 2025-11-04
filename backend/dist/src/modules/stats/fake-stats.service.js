@@ -116,30 +116,41 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
             this.logger.log(`✅ Fake stats updated (default values): online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);
             return newFakeStats;
         }
-        const maxDeltaPercent = this.configService.get('FAKE_STATS_MAX_DELTA_PERCENT', 30);
-        const trendMin = this.configService.get('FAKE_STATS_TREND_MIN', -0.08);
-        const trendMax = this.configService.get('FAKE_STATS_TREND_MAX', 0.12);
-        const noiseStdDev = this.configService.get('FAKE_STATS_NOISE_STDDEV', 0.05);
-        const newFakeOnline = this.smoothRandomWalk(previousFake.online, realStats.users_count, maxDeltaPercent, trendMin, trendMax, noiseStdDev);
-        const newFakeActive = this.smoothRandomWalk(previousFake.active, realStats.users_count, maxDeltaPercent, trendMin, trendMax, noiseStdDev);
-        const paidTrendMin = Math.random() < 0.7 ? 0 : trendMin;
-        const paidTrendMax = trendMax * 2;
-        const newFakePaid = this.smoothRandomWalk(previousFake.paid_usdt, realStats.total_earned, maxDeltaPercent, paidTrendMin, paidTrendMax, noiseStdDev * 1.2, true);
         const defaultValues = {
             online: 1250,
             active: 8420,
             paid_usdt: 45678.5,
         };
+        const useDefaultOnline = previousFake.online < 100;
+        const useDefaultActive = previousFake.active < 100;
+        const useDefaultPaid = previousFake.paid_usdt < 1000;
+        const baseOnline = useDefaultOnline ? defaultValues.online : previousFake.online;
+        const baseActive = useDefaultActive ? defaultValues.active : previousFake.active;
+        const basePaid = useDefaultPaid ? defaultValues.paid_usdt : previousFake.paid_usdt;
+        if (useDefaultOnline || useDefaultActive || useDefaultPaid) {
+            this.logger.warn(`⚠️ Previous fake stats are too small (online=${previousFake.online}, active=${previousFake.active}, paid=${previousFake.paid_usdt}). ` +
+                `Using default values as base (online=${baseOnline}, active=${baseActive}, paid=${basePaid})`);
+        }
+        const maxDeltaPercent = this.configService.get('FAKE_STATS_MAX_DELTA_PERCENT', 30);
+        const trendMin = this.configService.get('FAKE_STATS_TREND_MIN', -0.08);
+        const trendMax = this.configService.get('FAKE_STATS_TREND_MAX', 0.12);
+        const noiseStdDev = this.configService.get('FAKE_STATS_NOISE_STDDEV', 0.05);
+        const newFakeOnline = this.smoothRandomWalk(baseOnline, realStats.users_count, maxDeltaPercent, trendMin, trendMax, noiseStdDev);
+        const newFakeActive = this.smoothRandomWalk(baseActive, realStats.users_count, maxDeltaPercent, trendMin, trendMax, noiseStdDev);
+        const paidTrendMin = Math.random() < 0.7 ? 0 : trendMin;
+        const paidTrendMax = trendMax * 2;
+        const newFakePaid = this.smoothRandomWalk(basePaid, realStats.total_earned, maxDeltaPercent, paidTrendMin, paidTrendMax, noiseStdDev * 1.2, true);
         const newFakeStats = this.fakeStatsRepo.create({
             online: Math.round(isNaN(newFakeOnline) ? defaultValues.online : newFakeOnline),
             active: Math.round(isNaN(newFakeActive) ? defaultValues.active : newFakeActive),
             paid_usdt: isNaN(newFakePaid) ? defaultValues.paid_usdt : Math.round(newFakePaid * 100) / 100,
         });
-        const onlineChange = ((newFakeStats.online - previousFake.online) / previousFake.online * 100).toFixed(2);
-        const activeChange = ((newFakeStats.active - previousFake.active) / previousFake.active * 100).toFixed(2);
-        const paidChange = ((newFakeStats.paid_usdt - previousFake.paid_usdt) / previousFake.paid_usdt * 100).toFixed(2);
-        this.logger.log(`📊 Previous: online=${previousFake.online}, active=${previousFake.active}, paid=${previousFake.paid_usdt}`);
-        this.logger.log(`📊 New: online=${newFakeStats.online} (${onlineChange}%), active=${newFakeStats.active} (${activeChange}%), paid=${newFakeStats.paid_usdt} (${paidChange}%)`);
+        const onlineChangePercent = baseOnline > 0 ? ((newFakeStats.online - baseOnline) / baseOnline * 100).toFixed(2) : '0.00';
+        const activeChangePercent = baseActive > 0 ? ((newFakeStats.active - baseActive) / baseActive * 100).toFixed(2) : '0.00';
+        const paidChangePercent = basePaid > 0 ? ((newFakeStats.paid_usdt - basePaid) / basePaid * 100).toFixed(2) : '0.00';
+        this.logger.log(`📊 Base (used): online=${baseOnline}, active=${baseActive}, paid=${basePaid.toFixed(2)}`);
+        this.logger.log(`📊 Previous (from DB): online=${previousFake.online}, active=${previousFake.active}, paid=${previousFake.paid_usdt.toFixed(2)}`);
+        this.logger.log(`📊 New: online=${newFakeStats.online} (${onlineChangePercent}%), active=${newFakeStats.active} (${activeChangePercent}%), paid=${newFakeStats.paid_usdt.toFixed(2)} (${paidChangePercent}%)`);
         await this.fakeStatsRepo.save(newFakeStats);
         this.logger.log(`✅ Fake stats updated: online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);
         return newFakeStats;
