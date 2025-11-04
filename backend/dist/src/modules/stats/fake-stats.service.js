@@ -176,16 +176,35 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
             newValue = previousValue + direction * forcedChange;
             newValue = this.clamp(newValue, targetMin, targetMax);
         }
-        if (onlyGrowth && newValue < previousValue) {
-            const growth = previousValue * this.randomUniform(0.03, 0.08);
-            newValue = previousValue + growth;
-            newValue = this.clamp(newValue, previousValue, targetMax);
+        if (onlyGrowth) {
+            if (newValue < previousValue) {
+                const growth = previousValue * this.randomUniform(0.03, 0.08);
+                newValue = previousValue + growth;
+                newValue = this.clamp(newValue, previousValue, targetMax);
+            }
+            else {
+                const actualChange = newValue - previousValue;
+                const minChangeForGrowth = previousValue * 0.03;
+                if (actualChange < minChangeForGrowth) {
+                    const growth = previousValue * this.randomUniform(0.03, 0.08);
+                    newValue = previousValue + growth;
+                    newValue = this.clamp(newValue, previousValue, targetMax);
+                }
+            }
         }
         const finalChange = Math.abs(newValue - previousValue);
         if (finalChange < previousValue * 0.02 && !onlyGrowth) {
             const direction = Math.random() > 0.5 ? 1 : -1;
             newValue = previousValue * (1 + direction * this.randomUniform(0.02, 0.06));
             newValue = this.clamp(newValue, targetMin, targetMax);
+        }
+        if (onlyGrowth) {
+            const finalChangeForGrowth = newValue - previousValue;
+            const absoluteMinChange = previousValue * 0.02;
+            if (finalChangeForGrowth < absoluteMinChange) {
+                newValue = previousValue * 1.02;
+                newValue = this.clamp(newValue, previousValue, targetMax);
+            }
         }
         return newValue;
     }

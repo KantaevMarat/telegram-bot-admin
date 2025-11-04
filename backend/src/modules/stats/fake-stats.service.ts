@@ -287,12 +287,24 @@ export class FakeStatsService {
       newValue = this.clamp(newValue, targetMin, targetMax);
     }
 
-    // If only growth, ensure it's not less than previous
-    if (onlyGrowth && newValue < previousValue) {
-      // Force growth (3-8% increase)
-      const growth = previousValue * this.randomUniform(0.03, 0.08);
-      newValue = previousValue + growth;
-      newValue = this.clamp(newValue, previousValue, targetMax);
+    // If only growth, ensure it's not less than previous AND has noticeable change
+    if (onlyGrowth) {
+      if (newValue < previousValue) {
+        // Force growth (3-8% increase) if value decreased
+        const growth = previousValue * this.randomUniform(0.03, 0.08);
+        newValue = previousValue + growth;
+        newValue = this.clamp(newValue, previousValue, targetMax);
+      } else {
+        // Even if value increased, ensure minimum change for onlyGrowth (3-8%)
+        const actualChange = newValue - previousValue;
+        const minChangeForGrowth = previousValue * 0.03; // 3% minimum
+        if (actualChange < minChangeForGrowth) {
+          // Force a noticeable growth (3-8% increase)
+          const growth = previousValue * this.randomUniform(0.03, 0.08);
+          newValue = previousValue + growth;
+          newValue = this.clamp(newValue, previousValue, targetMax);
+        }
+      }
     }
 
     // Final check: if change is still too small, force a larger change
@@ -301,6 +313,17 @@ export class FakeStatsService {
       const direction = Math.random() > 0.5 ? 1 : -1;
       newValue = previousValue * (1 + direction * this.randomUniform(0.02, 0.06));
       newValue = this.clamp(newValue, targetMin, targetMax);
+    }
+    
+    // For onlyGrowth, final check to ensure noticeable change
+    if (onlyGrowth) {
+      const finalChangeForGrowth = newValue - previousValue;
+      const absoluteMinChange = previousValue * 0.02; // 2% absolute minimum
+      if (finalChangeForGrowth < absoluteMinChange) {
+        // Force minimum growth
+        newValue = previousValue * 1.02; // At least 2% growth
+        newValue = this.clamp(newValue, previousValue, targetMax);
+      }
     }
 
     return newValue;
