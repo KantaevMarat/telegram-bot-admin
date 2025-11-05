@@ -70,7 +70,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: ${BACKEND_PORT:-3000}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-tg_app}
+      DATABASE_URL: ${DATABASE_URL}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       JWT_SECRET: ${JWT_SECRET:-this-is-a-very-strong-jwt-secret-key-with-more-than-32-characters-for-production-use-only}
