@@ -64,8 +64,23 @@ const getApiUrl = () => {
 };
 
 export const API_URL = getApiUrl();
-console.log('Using API URL:', API_URL);
-console.log('Environment variables:', import.meta.env);
+console.log('✅ Using API URL:', API_URL);
+console.log('📦 Environment variables:', {
+  VITE_API_URL: import.meta.env.VITE_API_URL,
+  MODE: import.meta.env.MODE,
+  PROD: import.meta.env.PROD,
+  DEV: import.meta.env.DEV,
+});
+console.log('🌐 Window location:', {
+  href: window.location.href,
+  origin: window.location.origin,
+  hostname: window.location.hostname,
+});
+console.log('📱 Telegram WebApp:', {
+  exists: typeof window !== 'undefined' && !!window.Telegram,
+  hasWebApp: typeof window !== 'undefined' && !!window.Telegram?.WebApp,
+  hasInitData: typeof window !== 'undefined' && !!window.Telegram?.WebApp?.initData,
+});
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -73,6 +88,9 @@ export const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+console.log('🔧 Axios instance created with baseURL:', api.defaults.baseURL);
+console.log('🔧 Full API URL will be:', API_URL);
 
 // Add request logging
 api.interceptors.request.use((config) => {

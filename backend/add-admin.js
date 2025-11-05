@@ -26,15 +26,17 @@ async function addAdmin() {
       console.log('ℹ️ Admin already exists:');
       console.log(JSON.stringify(existingAdmin[0], null, 2));
       
-      // Update role if provided and different from current
-      if (role && existingAdmin[0].role !== role) {
+      // Update role ONLY if explicitly provided as argument (not default)
+      // Don't change role if it's already set (preserve superadmin)
+      const roleProvided = process.argv.length > 5; // 5th argument is role
+      if (roleProvided && existingAdmin[0].role !== role) {
         await dataSource.query(
           'UPDATE admins SET role = $1 WHERE tg_id = $2',
           [role, tgId]
         );
         console.log(`✅ Admin role updated to "${role}"`);
       } else {
-        console.log(`✅ Admin already has "${existingAdmin[0].role}" role`);
+        console.log(`✅ Admin already has "${existingAdmin[0].role}" role (preserved)`);
       }
     } else {
       // Insert new admin
