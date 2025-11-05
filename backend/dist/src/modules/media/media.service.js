@@ -93,11 +93,13 @@ let MediaService = MediaService_1 = class MediaService {
         }
     }
     async uploadFile(file, folder = 'uploads') {
-        const fileName = `${folder}/${(0, uuid_1.v4)()}-${file.originalname}`;
+        const fileExtension = file.originalname.split('.').pop()?.toLowerCase() || 'bin';
+        const fileName = `${folder}/${(0, uuid_1.v4)()}.${fileExtension}`;
         const metaData = {
             'Content-Type': file.mimetype,
+            'Original-Name': Buffer.from(file.originalname).toString('base64'),
         };
-        this.logger.log(`📤 Uploading file to MinIO: bucket=${this.bucketName}, fileName=${fileName}, size=${file.size}`);
+        this.logger.log(`📤 Uploading file to MinIO: bucket=${this.bucketName}, fileName=${fileName}, originalName=${file.originalname}, size=${file.size}`);
         try {
             await this.minioClient.putObject(this.bucketName, fileName, file.buffer, file.size, metaData);
             this.logger.log(`✅ File uploaded to MinIO: ${fileName}`);

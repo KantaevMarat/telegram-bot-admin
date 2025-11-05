@@ -58,12 +58,18 @@ export class MediaService {
   }
 
   async uploadFile(file: Express.Multer.File, folder = 'uploads'): Promise<string> {
-    const fileName = `${folder}/${uuidv4()}-${file.originalname}`;
+    // Извлекаем расширение файла
+    const fileExtension = file.originalname.split('.').pop()?.toLowerCase() || 'bin';
+    // Используем только UUID + расширение, без оригинального имени (избегаем проблем с кириллицей и спецсимволами)
+    const fileName = `${folder}/${uuidv4()}.${fileExtension}`;
+    
     const metaData = {
       'Content-Type': file.mimetype,
+      // Сохраняем оригинальное имя в метаданных для справки
+      'Original-Name': Buffer.from(file.originalname).toString('base64'),
     };
 
-    this.logger.log(`📤 Uploading file to MinIO: bucket=${this.bucketName}, fileName=${fileName}, size=${file.size}`);
+    this.logger.log(`📤 Uploading file to MinIO: bucket=${this.bucketName}, fileName=${fileName}, originalName=${file.originalname}, size=${file.size}`);
 
     try {
       await this.minioClient.putObject(this.bucketName, fileName, file.buffer, file.size, metaData);
