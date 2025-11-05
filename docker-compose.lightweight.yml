@@ -82,6 +82,7 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-telegram-media}
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL}
       TZ: Europe/Moscow
     ports:
       - "${BACKEND_PORT:-3000}:3000"
