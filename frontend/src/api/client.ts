@@ -40,10 +40,12 @@ const getApiUrl = () => {
   }
   
   // For Telegram Mini Apps running on production domain
-  if (isTelegramWebApp && !currentUrl.includes('localhost') && !currentUrl.includes('127.0.0.1')) {
+  // Check if Telegram WebApp exists (even without initData)
+  const hasTelegramWebApp = typeof window !== 'undefined' && window.Telegram?.WebApp;
+  if (hasTelegramWebApp && !currentUrl.includes('localhost') && !currentUrl.includes('127.0.0.1')) {
     const origin = window.location.origin;
     const telegramApiUrl = `${origin}/api`;
-    console.log('📱 Telegram Mini App on production - using same origin API:', telegramApiUrl);
+    console.log('📱 Telegram Mini App detected - using same origin API:', telegramApiUrl);
     return telegramApiUrl;
   }
 
@@ -88,8 +90,19 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    console.error('❌ API Error:', error.response?.status || 'Network Error', error.config?.url || 'Unknown URL');
-    console.error('❌ Error details:', error.response?.data || error.message);
+    if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
+      console.error('❌ Network Error - API недоступен:', error.config?.baseURL + error.config?.url);
+      console.error('❌ Проверьте:', {
+        baseURL: error.config?.baseURL,
+        url: error.config?.url,
+        fullURL: error.config?.baseURL + error.config?.url,
+        message: error.message,
+        code: error.code
+      });
+    } else {
+      console.error('❌ API Error:', error.response?.status || 'Unknown', error.config?.url || 'Unknown URL');
+      console.error('❌ Error details:', error.response?.data || error.message);
+    }
     return Promise.reject(error);
   }
 );
