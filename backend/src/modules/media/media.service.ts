@@ -85,6 +85,14 @@ export class MediaService {
   }
 
   async getFileUrl(fileName: string): Promise<string> {
+    // Используем публичный URL если он задан (для доступа из интернета, например для Telegram API)
+    const publicUrl = this.configService.get('MINIO_PUBLIC_URL');
+    if (publicUrl) {
+      // MINIO_PUBLIC_URL должен быть в формате: http://IP:PORT или https://domain.com
+      return `${publicUrl}/${this.bucketName}/${fileName}`;
+    }
+
+    // Иначе используем внутренний endpoint (для локальной разработки)
     const endpoint = this.configService.get('MINIO_ENDPOINT', 'localhost');
     const port = this.configService.get('MINIO_PORT', '9000');
     const useSSL = this.configService.get('MINIO_USE_SSL', 'false') === 'true';

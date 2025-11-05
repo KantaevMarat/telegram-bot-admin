@@ -113,6 +113,10 @@ let MediaService = MediaService_1 = class MediaService {
         }
     }
     async getFileUrl(fileName) {
+        const publicUrl = this.configService.get('MINIO_PUBLIC_URL');
+        if (publicUrl) {
+            return `${publicUrl}/${this.bucketName}/${fileName}`;
+        }
         const endpoint = this.configService.get('MINIO_ENDPOINT', 'localhost');
         const port = this.configService.get('MINIO_PORT', '9000');
         const useSSL = this.configService.get('MINIO_USE_SSL', 'false') === 'true';
