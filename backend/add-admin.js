@@ -4,6 +4,7 @@ require('dotenv').config();
 const tgId = process.argv[2] || '697184435';
 const username = process.argv[3] || 'admin';
 const firstName = process.argv[4] || 'Admin';
+const role = process.argv[5] || 'admin';
 
 async function addAdmin() {
   const dataSource = new DataSource({
@@ -25,15 +26,15 @@ async function addAdmin() {
       console.log('ℹ️ Admin already exists:');
       console.log(JSON.stringify(existingAdmin[0], null, 2));
       
-      // Update role to admin if needed
-      if (existingAdmin[0].role !== 'admin') {
+      // Update role if provided and different from current
+      if (role && existingAdmin[0].role !== role) {
         await dataSource.query(
           'UPDATE admins SET role = $1 WHERE tg_id = $2',
-          ['admin', tgId]
+          [role, tgId]
         );
-        console.log('✅ Admin role updated to "admin"');
+        console.log(`✅ Admin role updated to "${role}"`);
       } else {
-        console.log('✅ Admin already has "admin" role');
+        console.log(`✅ Admin already has "${existingAdmin[0].role}" role`);
       }
     } else {
       // Insert new admin
@@ -41,7 +42,7 @@ async function addAdmin() {
         `INSERT INTO admins (tg_id, username, first_name, role, created_at)
          VALUES ($1, $2, $3, $4, NOW())
          RETURNING *`,
-        [tgId, username, firstName, 'admin']
+        [tgId, username, firstName, role]
       );
       console.log('✅ Admin created:');
       console.log(JSON.stringify(result[0], null, 2));
