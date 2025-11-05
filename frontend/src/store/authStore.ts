@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useTelegramStore } from './telegramStore';
+import { API_URL } from '../api/client';
 
 interface AuthState {
   token: string | null;
@@ -25,46 +26,40 @@ export const useAuthStore = create<AuthState>()(
       
       loginWithTelegram: async () => {
         try {
-          // Получаем API URL заранее
-          let apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-          const isDockerHostname = apiUrl.includes('tg-backend') || apiUrl.includes('tg-frontend');
-          if (isDockerHostname) {
-            apiUrl = 'http://localhost:3000';
-          }
-          // Убираем /api из конца если есть (чтобы не дублировать)
-          apiUrl = apiUrl.replace(/\/api\/?$/, '');
+          // Используем API URL из client.ts (уже с правильным определением)
+          const apiUrl = API_URL.replace(/\/api\/?$/, ''); // Убираем /api если есть, т.к. добавим вручную
 
           // Получаем initData напрямую из Telegram WebApp (может быть доступен не сразу)
           const telegramWebApp = typeof window !== 'undefined' ? window.Telegram?.WebApp : null;
           
           if (!telegramWebApp) {
             console.warn('⚠️ Telegram WebApp is not available');
-            // В dev режиме пробуем dev login
-            if (import.meta.env.DEV) {
-              console.log('🔧 Development mode: Telegram WebApp not available, using dev login fallback');
-              try {
-                const response = await fetch(`${apiUrl}/api/auth/telegram/admin`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({ initData: 'dev' }),
-                });
+            // Fallback: Используем dev login если Telegram WebApp недоступен
+            console.log('🔧 Telegram WebApp not available, trying dev login fallback...');
+            try {
+              const response = await fetch(`${apiUrl}/api/auth/telegram/admin`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ initData: 'dev' }),
+              });
 
-                if (response.ok) {
-                  const data = await response.json();
-                  console.log('✅ Dev login fallback successful:', data);
-                  set({ 
-                    token: data.access_token, 
-                    admin: data.admin, 
-                    isAuthenticated: true,
-                    isTelegramAuth: false 
-                  });
-                  return { success: true };
-                }
-              } catch (devError) {
-                console.error('❌ Dev login fallback failed:', devError);
+              if (response.ok) {
+                const data = await response.json();
+                console.log('✅ Dev login fallback successful:', data);
+                set({ 
+                  token: data.access_token, 
+                  admin: data.admin, 
+                  isAuthenticated: true,
+                  isTelegramAuth: false 
+                });
+                return { success: true };
+              } else {
+                console.warn('⚠️ Dev login fallback failed with status:', response.status);
               }
+            } catch (devError) {
+              console.error('❌ Dev login fallback failed:', devError);
             }
             return { success: false, error: 'Telegram WebApp is not available. Make sure you opened the app through Telegram.' };
           }
@@ -93,32 +88,32 @@ export const useAuthStore = create<AuthState>()(
               initDataUnsafeUser: telegramWebApp?.initDataUnsafe?.user,
             });
             
-            // Fallback: В dev режиме используем dev login
-            if (import.meta.env.DEV) {
-              console.log('🔧 Development mode: No initData, using dev login fallback');
-              try {
-                const response = await fetch(`${apiUrl}/api/auth/telegram/admin`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({ initData: 'dev' }),
-                });
+            // Fallback: Используем dev login если initData недоступен (работает и в production)
+            console.log('🔧 No initData available, trying dev login fallback...');
+            try {
+              const response = await fetch(`${apiUrl}/api/auth/telegram/admin`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ initData: 'dev' }),
+              });
 
-                if (response.ok) {
-                  const data = await response.json();
-                  console.log('✅ Dev login fallback successful:', data);
-                  set({ 
-                    token: data.access_token, 
-                    admin: data.admin, 
-                    isAuthenticated: true,
-                    isTelegramAuth: false 
-                  });
-                  return { success: true };
-                }
-              } catch (devError) {
-                console.error('❌ Dev login fallback failed:', devError);
+              if (response.ok) {
+                const data = await response.json();
+                console.log('✅ Dev login fallback successful:', data);
+                set({ 
+                  token: data.access_token, 
+                  admin: data.admin, 
+                  isAuthenticated: true,
+                  isTelegramAuth: false 
+                });
+                return { success: true };
+              } else {
+                console.warn('⚠️ Dev login fallback failed with status:', response.status);
               }
+            } catch (devError) {
+              console.error('❌ Dev login fallback failed:', devError);
             }
             
             return { success: false, error: 'No Telegram initData available. Make sure you opened the app through Telegram bot Menu Button, not directly via URL in browser.' };
