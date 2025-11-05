@@ -44,10 +44,11 @@ const getApiUrl = () => {
     return apiUrl;
   }
 
-  // Fallback: production or unknown environment
-  const fallbackUrl = 'http://localhost:3000/api';
-  console.log('🔄 Using fallback API URL:', fallbackUrl);
-  return fallbackUrl;
+  // Priority 4: Production environment - use same origin + /api
+  const origin = window.location.origin;
+  const productionUrl = `${origin}/api`;
+  console.log('🚀 Production environment - using same origin API:', productionUrl);
+  return productionUrl;
 };
 
 export const API_URL = getApiUrl();
