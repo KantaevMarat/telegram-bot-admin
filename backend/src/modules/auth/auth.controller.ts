@@ -21,7 +21,7 @@ export class AuthController {
     // Check if this is a development request (no initData or special format)
     if (!loginDto.initData || loginDto.initData === 'dev') {
       this.logger.log('🔧 Development mode login detected');
-      return await this.authService.devLogin(697184435);
+      return await this.authService.devLogin(6971844353); // Use superadmin ID
     }
     
     try {
