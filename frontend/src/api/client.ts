@@ -30,11 +30,21 @@ const getApiUrl = () => {
     }
   }
 
-  // Priority 2: For Telegram Web Apps (serveo, ngrok, etc.)
-  if (currentUrl.includes('serveo.net') || currentUrl.includes('ngrok.io') || currentUrl.includes('trycloudflare.com') || currentUrl.includes('loca.lt')) {
+  // Priority 2: For Telegram Web Apps with tunneling (serveo, ngrok, etc.)
+  // Skip this for production Telegram Mini Apps that access via domain directly
+  const isTelegramWebApp = window.Telegram?.WebApp?.initData;
+  if (!isTelegramWebApp && (currentUrl.includes('serveo.net') || currentUrl.includes('ngrok.io') || currentUrl.includes('trycloudflare.com') || currentUrl.includes('loca.lt'))) {
     const apiUrl = 'http://localhost:3000/api';
-    console.log('📱 Telegram Web App detected - using localhost API:', apiUrl);
+    console.log('📱 Telegram Web App with tunnel detected - using localhost API:', apiUrl);
     return apiUrl;
+  }
+  
+  // For Telegram Mini Apps running on production domain
+  if (isTelegramWebApp && !currentUrl.includes('localhost') && !currentUrl.includes('127.0.0.1')) {
+    const origin = window.location.origin;
+    const telegramApiUrl = `${origin}/api`;
+    console.log('📱 Telegram Mini App on production - using same origin API:', telegramApiUrl);
+    return telegramApiUrl;
   }
 
   // Priority 3: Running locally (localhost or 127.0.0.1)
