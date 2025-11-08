@@ -1063,6 +1063,32 @@ let BotService = BotService_1 = class BotService {
             await this.sendMessage(chatId, '❌ Задание не найдено. Начните его выполнение заново.');
             return;
         }
+        if (task.min_completion_time > 0 && userTask.started_at) {
+            const now = new Date();
+            const startedAt = new Date(userTask.started_at);
+            const elapsedMinutes = Math.floor((now.getTime() - startedAt.getTime()) / (1000 * 60));
+            const remainingMinutes = task.min_completion_time - elapsedMinutes;
+            if (remainingMinutes > 0) {
+                const hours = Math.floor(remainingMinutes / 60);
+                const minutes = remainingMinutes % 60;
+                let timeText = '';
+                if (hours > 0) {
+                    timeText = `${hours} ч ${minutes} мин`;
+                }
+                else {
+                    timeText = `${minutes} мин`;
+                }
+                await this.sendMessage(chatId, `⏳ *Подождите немного!*\n\n` +
+                    `Кнопка подтверждения выполнения станет доступна через:\n` +
+                    `⏱️ ${timeText}\n\n` +
+                    `Это необходимо для проверки честного выполнения задания.`, {
+                    inline_keyboard: [
+                        [{ text: '🔙 К заданиям', callback_data: 'tasks' }],
+                    ],
+                });
+                return;
+            }
+        }
         if (task.task_type === 'subscription' && task.channel_id) {
             const isSubscribed = await this.checkChannelSubscription(user.tg_id, task.channel_id);
             if (!isSubscribed) {
@@ -1081,7 +1107,7 @@ let BotService = BotService_1 = class BotService {
             this.logger.log(`✅ Subscription verified: user ${user.tg_id}, channel ${task.channel_id}`);
         }
         const reward = Math.floor(Math.random() * (task.reward_max - task.reward_min + 1)) + task.reward_min;
-        const requiresManualReview = task.reward_max > 50;
+        const requiresManualReview = task.task_type === 'manual' || task.reward_max > 50;
         if (requiresManualReview) {
             userTask.status = 'submitted';
             userTask.reward = reward;

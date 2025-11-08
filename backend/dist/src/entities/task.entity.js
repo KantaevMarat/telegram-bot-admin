@@ -66,6 +66,10 @@ __decorate([
 __decorate([
     (0, typeorm_1.Column)({ type: 'int', default: 0 }),
     __metadata("design:type", Number)
+], Task.prototype, "min_completion_time", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'int', default: 0 }),
+    __metadata("design:type", Number)
 ], Task.prototype, "cooldown_hours", void 0);
 __decorate([
     (0, typeorm_1.Column)({ type: 'boolean', default: true }),

@@ -18,11 +18,15 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const task_entity_1 = require("../../entities/task.entity");
 const user_task_entity_1 = require("../../entities/user-task.entity");
+const user_entity_1 = require("../../entities/user.entity");
+const balance_log_entity_1 = require("../../entities/balance-log.entity");
 const sync_service_1 = require("../sync/sync.service");
 let TasksService = class TasksService {
-    constructor(taskRepo, userTaskRepo, syncService) {
+    constructor(taskRepo, userTaskRepo, userRepo, balanceLogRepo, syncService) {
         this.taskRepo = taskRepo;
         this.userTaskRepo = userTaskRepo;
+        this.userRepo = userRepo;
+        this.balanceLogRepo = balanceLogRepo;
         this.syncService = syncService;
     }
     async create(createTaskDto) {
@@ -74,13 +78,121 @@ let TasksService = class TasksService {
             total_reward_paid: parseFloat(totalReward?.total || '0'),
         };
     }
+    async getPendingReview(status, search) {
+        const queryBuilder = this.userTaskRepo
+            .createQueryBuilder('userTask')
+            .leftJoinAndSelect('userTask.user', 'user')
+            .leftJoinAndSelect('userTask.task', 'task')
+            .orderBy('userTask.submitted_at', 'DESC');
+        if (status) {
+            queryBuilder.andWhere('userTask.status = :status', { status });
+        }
+        else {
+            queryBuilder.andWhere('userTask.status IN (:...statuses)', {
+                statuses: ['submitted', 'in_progress'],
+            });
+        }
+        if (search) {
+            queryBuilder.andWhere('(user.username ILIKE :search OR user.tg_id ILIKE :search OR user.first_name ILIKE :search OR user.last_name ILIKE :search)', { search: `%${search}%` });
+        }
+        const userTasks = await queryBuilder.getMany();
+        return userTasks.map((ut) => ({
+            id: ut.id,
+            user_id: ut.user_id,
+            task_id: ut.task_id,
+            status: ut.status,
+            reward: ut.reward,
+            started_at: ut.started_at,
+            submitted_at: ut.submitted_at,
+            completed_at: ut.completed_at,
+            user: {
+                id: ut.user.id,
+                tg_id: ut.user.tg_id,
+                username: ut.user.username,
+                first_name: ut.user.first_name,
+                last_name: ut.user.last_name,
+            },
+            task: {
+                id: ut.task.id,
+                title: ut.task.title,
+                description: ut.task.description,
+                reward_min: ut.task.reward_min,
+                reward_max: ut.task.reward_max,
+            },
+        }));
+    }
+    async approveTask(userTaskId) {
+        const userTask = await this.userTaskRepo.findOne({
+            where: { id: userTaskId },
+            relations: ['user', 'task'],
+        });
+        if (!userTask) {
+            throw new common_1.NotFoundException('User task not found');
+        }
+        if (userTask.status !== 'submitted') {
+            throw new common_1.BadRequestException(`Task is not submitted for review (status: ${userTask.status})`);
+        }
+        const user = userTask.user;
+        const task = userTask.task;
+        const reward = userTask.reward || 0;
+        userTask.status = 'completed';
+        userTask.reward_received = reward;
+        userTask.completed_at = new Date();
+        await this.userTaskRepo.save(userTask);
+        const balanceBefore = parseFloat(user.balance_usdt.toString());
+        const balanceAfter = balanceBefore + reward;
+        user.balance_usdt = balanceAfter;
+        user.total_earned = parseFloat(user.total_earned.toString()) + reward;
+        user.tasks_completed = user.tasks_completed + 1;
+        await this.userRepo.save(user);
+        await this.balanceLogRepo.save({
+            user_id: user.id,
+            delta: reward,
+            balance_before: balanceBefore,
+            balance_after: balanceAfter,
+            reason: 'task_reward',
+            comment: `Награда за выполнение задания: ${task.title} (одобрено администратором)`,
+        });
+        await this.syncService.emitEntityEvent('user_tasks', 'updated', userTask);
+        return {
+            success: true,
+            message: 'Task approved and reward credited',
+            userTask,
+            balanceAfter,
+        };
+    }
+    async rejectTask(userTaskId, reason) {
+        const userTask = await this.userTaskRepo.findOne({
+            where: { id: userTaskId },
+            relations: ['user', 'task'],
+        });
+        if (!userTask) {
+            throw new common_1.NotFoundException('User task not found');
+        }
+        if (userTask.status !== 'submitted') {
+            throw new common_1.BadRequestException(`Task is not submitted for review (status: ${userTask.status})`);
+        }
+        userTask.status = 'rejected';
+        await this.userTaskRepo.save(userTask);
+        await this.syncService.emitEntityEvent('user_tasks', 'updated', userTask);
+        return {
+            success: true,
+            message: 'Task rejected',
+            userTask,
+            reason: reason || 'Не указано',
+        };
+    }
 };
 exports.TasksService = TasksService;
 exports.TasksService = TasksService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(task_entity_1.Task)),
     __param(1, (0, typeorm_1.InjectRepository)(user_task_entity_1.UserTask)),
+    __param(2, (0, typeorm_1.InjectRepository)(user_entity_1.User)),
+    __param(3, (0, typeorm_1.InjectRepository)(balance_log_entity_1.BalanceLog)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
+        typeorm_2.Repository,
         typeorm_2.Repository,
         sync_service_1.SyncService])
 ], TasksService);

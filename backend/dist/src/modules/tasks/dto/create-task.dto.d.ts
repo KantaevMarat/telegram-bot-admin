@@ -10,6 +10,7 @@ export declare class CreateTaskDto {
     channel_id?: string;
     task_type?: string;
     command?: string;
+    min_completion_time?: number;
     cooldown_hours?: number;
     active?: boolean;
 }

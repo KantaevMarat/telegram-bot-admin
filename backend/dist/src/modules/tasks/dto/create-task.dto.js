@@ -87,6 +87,15 @@ __decorate([
     __metadata("design:type", String)
 ], CreateTaskDto.prototype, "command", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Minimum completion time in minutes', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Transform)(({ value }) => (value !== undefined && typeof value === 'string' ? parseInt(value) : value)),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], CreateTaskDto.prototype, "min_completion_time", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ description: 'Cooldown in hours', required: false }),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Transform)(({ value }) => (value !== undefined && typeof value === 'string' ? parseInt(value) : value)),

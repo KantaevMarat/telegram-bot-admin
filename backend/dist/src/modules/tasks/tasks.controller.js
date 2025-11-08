@@ -43,6 +43,15 @@ let TasksController = class TasksController {
     async remove(id) {
         return await this.tasksService.remove(id);
     }
+    async getPendingReview(status, search) {
+        return await this.tasksService.getPendingReview(status, search);
+    }
+    async approveTask(userTaskId) {
+        return await this.tasksService.approveTask(userTaskId);
+    }
+    async rejectTask(userTaskId, body) {
+        return await this.tasksService.rejectTask(userTaskId, body?.reason);
+    }
 };
 exports.TasksController = TasksController;
 __decorate([
@@ -94,6 +103,32 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], TasksController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Get)('moderation/pending'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get tasks pending review' }),
+    __param(0, (0, common_1.Query)('status')),
+    __param(1, (0, common_1.Query)('search')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], TasksController.prototype, "getPendingReview", null);
+__decorate([
+    (0, common_1.Post)('moderation/:userTaskId/approve'),
+    (0, swagger_1.ApiOperation)({ summary: 'Approve task submission' }),
+    __param(0, (0, common_1.Param)('userTaskId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], TasksController.prototype, "approveTask", null);
+__decorate([
+    (0, common_1.Post)('moderation/:userTaskId/reject'),
+    (0, swagger_1.ApiOperation)({ summary: 'Reject task submission' }),
+    __param(0, (0, common_1.Param)('userTaskId')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], TasksController.prototype, "rejectTask", null);
 exports.TasksController = TasksController = __decorate([
     (0, swagger_1.ApiTags)('admin'),
     (0, common_1.Controller)('admin/tasks'),

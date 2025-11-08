@@ -17,4 +17,42 @@ export declare class TasksController {
         success: boolean;
         message: string;
     }>;
+    getPendingReview(status?: string, search?: string): Promise<{
+        id: string;
+        user_id: string;
+        task_id: string;
+        status: string;
+        reward: number;
+        started_at: Date;
+        submitted_at: Date;
+        completed_at: Date;
+        user: {
+            id: string;
+            tg_id: string;
+            username: string;
+            first_name: string;
+            last_name: string;
+        };
+        task: {
+            id: string;
+            title: string;
+            description: string;
+            reward_min: number;
+            reward_max: number;
+        };
+    }[]>;
+    approveTask(userTaskId: string): Promise<{
+        success: boolean;
+        message: string;
+        userTask: import("../../entities/user-task.entity").UserTask;
+        balanceAfter: number;
+    }>;
+    rejectTask(userTaskId: string, body?: {
+        reason?: string;
+    }): Promise<{
+        success: boolean;
+        message: string;
+        userTask: import("../../entities/user-task.entity").UserTask;
+        reason: string;
+    }>;
 }

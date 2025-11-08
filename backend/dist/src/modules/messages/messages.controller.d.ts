@@ -3,7 +3,23 @@ import { SendMessageDto } from './dto/send-message.dto';
 export declare class MessagesController {
     private readonly messagesService;
     constructor(messagesService: MessagesService);
-    getChats(): Promise<any[]>;
+    getChats(): Promise<{
+        user_id: any;
+        user: {
+            id: any;
+            tg_id: any;
+            username: any;
+            first_name: any;
+            last_name: any;
+        };
+        last_message: {
+            text: string;
+            created_at: Date;
+            from_admin: boolean;
+        } | null;
+        unread_count: number;
+        media_count: number;
+    }[]>;
     getUnreadCount(): Promise<{
         unread: number;
     }>;
