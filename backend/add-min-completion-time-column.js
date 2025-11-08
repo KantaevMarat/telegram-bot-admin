@@ -1,12 +1,33 @@
 const { Client } = require('pg');
+const url = require('url');
 
-const client = new Client({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME || 'telegram_bot',
-  user: process.env.DB_USER || 'admin',
-  password: process.env.DB_PASSWORD || 'your_secure_password',
-});
+// Поддержка DATABASE_URL (приоритет) или отдельных переменных
+let clientConfig;
+
+if (process.env.DATABASE_URL) {
+  // Используем DATABASE_URL (формат: postgresql://user:password@host:port/database)
+  const dbUrl = process.env.DATABASE_URL;
+  const dbConfig = url.parse(dbUrl);
+  
+  clientConfig = {
+    host: dbConfig.hostname,
+    port: dbConfig.port || 5432,
+    database: dbConfig.pathname ? dbConfig.pathname.slice(1) : 'telegram_bot',
+    user: dbConfig.auth ? dbConfig.auth.split(':')[0] : 'postgres',
+    password: dbConfig.auth ? dbConfig.auth.split(':')[1] : '',
+  };
+} else {
+  // Используем отдельные переменные окружения
+  clientConfig = {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432'),
+    database: process.env.DB_NAME || 'telegram_bot',
+    user: process.env.DB_USER || 'admin',
+    password: process.env.DB_PASSWORD || 'your_secure_password',
+  };
+}
+
+const client = new Client(clientConfig);
 
 async function addMinCompletionTimeColumn() {
   try {
