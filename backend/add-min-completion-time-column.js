@@ -31,6 +31,12 @@ const client = new Client(clientConfig);
 
 async function addMinCompletionTimeColumn() {
   try {
+    console.log('🔍 Connecting to database...');
+    console.log('📍 Host:', clientConfig.host);
+    console.log('📍 Port:', clientConfig.port);
+    console.log('📍 Database:', clientConfig.database);
+    console.log('📍 User:', clientConfig.user);
+    
     await client.connect();
     console.log('✅ Connected to database');
 
