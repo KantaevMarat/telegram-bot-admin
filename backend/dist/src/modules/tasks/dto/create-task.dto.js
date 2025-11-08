@@ -81,6 +81,12 @@ __decorate([
     __metadata("design:type", String)
 ], CreateTaskDto.prototype, "task_type", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Command to execute task (e.g., /start_task)', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateTaskDto.prototype, "command", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ description: 'Cooldown in hours', required: false }),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Transform)(({ value }) => (value !== undefined && typeof value === 'string' ? parseInt(value) : value)),

@@ -34,8 +34,9 @@ const messages_service_1 = require("../messages/messages.service");
 const users_service_1 = require("../users/users.service");
 const sync_service_1 = require("../sync/sync.service");
 const channels_service_1 = require("../channels/channels.service");
+const commands_service_1 = require("../commands/commands.service");
 let BotService = BotService_1 = class BotService {
-    constructor(userRepo, buttonRepo, taskRepo, userTaskRepo, scenarioRepo, balanceLogRepo, configService, fakeStatsService, settingsService, messagesService, usersService, syncService, channelsService) {
+    constructor(userRepo, buttonRepo, taskRepo, userTaskRepo, scenarioRepo, balanceLogRepo, configService, fakeStatsService, settingsService, messagesService, usersService, syncService, channelsService, commandsService) {
         this.userRepo = userRepo;
         this.buttonRepo = buttonRepo;
         this.taskRepo = taskRepo;
@@ -49,6 +50,7 @@ let BotService = BotService_1 = class BotService {
         this.usersService = usersService;
         this.syncService = syncService;
         this.channelsService = channelsService;
+        this.commandsService = commandsService;
         this.logger = new common_1.Logger(BotService_1.name);
         this.botToken = '';
         this.pollingOffset = 0;
@@ -169,9 +171,19 @@ let BotService = BotService_1 = class BotService {
     async handleMessage(message) {
         const chatId = message.chat.id.toString();
         const text = message.text;
+        const maintenanceMode = await this.settingsService.getValue('maintenance_mode', 'false');
+        if (maintenanceMode === 'true') {
+            await this.sendMessage(chatId, '🛠 Бот находится на техническом обслуживании. Попробуйте позже.');
+            return;
+        }
         let user = await this.userRepo.findOne({ where: { tg_id: chatId } });
         const isNewUser = !user;
         if (!user) {
+            const registrationEnabled = await this.settingsService.getValue('registration_enabled', 'true');
+            if (registrationEnabled === 'false') {
+                await this.sendMessage(chatId, '🚫 Регистрация новых пользователей временно приостановлена.');
+                return;
+            }
             let refBy;
             if (text?.startsWith('/start ref')) {
                 refBy = text.replace('/start ref', '').trim();
@@ -288,8 +300,8 @@ let BotService = BotService_1 = class BotService {
         try {
             const referrer = await this.userRepo.findOne({ where: { tg_id: referrerTgId } });
             if (referrer) {
-                const refBonus = await this.settingsService.getValue('ref_bonus', '10');
-                const bonusAmount = 5;
+                const refBonusPercent = await this.settingsService.getValue('ref_bonus_percent', '5.00');
+                const bonusAmount = parseFloat(refBonusPercent);
                 const balanceBefore = parseFloat(referrer.balance_usdt.toString());
                 const balanceAfter = balanceBefore + bonusAmount;
                 referrer.balance_usdt = balanceAfter;
@@ -371,7 +383,79 @@ let BotService = BotService_1 = class BotService {
                 await this.sendHelp(chatId);
                 break;
             default:
-                await this.sendMessage(chatId, 'Неизвестная команда. Используйте /help для списка команд.', await this.getReplyKeyboard());
+                const task = await this.taskRepo.findOne({
+                    where: {
+                        command: cmd,
+                        active: true
+                    }
+                });
+                if (task) {
+                    await this.handleTaskCommand(chatId, user, task);
+                }
+                else {
+                    const customCommand = await this.commandsService.findByName(cmd);
+                    if (customCommand) {
+                        if (customCommand.media_url) {
+                            await this.sendMessageWithMedia(chatId, customCommand.response, customCommand.media_url);
+                        }
+                        else {
+                            await this.sendMessage(chatId, customCommand.response, await this.getReplyKeyboard());
+                        }
+                    }
+                    else {
+                        await this.sendMessage(chatId, 'Неизвестная команда. Используйте /help для списка команд.', await this.getReplyKeyboard());
+                    }
+                }
+        }
+    }
+    async handleTaskCommand(chatId, user, task) {
+        try {
+            if (task.cooldown_hours > 0) {
+                const lastCompletion = await this.userTaskRepo.findOne({
+                    where: { user_id: user.id, task_id: task.id },
+                    order: { created_at: 'DESC' },
+                });
+                if (lastCompletion) {
+                    const hoursSinceCompletion = (Date.now() - new Date(lastCompletion.created_at).getTime()) / (1000 * 60 * 60);
+                    if (hoursSinceCompletion < task.cooldown_hours) {
+                        const remainingHours = Math.ceil(task.cooldown_hours - hoursSinceCompletion);
+                        await this.sendMessage(chatId, `⏳ Это задание можно выполнить повторно через ${remainingHours} ${remainingHours === 1 ? 'час' : 'часов'}.`, await this.getReplyKeyboard());
+                        return;
+                    }
+                }
+            }
+            const completedCount = await this.userTaskRepo.count({
+                where: { user_id: user.id, task_id: task.id },
+            });
+            if (completedCount >= task.max_per_user) {
+                await this.sendMessage(chatId, '✅ Вы уже выполнили это задание максимальное количество раз.', await this.getReplyKeyboard());
+                return;
+            }
+            const userTask = this.userTaskRepo.create({
+                user_id: user.id,
+                task_id: task.id,
+                status: task.task_type === 'manual' ? 'pending' : 'completed',
+                reward: task.reward_min + Math.random() * (task.reward_max - task.reward_min),
+            });
+            await this.userTaskRepo.save(userTask);
+            if (task.task_type !== 'manual') {
+                await this.usersService.updateBalance(user.tg_id, userTask.reward, `Выполнение задания: ${task.title}`);
+                await this.userRepo.update(user.id, {
+                    tasks_completed: user.tasks_completed + 1,
+                    total_earned: user.total_earned + userTask.reward,
+                });
+                await this.sendMessage(chatId, `✅ Задание "${task.title}" выполнено!\n\n` +
+                    `💰 Награда: ${userTask.reward.toFixed(2)} USDT\n\n` +
+                    `📊 Ваш баланс обновлен.`, await this.getReplyKeyboard());
+            }
+            else {
+                await this.sendMessage(chatId, `📝 Задание "${task.title}" отправлено на проверку.\n\n` +
+                    `⏳ Ожидайте подтверждения администратора.`, await this.getReplyKeyboard());
+            }
+        }
+        catch (error) {
+            this.logger.error(`Error handling task command:`, error);
+            await this.sendMessage(chatId, 'Произошла ошибка при выполнении задания. Попробуйте позже.', await this.getReplyKeyboard());
         }
     }
     async sendHelp(chatId) {
@@ -717,38 +801,21 @@ let BotService = BotService_1 = class BotService {
                     break;
             }
             const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
-            const urlParts = mediaUrl.split('/');
-            const encodedFilename = urlParts[urlParts.length - 1];
-            const decodedFilename = decodeURIComponent(encodedFilename);
-            const cleanFilename = decodedFilename.includes('-')
-                ? decodedFilename.substring(decodedFilename.indexOf('-') + 1)
-                : decodedFilename;
             await axios_1.default.post(url, {
                 chat_id: chatId,
                 [mediaField]: mediaUrl,
-                caption: text || `📎 ${cleanFilename}`,
-                parse_mode: 'HTML',
+                caption: text || undefined,
+                parse_mode: text ? 'HTML' : undefined,
             });
-            this.logger.log(`Sent ${mediaType} message to ${chatId}`);
+            this.logger.log(`✅ Sent ${mediaType} message to ${chatId}`);
         }
         catch (error) {
-            this.logger.error(`Failed to send media message to ${chatId}:`, error.response?.data || error.message);
-            try {
-                const urlParts = mediaUrl.split('/');
-                const encodedFilename = urlParts[urlParts.length - 1];
-                const decodedFilename = decodeURIComponent(encodedFilename);
-                const cleanFilename = decodedFilename.includes('-')
-                    ? decodedFilename.substring(decodedFilename.indexOf('-') + 1)
-                    : decodedFilename;
-                const fallbackText = text
-                    ? `${text}\n\n📎 Файл: ${cleanFilename}\n\n⚠️ Для получения файла используйте ссылку:\n${mediaUrl}`
-                    : `📎 Отправлен файл: ${cleanFilename}\n\n⚠️ Для получения файла используйте ссылку:\n${mediaUrl}`;
-                await this.sendMessage(chatId, fallbackText);
-            }
-            catch (fallbackError) {
-                this.logger.error(`Failed to send fallback message:`, fallbackError);
-                await this.sendMessage(chatId, text || '📎 Отправлен файл');
-            }
+            this.logger.error(`❌ Failed to send media message to ${chatId}:`, {
+                error: error.response?.data || error.message,
+                mediaUrl,
+                mediaType,
+                status: error.response?.status,
+            });
         }
     }
     async sendBalanceChangeNotification(chatId, balanceBefore, balanceAfter, delta, reason, comment) {
@@ -857,7 +924,7 @@ let BotService = BotService_1 = class BotService {
         await this.sendMessage(chatId, text, await this.getReplyKeyboard());
     }
     async sendWithdrawInfo(chatId, user) {
-        const minWithdraw = await this.settingsService.getValue('min_withdraw', '10');
+        const minWithdraw = await this.settingsService.getValue('min_withdraw_usdt', '10.00');
         if (parseFloat(user.balance_usdt.toString()) < parseFloat(minWithdraw)) {
             await this.sendMessage(chatId, `❌ *Недостаточно средств для вывода*\n\n` +
                 `Минимальная сумма: ${minWithdraw} USDT\n` +
@@ -880,15 +947,15 @@ let BotService = BotService_1 = class BotService {
         const refCount = await this.userRepo.count({
             where: { referred_by: user.id },
         });
-        const refBonus = await this.settingsService.getValue('ref_bonus', '5');
+        const refBonusPercent = await this.settingsService.getValue('ref_bonus_percent', '5.00');
         const botUsername = await this.settingsService.getValue('bot_username', 'yourbot');
         const refLink = `https://t.me/${botUsername}?start=ref${user.tg_id}`;
         const text = `👥 *Реферальная программа*\n\n` +
-            `💰 Получайте *${refBonus} USDT* за каждого друга!\n` +
+            `💰 Получайте *${refBonusPercent} USDT* за каждого друга!\n` +
             `🎁 Ваш друг также получит бонус при регистрации\n\n` +
             `📊 *Ваша статистика:*\n` +
             `👥 Приглашено: *${refCount} чел.*\n` +
-            `💵 Заработано с рефералов: ${refCount * parseInt(refBonus)} USDT\n\n` +
+            `💵 Заработано с рефералов: ${(refCount * parseFloat(refBonusPercent)).toFixed(2)} USDT\n\n` +
             `🔗 *Ваша реферальная ссылка:*\n` +
             `\`${refLink}\`\n\n` +
             `📤 Скопируйте ссылку и делитесь с друзьями!\n` +
@@ -1133,6 +1200,13 @@ let BotService = BotService_1 = class BotService {
         });
     }
     async handleCustomButton(chatId, user, button) {
+        if (button.command) {
+            this.logger.log(`Executing command from button ${button.id}: ${button.command}`);
+            await this.handleCommand(chatId, button.command, user);
+            if (!button.action_payload && !button.media_url) {
+                return;
+            }
+        }
         let text = 'Информация';
         let keyboard = { inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'menu' }]] };
         if (button.action_payload?.inline_buttons && Array.isArray(button.action_payload.inline_buttons)) {
@@ -1165,7 +1239,35 @@ let BotService = BotService_1 = class BotService {
                 .replace(/{username}/g, user.username || user.first_name || 'Друг')
                 .replace(/{balance}/g, user.balance_usdt.toString())
                 .replace(/{tasks_completed}/g, user.tasks_completed.toString());
-            await this.sendMessage(chatId, text, keyboard);
+            if (button.media_url) {
+                try {
+                    const mediaUrl = button.media_url;
+                    const urlWithoutQuery = mediaUrl.split('?')[0];
+                    const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
+                    let mediaType = 'photo';
+                    if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
+                        mediaType = 'video';
+                    }
+                    else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
+                        mediaType = 'document';
+                    }
+                    else if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+                        mediaType = 'photo';
+                    }
+                    this.logger.log(`Sending media for button ${button.id}: ${mediaType} from ${mediaUrl}`);
+                    await this.sendMessageWithMedia(chatId, text, mediaUrl, mediaType);
+                    if (keyboard && keyboard.inline_keyboard && keyboard.inline_keyboard.length > 0) {
+                        await this.sendMessage(chatId, '👇 Выберите действие:', keyboard);
+                    }
+                }
+                catch (error) {
+                    this.logger.error(`Failed to send media for button ${button.id}:`, error);
+                    await this.sendMessage(chatId, text, keyboard);
+                }
+            }
+            else {
+                await this.sendMessage(chatId, text, keyboard);
+            }
             return;
         }
         if (button.action_type === 'text' || button.action_type === 'send_message') {
@@ -1293,7 +1395,35 @@ let BotService = BotService_1 = class BotService {
                 };
             }
         }
-        await this.sendMessage(chatId, text, keyboard);
+        if (button.media_url) {
+            try {
+                const mediaUrl = button.media_url;
+                const urlWithoutQuery = mediaUrl.split('?')[0];
+                const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
+                let mediaType = 'photo';
+                if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
+                    mediaType = 'video';
+                }
+                else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
+                    mediaType = 'document';
+                }
+                else if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+                    mediaType = 'photo';
+                }
+                this.logger.log(`Sending media for button ${button.id}: ${mediaType} from ${mediaUrl}`);
+                await this.sendMessageWithMedia(chatId, text, mediaUrl, mediaType);
+                if (keyboard && keyboard.inline_keyboard && keyboard.inline_keyboard.length > 0) {
+                    await this.sendMessage(chatId, '👇 Выберите действие:', keyboard);
+                }
+            }
+            catch (error) {
+                this.logger.error(`Failed to send media for button ${button.id}:`, error);
+                await this.sendMessage(chatId, text, keyboard);
+            }
+        }
+        else {
+            await this.sendMessage(chatId, text, keyboard);
+        }
     }
     async handleTaskVerification(chatId, user, data) {
         const parts = data.replace('verify_', '').split('_');
@@ -1367,8 +1497,8 @@ let BotService = BotService_1 = class BotService {
             await this.sendMessage(chatId, '❌ Неверная сумма');
             return;
         }
-        const minWithdraw = parseFloat(await this.settingsService.getValue('min_withdraw', '10'));
-        const maxWithdraw = parseFloat(await this.settingsService.getValue('max_withdraw', '10000'));
+        const minWithdraw = parseFloat(await this.settingsService.getValue('min_withdraw_usdt', '10.00'));
+        const maxWithdraw = parseFloat(await this.settingsService.getValue('max_withdraw_usdt', '5000.00'));
         if (amount < minWithdraw) {
             await this.sendMessage(chatId, `❌ Минимальная сумма для вывода: ${minWithdraw} USDT`);
             return;
@@ -1432,7 +1562,32 @@ let BotService = BotService_1 = class BotService {
                     .replace(/{balance}/g, user.balance_usdt.toString())
                     .replace(/{tasks_completed}/g, user.tasks_completed.toString())
                     .replace(/{total_earned}/g, user.total_earned.toString());
-                await this.sendMessage(chatId, text);
+                if (scenario.media_url) {
+                    try {
+                        const mediaUrl = scenario.media_url;
+                        const urlWithoutQuery = mediaUrl.split('?')[0];
+                        const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
+                        let mediaType = 'photo';
+                        if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
+                            mediaType = 'video';
+                        }
+                        else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
+                            mediaType = 'document';
+                        }
+                        else if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+                            mediaType = 'photo';
+                        }
+                        this.logger.log(`Sending media for scenario ${scenario.id}: ${mediaType} from ${mediaUrl}`);
+                        await this.sendMessageWithMedia(chatId, text, mediaUrl, mediaType);
+                    }
+                    catch (error) {
+                        this.logger.error(`Failed to send media for scenario ${scenario.id}:`, error);
+                        await this.sendMessage(chatId, text);
+                    }
+                }
+                else {
+                    await this.sendMessage(chatId, text);
+                }
                 return;
             }
             if (scenario.steps && Array.isArray(scenario.steps)) {
@@ -1530,6 +1685,7 @@ exports.BotService = BotService = BotService_1 = __decorate([
     __param(3, (0, typeorm_1.InjectRepository)(user_task_entity_1.UserTask)),
     __param(4, (0, typeorm_1.InjectRepository)(scenario_entity_1.Scenario)),
     __param(5, (0, typeorm_1.InjectRepository)(balance_log_entity_1.BalanceLog)),
+    __param(13, (0, common_1.Inject)((0, common_1.forwardRef)(() => commands_service_1.CommandsService))),
     __metadata("design:paramtypes", [typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
@@ -1542,6 +1698,7 @@ exports.BotService = BotService = BotService_1 = __decorate([
         messages_service_1.MessagesService,
         users_service_1.UsersService,
         sync_service_1.SyncService,
-        channels_service_1.ChannelsService])
+        channels_service_1.ChannelsService,
+        commands_service_1.CommandsService])
 ], BotService);
 //# sourceMappingURL=bot.service.js.map

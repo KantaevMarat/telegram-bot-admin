@@ -27,6 +27,7 @@ const stats_module_1 = require("../stats/stats.module");
 const settings_module_1 = require("../settings/settings.module");
 const messages_module_1 = require("../messages/messages.module");
 const channels_module_1 = require("../channels/channels.module");
+const commands_module_1 = require("../commands/commands.module");
 let BotModule = class BotModule {
 };
 exports.BotModule = BotModule;
@@ -50,6 +51,7 @@ exports.BotModule = BotModule = __decorate([
             settings_module_1.SettingsModule,
             (0, common_1.forwardRef)(() => messages_module_1.MessagesModule),
             channels_module_1.ChannelsModule,
+            (0, common_1.forwardRef)(() => commands_module_1.CommandsModule),
         ],
         controllers: [bot_controller_1.BotController],
         providers: [bot_service_1.BotService, admin_bot_service_1.AdminBotService],

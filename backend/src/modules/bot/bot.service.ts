@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -15,6 +15,7 @@ import { MessagesService } from '../messages/messages.service';
 import { UsersService } from '../users/users.service';
 import { SyncService } from '../sync/sync.service';
 import { ChannelsService } from '../channels/channels.service';
+import { CommandsService } from '../commands/commands.service';
 
 @Injectable()
 export class BotService implements OnModuleInit, OnModuleDestroy {
@@ -43,6 +44,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private usersService: UsersService,
     private syncService: SyncService,
     private channelsService: ChannelsService,
+    @Inject(forwardRef(() => CommandsService))
+    private commandsService: CommandsService,
   ) {
     this.logger.log('BotService constructor called');
     // Use CLIENT_BOT_TOKEN for client bot (user-facing), fallback to TELEGRAM_BOT_TOKEN
@@ -194,11 +197,25 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const chatId = message.chat.id.toString();
     const text = message.text;
 
+    // Check maintenance mode
+    const maintenanceMode = await this.settingsService.getValue('maintenance_mode', 'false');
+    if (maintenanceMode === 'true') {
+      await this.sendMessage(chatId, '🛠 Бот находится на техническом обслуживании. Попробуйте позже.');
+      return;
+    }
+
     // Get or create user
     let user = await this.userRepo.findOne({ where: { tg_id: chatId } });
     const isNewUser = !user;
 
     if (!user) {
+      // Check if registration is enabled
+      const registrationEnabled = await this.settingsService.getValue('registration_enabled', 'true');
+      if (registrationEnabled === 'false') {
+        await this.sendMessage(chatId, '🚫 Регистрация новых пользователей временно приостановлена.');
+        return;
+      }
+
       // Extract referral code from /start command
       let refBy: string | undefined;
       if (text?.startsWith('/start ref')) {
@@ -355,8 +372,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     try {
       const referrer = await this.userRepo.findOne({ where: { tg_id: referrerTgId } });
       if (referrer) {
-        const refBonus = await this.settingsService.getValue('ref_bonus', '10');
-        const bonusAmount = 5; // Fixed bonus for new referral
+        const refBonusPercent = await this.settingsService.getValue('ref_bonus_percent', '5.00');
+        const bonusAmount = parseFloat(refBonusPercent); // Use setting value
 
         const balanceBefore = parseFloat(referrer.balance_usdt.toString());
         const balanceAfter = balanceBefore + bonusAmount;
@@ -476,7 +493,120 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         break;
 
       default:
-        await this.sendMessage(chatId, 'Неизвестная команда. Используйте /help для списка команд.', await this.getReplyKeyboard());
+        // Check if command is for a task
+        const task = await this.taskRepo.findOne({ 
+          where: { 
+            command: cmd, 
+            active: true 
+          } 
+        });
+        
+        if (task) {
+          // Handle task command
+          await this.handleTaskCommand(chatId, user, task);
+        } else {
+          // Check if it's a custom command
+          const customCommand = await this.commandsService.findByName(cmd);
+          
+          if (customCommand) {
+            // Execute custom command
+            if (customCommand.media_url) {
+              await this.sendMessageWithMedia(chatId, customCommand.response, customCommand.media_url);
+            } else {
+              await this.sendMessage(chatId, customCommand.response, await this.getReplyKeyboard());
+            }
+          } else {
+            await this.sendMessage(chatId, 'Неизвестная команда. Используйте /help для списка команд.', await this.getReplyKeyboard());
+          }
+        }
+    }
+  }
+
+  /**
+   * Handle task command execution
+   */
+  private async handleTaskCommand(chatId: string, user: User, task: Task) {
+    try {
+      // Check cooldown
+      if (task.cooldown_hours > 0) {
+        const lastCompletion = await this.userTaskRepo.findOne({
+          where: { user_id: user.id, task_id: task.id },
+          order: { created_at: 'DESC' },
+        });
+
+        if (lastCompletion) {
+          const hoursSinceCompletion = 
+            (Date.now() - new Date(lastCompletion.created_at).getTime()) / (1000 * 60 * 60);
+          
+          if (hoursSinceCompletion < task.cooldown_hours) {
+            const remainingHours = Math.ceil(task.cooldown_hours - hoursSinceCompletion);
+            await this.sendMessage(
+              chatId,
+              `⏳ Это задание можно выполнить повторно через ${remainingHours} ${remainingHours === 1 ? 'час' : 'часов'}.`,
+              await this.getReplyKeyboard()
+            );
+            return;
+          }
+        }
+      }
+
+      // Check max completions per user
+      const completedCount = await this.userTaskRepo.count({
+        where: { user_id: user.id, task_id: task.id },
+      });
+
+      if (completedCount >= task.max_per_user) {
+        await this.sendMessage(
+          chatId,
+          '✅ Вы уже выполнили это задание максимальное количество раз.',
+          await this.getReplyKeyboard()
+        );
+        return;
+      }
+
+      // Create user task record
+      const userTask = this.userTaskRepo.create({
+        user_id: user.id,
+        task_id: task.id,
+        status: task.task_type === 'manual' ? 'pending' : 'completed',
+        reward: task.reward_min + Math.random() * (task.reward_max - task.reward_min),
+      });
+
+      await this.userTaskRepo.save(userTask);
+
+      // If task is not manual, automatically complete it
+      if (task.task_type !== 'manual') {
+        // Update user balance
+        await this.usersService.updateBalance(
+          user.tg_id,
+          userTask.reward,
+          `Выполнение задания: ${task.title}`,
+        );
+
+        // Update user stats
+        await this.userRepo.update(user.id, {
+          tasks_completed: user.tasks_completed + 1,
+          total_earned: user.total_earned + userTask.reward,
+        });
+
+        await this.sendMessage(
+          chatId,
+          `✅ Задание "${task.title}" выполнено!\n\n` +
+          `💰 Награда: ${userTask.reward.toFixed(2)} USDT\n\n` +
+          `📊 Ваш баланс обновлен.`,
+          await this.getReplyKeyboard()
+        );
+      } else {
+        await this.sendMessage(
+          chatId,
+          `📝 Задание "${task.title}" отправлено на проверку.\n\n` +
+          `⏳ Ожидайте подтверждения администратора.`,
+          await this.getReplyKeyboard()
+        );
+      }
+    } catch (error) {
+      this.logger.error(`Error handling task command:`, error);
+      await this.sendMessage(chatId, 'Произошла ошибка при выполнении задания. Попробуйте позже.', await this.getReplyKeyboard());
     }
   }
 
@@ -935,50 +1065,25 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
       const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
 
-      // Extract and clean filename from URL
-      const urlParts = mediaUrl.split('/');
-      const encodedFilename = urlParts[urlParts.length - 1];
-      const decodedFilename = decodeURIComponent(encodedFilename);
-      
-      // Remove UUID prefix (format: uuid-filename.ext)
-      const cleanFilename = decodedFilename.includes('-') 
-        ? decodedFilename.substring(decodedFilename.indexOf('-') + 1) 
-        : decodedFilename;
-
+      // Send media by URL
       await axios.post(url, {
         chat_id: chatId,
         [mediaField]: mediaUrl,
-        caption: text || `📎 ${cleanFilename}`,
-        parse_mode: 'HTML',
+        caption: text || undefined,
+        parse_mode: text ? 'HTML' : undefined,
       });
 
-      this.logger.log(`Sent ${mediaType} message to ${chatId}`);
-    } catch (error) {
-      this.logger.error(`Failed to send media message to ${chatId}:`, error.response?.data || error.message);
-      
-      // Fallback to text message with clean filename
-      try {
-        const urlParts = mediaUrl.split('/');
-        const encodedFilename = urlParts[urlParts.length - 1];
-        
-        // Декодируем URL-encoded строку
-        const decodedFilename = decodeURIComponent(encodedFilename);
-        
-        // Убираем UUID префикс (формат: uuid-filename.ext)
-        const cleanFilename = decodedFilename.includes('-') 
-          ? decodedFilename.substring(decodedFilename.indexOf('-') + 1) 
-          : decodedFilename;
-        
-        const fallbackText = text 
-          ? `${text}\n\n📎 Файл: ${cleanFilename}\n\n⚠️ Для получения файла используйте ссылку:\n${mediaUrl}`
-          : `📎 Отправлен файл: ${cleanFilename}\n\n⚠️ Для получения файла используйте ссылку:\n${mediaUrl}`;
-        
-        await this.sendMessage(chatId, fallbackText);
-      } catch (fallbackError) {
-        // Если даже fallback не сработал
-        this.logger.error(`Failed to send fallback message:`, fallbackError);
-        await this.sendMessage(chatId, text || '📎 Отправлен файл');
-      }
+      this.logger.log(`✅ Sent ${mediaType} message to ${chatId}`);
+    } catch (error: any) {
+      // Log error but don't send fallback message - it reveals technical details
+      this.logger.error(`❌ Failed to send media message to ${chatId}:`, {
+        error: error.response?.data || error.message,
+        mediaUrl,
+        mediaType,
+        status: error.response?.status,
+      });
+      // Don't send fallback message - message is already saved in DB
+      // Silent failure - user won't see error message
     }
   }
 
@@ -1125,7 +1230,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async sendWithdrawInfo(chatId: string, user: User) {
-    const minWithdraw = await this.settingsService.getValue('min_withdraw', '10');
+    const minWithdraw = await this.settingsService.getValue('min_withdraw_usdt', '10.00');
 
     if (parseFloat(user.balance_usdt.toString()) < parseFloat(minWithdraw)) {
       await this.sendMessage(
@@ -1158,17 +1263,17 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       where: { referred_by: user.id },
     });
 
-    const refBonus = await this.settingsService.getValue('ref_bonus', '5');
+    const refBonusPercent = await this.settingsService.getValue('ref_bonus_percent', '5.00');
     const botUsername = await this.settingsService.getValue('bot_username', 'yourbot');
     const refLink = `https://t.me/${botUsername}?start=ref${user.tg_id}`;
 
     const text =
       `👥 *Реферальная программа*\n\n` +
-      `💰 Получайте *${refBonus} USDT* за каждого друга!\n` +
+      `💰 Получайте *${refBonusPercent} USDT* за каждого друга!\n` +
       `🎁 Ваш друг также получит бонус при регистрации\n\n` +
       `📊 *Ваша статистика:*\n` +
       `👥 Приглашено: *${refCount} чел.*\n` +
-      `💵 Заработано с рефералов: ${refCount * parseInt(refBonus)} USDT\n\n` +
+      `💵 Заработано с рефералов: ${(refCount * parseFloat(refBonusPercent)).toFixed(2)} USDT\n\n` +
       `🔗 *Ваша реферальная ссылка:*\n` +
       `\`${refLink}\`\n\n` +
       `📤 Скопируйте ссылку и делитесь с друзьями!\n` +
@@ -1312,6 +1417,40 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // ⏱️ ПРОВЕРКА МИНИМАЛЬНОГО ВРЕМЕНИ ВЫПОЛНЕНИЯ
+    if (task.min_completion_time > 0 && userTask.started_at) {
+      const now = new Date();
+      const startedAt = new Date(userTask.started_at);
+      const elapsedMinutes = Math.floor((now.getTime() - startedAt.getTime()) / (1000 * 60));
+      const remainingMinutes = task.min_completion_time - elapsedMinutes;
+
+      if (remainingMinutes > 0) {
+        const hours = Math.floor(remainingMinutes / 60);
+        const minutes = remainingMinutes % 60;
+        let timeText = '';
+        
+        if (hours > 0) {
+          timeText = `${hours} ч ${minutes} мин`;
+        } else {
+          timeText = `${minutes} мин`;
+        }
+
+        await this.sendMessage(
+          chatId,
+          `⏳ *Подождите немного!*\n\n` +
+          `Кнопка подтверждения выполнения станет доступна через:\n` +
+          `⏱️ ${timeText}\n\n` +
+          `Это необходимо для проверки честного выполнения задания.`,
+          {
+            inline_keyboard: [
+              [{ text: '🔙 К заданиям', callback_data: 'tasks' }],
+            ],
+          },
+        );
+        return;
+      }
+    }
+
     // ✅ ПРОВЕРКА ПОДПИСКИ НА КАНАЛ (если указан channel_id)
     if (task.task_type === 'subscription' && task.channel_id) {
       const isSubscribed = await this.checkChannelSubscription(user.tg_id, task.channel_id);
@@ -1341,8 +1480,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const reward =
       Math.floor(Math.random() * (task.reward_max - task.reward_min + 1)) + task.reward_min;
 
-    // Auto-approve simple tasks, submit complex ones for manual review
-    const requiresManualReview = task.reward_max > 50; // Tasks with high rewards need manual check
+    // Check if task requires manual review
+    // - task_type = 'manual' always requires review
+    // - high reward tasks (> 50 USDT) require review
+    const requiresManualReview = task.task_type === 'manual' || task.reward_max > 50;
 
     if (requiresManualReview) {
       // Submit for manual review
@@ -1513,6 +1654,16 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleCustomButton(chatId: string, user: User, button: Button) {
+    // If button has a command, execute it first
+    if (button.command) {
+      this.logger.log(`Executing command from button ${button.id}: ${button.command}`);
+      await this.handleCommand(chatId, button.command, user);
+      // If button has only command and no other content, return early
+      if (!button.action_payload && !button.media_url) {
+        return;
+      }
+    }
+
     // Handle custom button from database based on action_type
     let text = 'Информация';
     let keyboard: any = { inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'menu' }]] };
@@ -1555,7 +1706,39 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         .replace(/{balance}/g, user.balance_usdt.toString())
         .replace(/{tasks_completed}/g, user.tasks_completed.toString());
       
-      await this.sendMessage(chatId, text, keyboard);
+      // Send message with media if available
+      if (button.media_url) {
+        try {
+          const mediaUrl = button.media_url;
+          // Remove query parameters before extracting extension
+          const urlWithoutQuery = mediaUrl.split('?')[0];
+          const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
+          let mediaType = 'photo';
+          
+          if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
+            mediaType = 'video';
+          } else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
+            mediaType = 'document';
+          } else if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+            // If extension is not recognized as image, default to photo
+            mediaType = 'photo';
+          }
+          
+          this.logger.log(`Sending media for button ${button.id}: ${mediaType} from ${mediaUrl}`);
+          
+          await this.sendMessageWithMedia(chatId, text, mediaUrl, mediaType);
+          
+          // Send inline buttons separately if they exist
+          if (keyboard && keyboard.inline_keyboard && keyboard.inline_keyboard.length > 0) {
+            await this.sendMessage(chatId, '👇 Выберите действие:', keyboard);
+          }
+        } catch (error) {
+          this.logger.error(`Failed to send media for button ${button.id}:`, error);
+          await this.sendMessage(chatId, text, keyboard);
+        }
+      } else {
+        await this.sendMessage(chatId, text, keyboard);
+      }
       return;
     }
 
@@ -1685,7 +1868,43 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    await this.sendMessage(chatId, text, keyboard);
+    // Send message with media if available
+    if (button.media_url) {
+      try {
+        // Determine media type from URL
+        const mediaUrl = button.media_url;
+        // Remove query parameters before extracting extension
+        const urlWithoutQuery = mediaUrl.split('?')[0];
+        const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
+        let mediaType = 'photo';
+        
+        if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
+          mediaType = 'video';
+        } else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
+          mediaType = 'document';
+        } else if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+          // If extension is not recognized as image, try to determine from content-type or default to photo
+          mediaType = 'photo';
+        }
+        
+        this.logger.log(`Sending media for button ${button.id}: ${mediaType} from ${mediaUrl}`);
+        
+        // Send media with text as caption
+        await this.sendMessageWithMedia(chatId, text, mediaUrl, mediaType);
+        
+        // If there are inline buttons, send them separately
+        if (keyboard && keyboard.inline_keyboard && keyboard.inline_keyboard.length > 0) {
+          await this.sendMessage(chatId, '👇 Выберите действие:', keyboard);
+        }
+      } catch (error) {
+        this.logger.error(`Failed to send media for button ${button.id}:`, error);
+        // Fallback to text message if media fails
+        await this.sendMessage(chatId, text, keyboard);
+      }
+    } else {
+      // No media, send regular message
+      await this.sendMessage(chatId, text, keyboard);
+    }
   }
 
   private async handleTaskVerification(chatId: string, user: User, data: string) {
@@ -1799,8 +2018,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const minWithdraw = parseFloat(await this.settingsService.getValue('min_withdraw', '10'));
-    const maxWithdraw = parseFloat(await this.settingsService.getValue('max_withdraw', '10000'));
+    const minWithdraw = parseFloat(await this.settingsService.getValue('min_withdraw_usdt', '10.00'));
+    const maxWithdraw = parseFloat(await this.settingsService.getValue('max_withdraw_usdt', '5000.00'));
 
     if (amount < minWithdraw) {
       await this.sendMessage(chatId, `❌ Минимальная сумма для вывода: ${minWithdraw} USDT`);
@@ -1902,7 +2121,34 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           .replace(/{tasks_completed}/g, user.tasks_completed.toString())
           .replace(/{total_earned}/g, user.total_earned.toString());
 
-        await this.sendMessage(chatId, text);
+        // Send message with media if available
+        if (scenario.media_url) {
+          try {
+            const mediaUrl = scenario.media_url;
+            // Remove query parameters before extracting extension
+            const urlWithoutQuery = mediaUrl.split('?')[0];
+            const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
+            let mediaType = 'photo';
+            
+            if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
+              mediaType = 'video';
+            } else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
+              mediaType = 'document';
+            } else if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+              // If extension is not recognized as image, default to photo
+              mediaType = 'photo';
+            }
+            
+            this.logger.log(`Sending media for scenario ${scenario.id}: ${mediaType} from ${mediaUrl}`);
+            await this.sendMessageWithMedia(chatId, text, mediaUrl, mediaType);
+          } catch (error) {
+            this.logger.error(`Failed to send media for scenario ${scenario.id}:`, error);
+            // Fallback to text message if media fails
+            await this.sendMessage(chatId, text);
+          }
+        } else {
+          await this.sendMessage(chatId, text);
+        }
         return;
       }
 

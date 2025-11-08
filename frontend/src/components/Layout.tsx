@@ -18,7 +18,11 @@ import {
   Home,
   RefreshCw,
   Radio,
+  Bug,
+  Terminal,
+  Clock,
 } from 'lucide-react';
+import { DiagnosticsPanel } from './DiagnosticsPanel';
 
 interface LayoutProps {
   children: ReactNode;
@@ -28,6 +32,7 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const { admin, logout, refreshToken } = useAuthStore();
   const [refreshingToken, setRefreshingToken] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const handleRefreshToken = async () => {
     setRefreshingToken(true);
@@ -53,6 +58,8 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/buttons', icon: Square, label: 'Кнопки', color: '#fb923c' },
     { path: '/scenarios', icon: GitBranch, label: 'Сценарии', color: '#22d3ee' },
     { path: '/tasks', icon: CheckSquare, label: 'Задания', color: '#a855f7' },
+    { path: '/commands', icon: Terminal, label: 'Команды', color: '#10b981' },
+    { path: '/moderation', icon: Clock, label: 'Модерация', color: '#f59e0b' },
     { path: '/chats', icon: MessageSquare, label: 'Чаты', color: '#10b981' },
     { path: '/channels', icon: Radio, label: 'Каналы', color: '#14b8a6' },
     { path: '/admins', icon: Shield, label: 'Админы', color: '#ef4444' },
@@ -114,6 +121,21 @@ export default function Layout({ children }: LayoutProps) {
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
+                onClick={() => setShowDiagnostics(true)}
+                className="sidebar-logout"
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #374151',
+                  color: '#9ca3af',
+                  padding: '8px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                }}
+                title="Диагностика системы"
+              >
+                <Bug size={16} />
+              </button>
+              <button
                 onClick={handleRefreshToken}
                 disabled={refreshingToken}
                 className="sidebar-logout"
@@ -142,6 +164,11 @@ export default function Layout({ children }: LayoutProps) {
       <main className="main-content">
         {children}
       </main>
+
+      {/* Diagnostics Panel */}
+      {showDiagnostics && (
+        <DiagnosticsPanel onClose={() => setShowDiagnostics(false)} />
+      )}
     </div>
   );
 }

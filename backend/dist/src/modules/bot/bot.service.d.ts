@@ -13,6 +13,7 @@ import { MessagesService } from '../messages/messages.service';
 import { UsersService } from '../users/users.service';
 import { SyncService } from '../sync/sync.service';
 import { ChannelsService } from '../channels/channels.service';
+import { CommandsService } from '../commands/commands.service';
 export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private userRepo;
     private buttonRepo;
@@ -27,11 +28,12 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private usersService;
     private syncService;
     private channelsService;
+    private commandsService;
     private readonly logger;
     private botToken;
     private pollingOffset;
     private pollingInterval;
-    constructor(userRepo: Repository<User>, buttonRepo: Repository<Button>, taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, scenarioRepo: Repository<Scenario>, balanceLogRepo: Repository<BalanceLog>, configService: ConfigService, fakeStatsService: FakeStatsService, settingsService: SettingsService, messagesService: MessagesService, usersService: UsersService, syncService: SyncService, channelsService: ChannelsService);
+    constructor(userRepo: Repository<User>, buttonRepo: Repository<Button>, taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, scenarioRepo: Repository<Scenario>, balanceLogRepo: Repository<BalanceLog>, configService: ConfigService, fakeStatsService: FakeStatsService, settingsService: SettingsService, messagesService: MessagesService, usersService: UsersService, syncService: SyncService, channelsService: ChannelsService, commandsService: CommandsService);
     onModuleInit(): Promise<void>;
     onModuleDestroy(): Promise<void>;
     handleWebhook(update: any): Promise<void>;
@@ -43,6 +45,7 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private notifyReferrer;
     private sendWelcomeMessage;
     private handleCommand;
+    private handleTaskCommand;
     private sendHelp;
     private sendAvailableTasks;
     private handleCallbackQuery;

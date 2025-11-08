@@ -43,6 +43,10 @@ __decorate([
     __metadata("design:type", String)
 ], Button.prototype, "media_url", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', nullable: true }),
+    __metadata("design:type", String)
+], Button.prototype, "command", void 0);
+__decorate([
     (0, typeorm_1.Column)({ type: 'boolean', default: true }),
     __metadata("design:type", Boolean)
 ], Button.prototype, "active", void 0);

@@ -15,6 +15,8 @@ interface Task {
   media_url?: string;
   channel_id?: string;
   task_type?: string;
+  command?: string;
+  min_completion_time?: number;
   active: boolean;
   completions_count: number;
 }
@@ -33,6 +35,8 @@ export default function TasksPage() {
     media_url: '',
     channel_id: '',
     task_type: 'subscription',
+    command: '',
+    min_completion_time: 0,
     active: true,
   });
 
@@ -86,6 +90,8 @@ export default function TasksPage() {
       media_url: '',
       channel_id: '',
       task_type: 'subscription',
+      command: '',
+      min_completion_time: 0,
       active: true,
     });
     setShowModal(true);
@@ -102,6 +108,8 @@ export default function TasksPage() {
       media_url: task.media_url || '',
       channel_id: task.channel_id || '',
       task_type: task.task_type || 'subscription',
+      command: task.command || '',
+      min_completion_time: task.min_completion_time || 0,
       active: task.active,
     });
     setShowModal(true);
@@ -119,6 +127,8 @@ export default function TasksPage() {
       media_url: '',
       channel_id: '',
       task_type: 'subscription',
+      command: '',
+      min_completion_time: 0,
       active: true,
     });
   };
@@ -533,6 +543,35 @@ export default function TasksPage() {
                     onChange={(e) => setFormData(prev => ({ ...prev, action_url: e.target.value }))}
                     placeholder="https://example.com"
                   />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Команда для выполнения</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={formData.command}
+                    onChange={(e) => setFormData(prev => ({ ...prev, command: e.target.value }))}
+                    placeholder="/start_task или task_123"
+                  />
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                    Команда, которую пользователь должен выполнить для получения задания
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">⏱️ Минимальное время выполнения (минуты)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    min="0"
+                    value={formData.min_completion_time}
+                    onChange={(e) => setFormData(prev => ({ ...prev, min_completion_time: parseInt(e.target.value) || 0 }))}
+                    placeholder="0"
+                  />
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                    Кнопка подтверждения станет доступна через указанное время после начала задания (0 = без задержки)
+                  </div>
                 </div>
 
                 <div className="form-group">

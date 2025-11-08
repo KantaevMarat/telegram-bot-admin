@@ -57,4 +57,10 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], CreateScenarioDto.prototype, "active", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Media file URL (photo or video)', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateScenarioDto.prototype, "media_url", void 0);
 //# sourceMappingURL=create-scenario.dto.js.map

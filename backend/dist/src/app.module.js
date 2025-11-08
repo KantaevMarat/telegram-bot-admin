@@ -28,6 +28,7 @@ const broadcast_module_1 = require("./modules/broadcast/broadcast.module");
 const sync_module_1 = require("./modules/sync/sync.module");
 const channels_module_1 = require("./modules/channels/channels.module");
 const media_module_1 = require("./modules/media/media.module");
+const commands_module_1 = require("./modules/commands/commands.module");
 const typeorm_config_1 = require("./config/typeorm.config");
 let AppModule = class AppModule {
 };
@@ -72,6 +73,7 @@ exports.AppModule = AppModule = __decorate([
             broadcast_module_1.BroadcastModule,
             channels_module_1.ChannelsModule,
             media_module_1.MediaModule,
+            commands_module_1.CommandsModule,
         ],
     })
 ], AppModule);

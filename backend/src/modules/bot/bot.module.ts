@@ -18,6 +18,7 @@ import { StatsModule } from '../stats/stats.module';
 import { SettingsModule } from '../settings/settings.module';
 import { MessagesModule } from '../messages/messages.module';
 import { ChannelsModule } from '../channels/channels.module';
+import { CommandsModule } from '../commands/commands.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { ChannelsModule } from '../channels/channels.module';
     SettingsModule,
     forwardRef(() => MessagesModule),
     ChannelsModule,
+    forwardRef(() => CommandsModule),
   ],
   controllers: [BotController],
   providers: [BotService, AdminBotService],

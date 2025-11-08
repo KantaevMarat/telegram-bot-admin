@@ -19,6 +19,7 @@ import { BroadcastModule } from './modules/broadcast/broadcast.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { ChannelsModule } from './modules/channels/channels.module';
 import { MediaModule } from './modules/media/media.module';
+import { CommandsModule } from './modules/commands/commands.module';
 import { typeOrmConfig } from './config/typeorm.config';
 
 @Module({
@@ -71,6 +72,7 @@ import { typeOrmConfig } from './config/typeorm.config';
     BroadcastModule,
     ChannelsModule,
     MediaModule,
+    CommandsModule,
   ],
 })
 export class AppModule {}

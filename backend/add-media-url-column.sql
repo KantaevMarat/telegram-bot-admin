@@ -1,0 +1,4 @@
+ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS media_url VARCHAR(255);
+
+
+

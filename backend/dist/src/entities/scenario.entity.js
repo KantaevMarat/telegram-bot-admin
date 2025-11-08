@@ -43,6 +43,10 @@ __decorate([
     __metadata("design:type", Boolean)
 ], Scenario.prototype, "is_active", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', nullable: true }),
+    __metadata("design:type", String)
+], Scenario.prototype, "media_url", void 0);
+__decorate([
     (0, typeorm_1.CreateDateColumn)(),
     __metadata("design:type", Date)
 ], Scenario.prototype, "created_at", void 0);

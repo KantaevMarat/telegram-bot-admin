@@ -37,4 +37,9 @@ export class CreateScenarioDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiProperty({ description: 'Media file URL (photo or video)', required: false })
+  @IsOptional()
+  @IsString()
+  media_url?: string;
 }

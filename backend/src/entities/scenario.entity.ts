@@ -29,6 +29,9 @@ export class Scenario {
   @Column({ type: 'boolean', default: true, name: 'is_active' })
   is_active: boolean;
 
+  @Column({ type: 'varchar', nullable: true })
+  media_url?: string;
+
   @CreateDateColumn()
   created_at: Date;
 

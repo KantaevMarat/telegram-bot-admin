@@ -7,7 +7,7 @@ const getApiUrl = () => {
   console.log('🔗 Current URL:', currentUrl);
 
   // Priority 1: Check environment variable (highest priority)
-  // But ignore Docker-internal hostnames when running in browser
+  // But ignore Docker-internal/localhost URLs when running on production domain
   if (import.meta.env.VITE_API_URL) {
     // Ensure /api suffix exists
     let envApiUrl = import.meta.env.VITE_API_URL;
@@ -15,15 +15,28 @@ const getApiUrl = () => {
       envApiUrl = envApiUrl + '/api';
     }
     
-    // Check if this is a Docker-internal hostname
+    // Check if this is a Docker-internal or localhost URL
     const isDockerInternal = envApiUrl.includes('tg-backend') || 
                             envApiUrl.includes('tg-frontend') ||
                             envApiUrl.includes('://backend:') ||
-                            envApiUrl.includes('://frontend:');
+                            envApiUrl.includes('://frontend:') ||
+                            envApiUrl.includes('localhost:') ||
+                            envApiUrl.includes('127.0.0.1:');
     
-    // If we're in a browser (localhost) but env has Docker hostname, ignore it
-    if (isDockerInternal && (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1'))) {
-      console.log('⚠️ Ignoring Docker-internal VITE_API_URL in browser:', envApiUrl);
+    // Check if current URL is production domain (not localhost)
+    const isProductionDomain = !currentUrl.includes('localhost') && 
+                              !currentUrl.includes('127.0.0.1') &&
+                              !currentUrl.includes('serveo.net') &&
+                              !currentUrl.includes('ngrok.io') &&
+                              !currentUrl.includes('trycloudflare.com') &&
+                              !currentUrl.includes('loca.lt');
+    
+    // If VITE_API_URL points to localhost/Docker-internal but we're on production domain, ignore it
+    if (isDockerInternal && isProductionDomain) {
+      console.log('⚠️ Ignoring Docker-internal/localhost VITE_API_URL on production domain:', envApiUrl);
+      console.log('⚠️ Current URL is production:', currentUrl);
+    } else if (isDockerInternal && (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1'))) {
+      console.log('⚠️ Ignoring Docker-internal VITE_API_URL in local browser:', envApiUrl);
     } else {
       console.log('🔧 Using VITE_API_URL from env:', envApiUrl);
       return envApiUrl;
@@ -89,6 +102,20 @@ export const api = axios.create({
   },
 });
 
+// Override axios defaults to handle FormData correctly
+api.defaults.transformRequest = [(data, headers) => {
+  // If data is FormData, don't set Content-Type - let axios set it automatically with boundary
+  if (data instanceof FormData) {
+    delete headers['Content-Type'];
+    return data;
+  }
+  // For regular objects, stringify them to JSON
+  if (typeof data === 'object' && data !== null) {
+    return JSON.stringify(data);
+  }
+  return data;
+}];
+
 console.log('🔧 Axios instance created with baseURL:', api.defaults.baseURL);
 console.log('🔧 Full API URL will be:', API_URL);
 
@@ -130,6 +157,10 @@ api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token;
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  // Don't set Content-Type for FormData - axios will set it automatically with boundary
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
   }
   return config;
 });
@@ -273,6 +304,14 @@ export const tasksApi = {
   createTask: (data: any) => api.post('/admin/tasks', data).then(res => res.data),
   updateTask: (id: string, data: any) => api.put(`/admin/tasks/${id}`, data).then(res => res.data),
   deleteTask: (id: string) => api.delete(`/admin/tasks/${id}`).then(res => res.data),
+  
+  // Moderation
+  getPendingReview: (params?: { status?: string; search?: string }) => 
+    api.get('/admin/tasks/moderation/pending', { params }).then(res => res.data),
+  approveTask: (userTaskId: string) => 
+    api.post(`/admin/tasks/moderation/${userTaskId}/approve`).then(res => res.data),
+  rejectTask: (userTaskId: string, reason?: string) => 
+    api.post(`/admin/tasks/moderation/${userTaskId}/reject`, { reason }).then(res => res.data),
 };
 
 // Chats API
@@ -298,9 +337,17 @@ export const mediaApi = {
   uploadFile: (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    return api.post('/admin/media/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }).then(res => res.data);
+    // Don't set Content-Type header - axios will set it automatically with boundary for FormData
+    return api.post('/admin/media/upload', formData).then(res => res.data);
   },
+};
+
+// Commands API
+export const commandsApi = {
+  getCommands: () => api.get('/admin/commands').then(res => res.data),
+  getCommand: (id: string) => api.get(`/admin/commands/${id}`).then(res => res.data),
+  createCommand: (data: any) => api.post('/admin/commands', data).then(res => res.data),
+  updateCommand: (id: string, data: any) => api.put(`/admin/commands/${id}`, data).then(res => res.data),
+  deleteCommand: (id: string) => api.delete(`/admin/commands/${id}`).then(res => res.data),
 };
 

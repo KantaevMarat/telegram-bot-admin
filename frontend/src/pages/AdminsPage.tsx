@@ -24,10 +24,21 @@ export default function AdminsPage() {
 
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, isError } = useQuery({
     queryKey: ['admins'],
     queryFn: () => adminsApi.getAdmins(),
+    retry: 2,
+    retryDelay: 1000,
   });
+
+  // Handle error separately
+  if (isError && error) {
+    const err = error as any;
+    console.error('❌ AdminsPage: Failed to load admins:', err);
+    if (err.response?.data?.message || err.message) {
+      toast.error(`Ошибка загрузки админов: ${err.response?.data?.message || err.message || 'Network Error'}`);
+    }
+  }
 
   const createMutation = useMutation({
     mutationFn: (data: any) => adminsApi.createAdmin(data),
@@ -103,7 +114,59 @@ export default function AdminsPage() {
     }
   };
 
-  const admins = data || [];
+  const admins: Admin[] = (data as Admin[]) || [];
+
+  if (isError && error) {
+    const err = error as any;
+    return (
+      <div className="page">
+        <div className="page-header">
+          <div className="page-title-section">
+            <h1 className="page-title">Администраторы</h1>
+            <p className="page-subtitle">Управление администраторами системы</p>
+          </div>
+        </div>
+        
+        <div className="card" style={{ marginTop: '24px' }}>
+          <div className="card-header">
+            <h2 className="card-title" style={{ color: 'var(--error)' }}>❌ Ошибка загрузки данных</h2>
+          </div>
+          <div className="card-body">
+            <p style={{ marginBottom: '16px' }}>
+              <strong>Ошибка:</strong> {err?.message || 'Неизвестная ошибка'}
+            </p>
+            {err?.response?.status && (
+              <p style={{ marginBottom: '16px' }}>
+                <strong>Статус:</strong> {err.response.status} {err.response.statusText}
+              </p>
+            )}
+            <details style={{ marginTop: '16px' }}>
+              <summary style={{ cursor: 'pointer', color: 'var(--accent)', marginBottom: '8px' }}>
+                🔍 Подробности ошибки
+              </summary>
+              <pre style={{ 
+                background: 'var(--bg-secondary)', 
+                padding: '12px', 
+                borderRadius: '8px',
+                fontSize: '12px',
+                overflow: 'auto',
+                maxHeight: '300px'
+              }}>
+                {JSON.stringify(err, null, 2)}
+              </pre>
+            </details>
+            <button
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['admins'] })}
+              className="btn btn--primary"
+              style={{ marginTop: '16px' }}
+            >
+              🔄 Попробовать снова
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

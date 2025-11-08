@@ -9,6 +9,7 @@ export declare class CreateTaskDto {
     action_url?: string;
     channel_id?: string;
     task_type?: string;
+    command?: string;
     cooldown_hours?: number;
     active?: boolean;
 }

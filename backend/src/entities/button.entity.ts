@@ -29,6 +29,9 @@ export class Button {
   @Column({ type: 'text', nullable: true })
   media_url: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  command: string; // Command to execute when button is clicked (e.g., /start)
+
   @Column({ type: 'boolean', default: true })
   active: boolean;
 

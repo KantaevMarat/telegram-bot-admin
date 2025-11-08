@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { buttonsApi } from '../api/client';
-import { Square, Plus, Edit, Trash2, X, Image, Link, MessageSquare, LayoutGrid, LayoutList, Check, XCircle } from 'lucide-react';
+import { buttonsApi, mediaApi } from '../api/client';
+import { Square, Plus, Edit, Trash2, X, Image, Link, MessageSquare, LayoutGrid, LayoutList, Check, XCircle, Upload, Video, FileImage, Trash } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSyncRefetch } from '../hooks/useSync';
 
@@ -11,6 +11,7 @@ interface Button {
   action_type: string;
   action_payload: any;
   media_url?: string;
+  command?: string;
   row: number;
   col: number;
   active: boolean;
@@ -57,6 +58,10 @@ export default function ButtonsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingButton, setEditingButton] = useState<Button | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState({
     label: '',
@@ -64,6 +69,7 @@ export default function ButtonsPage() {
     action_payload: '',
     action_url: '',
     media_url: '',
+    command: '',
     row: 1,
     col: 1,
     active: true,
@@ -112,12 +118,14 @@ export default function ButtonsPage() {
 
   const handleOpenModal = () => {
     setEditingButton(null);
+    setSelectedFile(null);
     setFormData({
       label: '',
       action_type: 'text',
       action_payload: '',
       action_url: '',
       media_url: '',
+      command: '',
       row: 1,
       col: 1,
       active: true,
@@ -169,6 +177,7 @@ export default function ButtonsPage() {
       action_payload: actionPayloadText,
       action_url: actionUrl,
       media_url: button.media_url || '',
+      command: button.command || '',
       row: button.row,
       col: button.col,
       active: button.active,
@@ -181,12 +190,14 @@ export default function ButtonsPage() {
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingButton(null);
+    setSelectedFile(null);
     setFormData({
       label: '',
       action_type: 'text',
       action_payload: '',
       action_url: '',
       media_url: '',
+      command: '',
       row: 1,
       col: 1,
       active: true,
@@ -195,8 +206,57 @@ export default function ButtonsPage() {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'photo' | 'video') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size (max 50MB)
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error('Файл слишком большой (максимум 50 МБ)');
+      return;
+    }
+
+    // Validate file type
+    if (type === 'photo' && !file.type.startsWith('image/')) {
+      toast.error('Выберите файл изображения');
+      return;
+    }
+    if (type === 'video' && !file.type.startsWith('video/')) {
+      toast.error('Выберите видео файл');
+      return;
+    }
+
+    setSelectedFile(file);
+    
+    // Clear the input so the same file can be selected again
+    if (e.target) {
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveFile = () => {
+    setSelectedFile(null);
+    setFormData(prev => ({ ...prev, media_url: '' }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Upload file if selected
+    let mediaUrl = formData.media_url;
+    if (selectedFile) {
+      setUploadingFile(true);
+      try {
+        const result = await mediaApi.uploadFile(selectedFile);
+        mediaUrl = result.url;
+        toast.success('Файл загружен успешно!');
+      } catch (error: any) {
+        toast.error(`Ошибка загрузки файла: ${error.response?.data?.message || error.message}`);
+        setUploadingFile(false);
+        return;
+      }
+      setUploadingFile(false);
+    }
     
     // Build action_payload based on type and inline buttons
     let actionPayload: any;
@@ -238,10 +298,11 @@ export default function ButtonsPage() {
     }
 
     const submitData = {
-      label: formData.label,
+      label: formData.label || formData.command || 'Кнопка', // Use command as label if label is empty
       action_type: formData.action_type,
-      action_payload: actionPayload,
-      media_url: formData.media_url,
+      action_payload: actionPayload || undefined,
+      media_url: mediaUrl || undefined,
+      command: formData.command || undefined,
       row: formData.row,
       col: formData.col,
       active: formData.active,
@@ -585,15 +646,17 @@ export default function ButtonsPage() {
             <div className="modal__body">
               <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div className="form-group">
-                  <label className="form-label">Название кнопки *</label>
+                  <label className="form-label">Название кнопки</label>
                   <input
                     type="text"
                     className="form-input"
                     value={formData.label}
                     onChange={(e) => setFormData(prev => ({ ...prev, label: e.target.value }))}
-                    placeholder="Введите название кнопки"
-                    required
+                    placeholder="Введите название кнопки (необязательно)"
                   />
+                  <small className="form-hint" style={{ marginTop: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                    Можно оставить пустым, если кнопка только выполняет команду
+                  </small>
                 </div>
 
                 <div className="form-group">
@@ -623,7 +686,7 @@ export default function ButtonsPage() {
                 {formData.button_type === 'reply' && (
                   <div className="form-group">
                     <label className="form-label">
-                      {formData.action_type === 'url' ? 'URL' : 'Текст при нажатии'} *
+                      {formData.action_type === 'url' ? 'URL' : 'Текст при нажатии'}
                     </label>
                     <input
                       type={formData.action_type === 'url' ? 'url' : 'text'}
@@ -636,22 +699,20 @@ export default function ButtonsPage() {
                           setFormData(prev => ({ ...prev, action_payload: e.target.value }));
                         }
                       }}
-                      placeholder={formData.action_type === 'url' ? 'https://example.com' : 'Введите текст'}
-                      required
+                      placeholder={formData.action_type === 'url' ? 'https://example.com' : 'Введите текст (необязательно)'}
                     />
                   </div>
                 )}
 
                 {formData.button_type === 'inline' && (
                   <div className="form-group">
-                    <label className="form-label">Текст сообщения *</label>
+                    <label className="form-label">Текст сообщения</label>
                     <textarea
                       className="form-input"
                       rows={3}
                       value={formData.action_payload}
                       onChange={(e) => setFormData(prev => ({ ...prev, action_payload: e.target.value }))}
-                      placeholder="Текст сообщения, которое покажется с кнопками под ним"
-                      required
+                      placeholder="Текст сообщения, которое покажется с кнопками под ним (необязательно)"
                     />
                   </div>
                 )}
@@ -708,14 +769,18 @@ export default function ButtonsPage() {
                           />
                         )}
                         {btn.type === 'callback' && (
-                          <input
-                            type="text"
-                            className="form-input"
-                            style={{ flex: 1 }}
-                            value={btn.callback || ''}
-                            onChange={(e) => updateInlineButton(index, 'callback', e.target.value)}
-                            placeholder="callback_data"
-                          />
+                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <input
+                              type="text"
+                              className="form-input"
+                              value={btn.callback || ''}
+                              onChange={(e) => updateInlineButton(index, 'callback', e.target.value)}
+                              placeholder="ID кнопки или команда (например: button_123 или tasks)"
+                            />
+                            <small className="form-hint" style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-xs)' }}>
+                              💡 Введите ID кнопки из БД (UUID) или специальную команду: tasks, balance, profile, withdraw, referral, menu
+                            </small>
+                          </div>
                         )}
                         {btn.type === 'web_app' && (
                           <input
@@ -751,17 +816,136 @@ export default function ButtonsPage() {
                 )}
 
                 <div className="form-group">
-                  <label className="form-label">URL медиафайла</label>
-                  <div className="search-input">
-                    <Image size={18} className="search-input__icon" />
-                    <input
-                      type="url"
-                      className="search-input__field"
-                      value={formData.media_url}
-                      onChange={(e) => setFormData(prev => ({ ...prev, media_url: e.target.value }))}
-                      placeholder="https://example.com/image.jpg"
-                    />
+                  <label className="form-label">Медиафайл (фото или видео)</label>
+                  
+                  {/* File upload buttons */}
+                  <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+                    <label style={{ flex: 1 }}>
+                      <input
+                        ref={photoInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleFileSelect(e, 'photo')}
+                        style={{ display: 'none' }}
+                      />
+                      <div className="btn btn--secondary" style={{ width: '100%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                        <FileImage size={18} />
+                        Загрузить фото
+                      </div>
+                    </label>
+                    
+                    <label style={{ flex: 1 }}>
+                      <input
+                        ref={videoInputRef}
+                        type="file"
+                        accept="video/*"
+                        onChange={(e) => handleFileSelect(e, 'video')}
+                        style={{ display: 'none' }}
+                      />
+                      <div className="btn btn--secondary" style={{ width: '100%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                        <Video size={18} />
+                        Загрузить видео
+                      </div>
+                    </label>
                   </div>
+
+                  {/* Selected file preview */}
+                  {selectedFile && (
+                    <div style={{
+                      padding: '12px',
+                      background: 'var(--bg-secondary)',
+                      borderRadius: 'var(--radius-md)',
+                      marginBottom: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px'
+                    }}>
+                      {selectedFile.type.startsWith('image/') ? (
+                        <FileImage size={24} style={{ color: 'var(--accent)' }} />
+                      ) : (
+                        <Video size={24} style={{ color: 'var(--accent)' }} />
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 'var(--font-weight-semibold)', fontSize: 'var(--font-size-sm)' }}>
+                          {selectedFile.name}
+                        </div>
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
+                          {(selectedFile.size / 1024 / 1024).toFixed(2)} МБ
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRemoveFile}
+                        className="btn btn--danger btn--icon btn--sm"
+                        title="Удалить файл"
+                      >
+                        <Trash size={16} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Existing media URL preview */}
+                  {formData.media_url && !selectedFile && (
+                    <div style={{
+                      padding: '12px',
+                      background: 'var(--bg-secondary)',
+                      borderRadius: 'var(--radius-md)',
+                      marginBottom: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px'
+                    }}>
+                      <Image size={24} style={{ color: 'var(--info)' }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', wordBreak: 'break-all' }}>
+                          {formData.media_url}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, media_url: '' }))}
+                        className="btn btn--danger btn--icon btn--sm"
+                        title="Удалить URL"
+                      >
+                        <Trash size={16} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Manual URL input */}
+                  <div style={{ marginTop: '12px' }}>
+                    <label className="form-label" style={{ fontSize: 'var(--font-size-sm)', marginBottom: '8px' }}>
+                      Или введите URL вручную
+                    </label>
+                    <div className="search-input">
+                      <Link size={18} className="search-input__icon" />
+                      <input
+                        type="url"
+                        className="search-input__field"
+                        value={selectedFile ? '' : formData.media_url}
+                        onChange={(e) => {
+                          setFormData(prev => ({ ...prev, media_url: e.target.value }));
+                          setSelectedFile(null);
+                        }}
+                        placeholder="https://example.com/image.jpg"
+                        disabled={!!selectedFile}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Команда (опционально)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={formData.command}
+                    onChange={(e) => setFormData(prev => ({ ...prev, command: e.target.value }))}
+                    placeholder="/start или любая другая команда"
+                  />
+                  <small className="form-hint" style={{ marginTop: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                    Команда выполнится при нажатии на кнопку (например, /start, /balance, /tasks)
+                  </small>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -811,9 +995,18 @@ export default function ButtonsPage() {
                   <button
                     type="submit"
                     className="btn btn--primary"
-                    disabled={createMutation.isPending || updateMutation.isPending}
+                    disabled={createMutation.isPending || updateMutation.isPending || uploadingFile}
                   >
-                    {editingButton ? 'Обновить' : 'Создать'}
+                    {uploadingFile ? (
+                      <>
+                        <Upload size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                        Загрузка...
+                      </>
+                    ) : editingButton ? (
+                      'Обновить'
+                    ) : (
+                      'Создать'
+                    )}
                   </button>
                   
                   <button

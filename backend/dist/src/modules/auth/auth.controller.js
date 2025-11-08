@@ -30,7 +30,7 @@ let AuthController = AuthController_1 = class AuthController {
         this.logger.debug(`initData preview: ${loginDto.initData?.substring(0, 50) || 'N/A'}...`);
         if (!loginDto.initData || loginDto.initData === 'dev') {
             this.logger.log('🔧 Development mode login detected');
-            return await this.authService.devLogin(697184435);
+            return await this.authService.devLogin(6971844353);
         }
         try {
             const result = await this.authService.loginAdmin(loginDto.initData);

@@ -5,4 +5,5 @@ export declare class CreateScenarioDto {
     steps?: any[];
     is_active?: boolean;
     active?: boolean;
+    media_url?: string;
 }

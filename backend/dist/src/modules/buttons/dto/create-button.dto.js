@@ -16,7 +16,8 @@ class CreateButtonDto {
 }
 exports.CreateButtonDto = CreateButtonDto;
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Button label' }),
+    (0, swagger_1.ApiProperty)({ description: 'Button label', required: false }),
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateButtonDto.prototype, "label", void 0);
@@ -27,7 +28,7 @@ __decorate([
 ], CreateButtonDto.prototype, "action_type", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ description: 'Action payload', example: { url: 'https://example.com' } }),
-    (0, class_validator_1.IsObject)(),
+    (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Object)
 ], CreateButtonDto.prototype, "action_payload", void 0);
 __decorate([
@@ -48,6 +49,12 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateButtonDto.prototype, "media_url", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Command to execute when button is clicked (e.g., /start)', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateButtonDto.prototype, "command", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ description: 'Is active', required: false }),
     (0, class_validator_1.IsOptional)(),

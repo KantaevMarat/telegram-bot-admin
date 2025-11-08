@@ -6,6 +6,7 @@ export declare class Button {
     row: number;
     col: number;
     media_url: string;
+    command: string;
     active: boolean;
     created_at: Date;
     updated_at: Date;
