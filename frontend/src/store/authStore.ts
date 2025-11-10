@@ -27,7 +27,9 @@ export const useAuthStore = create<AuthState>()(
       loginWithTelegram: async () => {
         try {
           // Используем API URL из client.ts (уже с правильным определением)
+          console.log('🔍 API_URL from client.ts:', API_URL);
           const apiUrl = API_URL.replace(/\/api\/?$/, ''); // Убираем /api если есть, т.к. добавим вручную
+          console.log('🔍 apiUrl after replace:', apiUrl);
 
           // Получаем initData напрямую из Telegram WebApp (может быть доступен не сразу)
           const telegramWebApp = typeof window !== 'undefined' ? window.Telegram?.WebApp : null;
@@ -124,7 +126,9 @@ export const useAuthStore = create<AuthState>()(
 
           // apiUrl уже определен выше
           const endpoint = `${apiUrl}/api/auth/telegram/admin`;
-          console.log('🌐 API URL:', endpoint);
+          console.log('🌐 Full API endpoint URL:', endpoint);
+          console.log('🌐 apiUrl base:', apiUrl);
+          console.log('🌐 API_URL original:', API_URL);
 
           const response = await fetch(endpoint, {
             method: 'POST',
