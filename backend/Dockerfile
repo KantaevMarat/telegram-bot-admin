@@ -19,11 +19,16 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm install --omit=dev --legacy-peer-deps
+# Install ALL dependencies first (including dev) for building
+RUN npm install --legacy-peer-deps
 
 COPY . .
 
+# Build the application
 RUN npm run build
+
+# Remove dev dependencies after build
+RUN npm prune --omit=dev
 
 CMD ["node", "dist/main"]
 
