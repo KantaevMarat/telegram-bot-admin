@@ -77,7 +77,6 @@ get_certificate() {
         --email $EMAIL \
         --agree-tos \
         --no-eff-email \
-        --force-renewal \
         -d $domain
     
     if [ $? -eq 0 ]; then
