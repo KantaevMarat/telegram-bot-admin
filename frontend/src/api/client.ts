@@ -29,8 +29,21 @@ const getApiUrl = () => {
                               !currentUrl.includes('trycloudflare.com') &&
                               !currentUrl.includes('loca.lt');
     
-    // If VITE_API_URL is a production URL (starts with https://), always use it
+    // If VITE_API_URL is a production URL (starts with https://)
+    // BUT: If we're on app.marranasuete.ru, prefer same-origin API to avoid CORS/network issues
     if (envApiUrl.startsWith('https://')) {
+      const currentOrigin = window.location.origin;
+      const isOnAppDomain = currentOrigin.includes('app.marranasuete.ru');
+      const isApiDomain = envApiUrl.includes('api.marranasuete.ru');
+      
+      // If we're on app domain and VITE_API_URL points to api domain, use same-origin instead
+      if (isOnAppDomain && isApiDomain) {
+        const sameOriginApi = `${currentOrigin}/api`;
+        console.log('🔧 On app.marranasuete.ru, using same-origin API instead of api.marranasuete.ru:', sameOriginApi);
+        console.log('⚠️ This avoids potential network/CORS issues with cross-domain requests');
+        return sameOriginApi;
+      }
+      
       console.log('🔧 Using VITE_API_URL from env (production URL):', envApiUrl);
       return envApiUrl;
     }
