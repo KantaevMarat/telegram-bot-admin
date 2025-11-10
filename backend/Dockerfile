@@ -39,5 +39,5 @@ RUN npm install --omit=dev --legacy-peer-deps
 # Copy built application from build stage
 COPY --from=build /app/dist ./dist
 
-CMD ["node", "dist/main"]
+CMD ["node", "dist/src/main"]
 
