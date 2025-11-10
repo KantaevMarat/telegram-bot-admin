@@ -31,9 +31,15 @@ lerna-debug.log*
 # IDE
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 *~
+
+# Temporary files
+.env.production.temp
+.env.local
+.env.*.temp
 
 # OS
 Thumbs.db
