@@ -58,11 +58,14 @@ const getApiUrl = () => {
   
   // For Telegram Mini Apps running on production domain
   // Check if Telegram WebApp exists (even without initData)
+  // BUT: Only use same-origin API if VITE_API_URL is NOT set or is not a production URL
   const hasTelegramWebApp = typeof window !== 'undefined' && window.Telegram?.WebApp;
   if (hasTelegramWebApp && !currentUrl.includes('localhost') && !currentUrl.includes('127.0.0.1')) {
+    // If VITE_API_URL was not set or was ignored, use same origin
+    // This is a fallback for cases where VITE_API_URL is not configured
     const origin = window.location.origin;
     const telegramApiUrl = `${origin}/api`;
-    console.log('📱 Telegram Mini App detected - using same origin API:', telegramApiUrl);
+    console.log('📱 Telegram Mini App detected - using same origin API (VITE_API_URL not set):', telegramApiUrl);
     return telegramApiUrl;
   }
 
