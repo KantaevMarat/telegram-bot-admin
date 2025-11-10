@@ -10,15 +10,17 @@ echo "=================================================="
 echo "SSL Setup for api.marranasuete.ru and app.marranasuete.ru"
 echo "=================================================="
 
+# Загрузка переменных окружения
+set +e
+source .env 2>/dev/null || true
+set -e
+
 # Проверка наличия email для Let's Encrypt
 if [ -z "$LETSENCRYPT_EMAIL" ]; then
     echo "❌ Error: LETSENCRYPT_EMAIL not set in .env"
     echo "Please add: LETSENCRYPT_EMAIL=your-email@example.com to .env"
     exit 1
 fi
-
-# Загрузка переменных окружения
-source .env 2>/dev/null || true
 
 EMAIL="${LETSENCRYPT_EMAIL:-admin@marranasuete.ru}"
 API_DOMAIN="${API_DOMAIN:-api.marranasuete.ru}"
