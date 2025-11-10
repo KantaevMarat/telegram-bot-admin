@@ -30,17 +30,17 @@ const getApiUrl = () => {
                               !currentUrl.includes('loca.lt');
     
     // If VITE_API_URL is a production URL (starts with https://)
-    // BUT: If we're on app.marranasuete.ru, prefer same-origin API to avoid CORS/network issues
+    // BUT: If we're on app.marranasuete.ru, ALWAYS use same-origin API to avoid CORS/network issues
     if (envApiUrl.startsWith('https://')) {
       const currentOrigin = window.location.origin;
       const isOnAppDomain = currentOrigin.includes('app.marranasuete.ru');
-      const isApiDomain = envApiUrl.includes('api.marranasuete.ru');
       
-      // If we're on app domain and VITE_API_URL points to api domain, use same-origin instead
-      if (isOnAppDomain && isApiDomain) {
+      // ALWAYS use same-origin API when on app.marranasuete.ru (regardless of VITE_API_URL)
+      if (isOnAppDomain) {
         const sameOriginApi = `${currentOrigin}/api`;
-        console.log('🔧 On app.marranasuete.ru, using same-origin API instead of api.marranasuete.ru:', sameOriginApi);
-        console.log('⚠️ This avoids potential network/CORS issues with cross-domain requests');
+        console.log('🔧 On app.marranasuete.ru, FORCING same-origin API:', sameOriginApi);
+        console.log('⚠️ Ignoring VITE_API_URL to avoid network/CORS issues');
+        console.log('⚠️ VITE_API_URL was:', envApiUrl);
         return sameOriginApi;
       }
       
