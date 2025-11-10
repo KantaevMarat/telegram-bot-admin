@@ -130,16 +130,50 @@ export const useAuthStore = create<AuthState>()(
           console.log('🌐 apiUrl base:', apiUrl);
           console.log('🌐 API_URL original:', API_URL);
 
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ initData }),
-          });
-
-          console.log('📡 Response status:', response.status);
-          console.log('📡 Response headers:', response.headers);
+          let response: Response;
+          try {
+            console.log('🚀 Sending fetch request to:', endpoint);
+            console.log('🚀 Request body:', { initData: initData.substring(0, 50) + '...' });
+            
+            response = await fetch(endpoint, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ initData }),
+              credentials: 'include', // Важно для CORS с credentials
+            });
+            
+            console.log('📡 Response received!');
+            console.log('📡 Response status:', response.status);
+            console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
+          } catch (fetchError: any) {
+            console.error('❌ Fetch error (request failed):', fetchError);
+            console.error('❌ Error type:', fetchError.name);
+            console.error('❌ Error message:', fetchError.message);
+            console.error('❌ Error stack:', fetchError.stack);
+            
+            // Проверяем тип ошибки
+            if (fetchError.name === 'TypeError' && fetchError.message.includes('Failed to fetch')) {
+              return { 
+                success: false, 
+                error: 'Network error: Failed to fetch. Check CORS, firewall, or network connection.',
+                details: fetchError.message
+              };
+            } else if (fetchError.name === 'AbortError') {
+              return { 
+                success: false, 
+                error: 'Request was aborted or cancelled.',
+                details: fetchError.message
+              };
+            } else {
+              return { 
+                success: false, 
+                error: `Network error: ${fetchError.message || 'Unknown error'}`,
+                details: fetchError.toString()
+              };
+            }
+          }
 
           if (response.ok) {
             const data = await response.json();
