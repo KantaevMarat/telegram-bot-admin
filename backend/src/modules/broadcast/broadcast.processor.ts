@@ -16,17 +16,17 @@ export class BroadcastProcessor extends WorkerHost {
     private broadcastService: BroadcastService,
   ) {
     super();
-    // Use CLIENT_BOT_TOKEN for client bot (user-facing), fallback to TELEGRAM_BOT_TOKEN
-    const clientToken = this.configService.get('CLIENT_BOT_TOKEN');
+    // Use CLIENT_TG_BOT_TOKEN or CLIENT_BOT_TOKEN for client bot (user-facing), fallback to TELEGRAM_BOT_TOKEN
+    const clientToken = this.configService.get('CLIENT_TG_BOT_TOKEN') || this.configService.get('CLIENT_BOT_TOKEN');
     const telegramToken = this.configService.get('TELEGRAM_BOT_TOKEN');
     this.botToken = clientToken || telegramToken || '';
     
     if (clientToken) {
-      this.logger.log(`✅ Using CLIENT_BOT_TOKEN for broadcast (${clientToken.substring(0, 10)}...)`);
+      this.logger.log(`✅ Using CLIENT_TG_BOT_TOKEN/CLIENT_BOT_TOKEN for broadcast (${clientToken.substring(0, 10)}...)`);
     } else if (telegramToken) {
       this.logger.log(`⚠️ Using TELEGRAM_BOT_TOKEN as fallback for broadcast (${telegramToken.substring(0, 10)}...)`);
     } else {
-      this.logger.error('⚠️ Neither CLIENT_BOT_TOKEN nor TELEGRAM_BOT_TOKEN is set for broadcast!');
+      this.logger.error('⚠️ Neither CLIENT_TG_BOT_TOKEN/CLIENT_BOT_TOKEN nor TELEGRAM_BOT_TOKEN is set for broadcast!');
     }
   }
 

@@ -48,8 +48,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private commandsService: CommandsService,
   ) {
     this.logger.log('BotService constructor called');
-    // Use CLIENT_BOT_TOKEN for client bot (user-facing), fallback to TELEGRAM_BOT_TOKEN
-    const clientToken = this.configService.get('CLIENT_BOT_TOKEN');
+    // Use CLIENT_TG_BOT_TOKEN or CLIENT_BOT_TOKEN for client bot (user-facing), fallback to TELEGRAM_BOT_TOKEN
+    const clientToken = this.configService.get('CLIENT_TG_BOT_TOKEN') || this.configService.get('CLIENT_BOT_TOKEN');
     const telegramToken = this.configService.get('TELEGRAM_BOT_TOKEN');
     this.botToken = clientToken || telegramToken || '';
     this.logger.log(`Bot token loaded: ${this.botToken ? 'YES' : 'NO'}`);
@@ -59,7 +59,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     
     // Log which env var was used
     if (clientToken) {
-      this.logger.log(`✅ Using CLIENT_BOT_TOKEN for client bot (${clientToken.substring(0, 10)}...)`);
+      this.logger.log(`✅ Using CLIENT_TG_BOT_TOKEN/CLIENT_BOT_TOKEN for client bot (${clientToken.substring(0, 10)}...)`);
     } else if (telegramToken) {
       this.logger.log(`⚠️ Using TELEGRAM_BOT_TOKEN as fallback (${telegramToken.substring(0, 10)}...)`);
     }
@@ -104,16 +104,27 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         this.logger.log('✅ BotService subscribed to sync events');
 
     // Start polling if bot token is set
-    // In production, if webhook is not configured, use polling
+    // For client bot, always use polling by default (webhook requires manual setup via Telegram API)
     if (this.botToken) {
+      const useWebhook = this.configService.get('USE_WEBHOOK', 'false') === 'true';
       const webhookUrl = this.configService.get('TELEGRAM_WEBHOOK_URL');
-      // If webhook is not configured, use polling
-      if (!webhookUrl || process.env.NODE_ENV === 'development') {
-        this.logger.log('🤖 Starting bot polling (webhook not configured or development mode)');
+      
+      // Always use polling unless explicitly disabled via USE_WEBHOOK=true
+      // Webhook requires manual setup: DELETE webhook first, then set it via /api/bot/set-webhook
+      if (!useWebhook) {
+        this.logger.log('🤖 Starting client bot polling (polling mode - default)');
+        this.logger.log('💡 To use webhook mode, set USE_WEBHOOK=true and configure webhook via /api/bot/set-webhook');
         this.startPolling();
       } else {
-        this.logger.log('📡 Webhook mode: polling disabled (use /api/bot/webhook)');
+        this.logger.log('📡 Webhook mode: polling disabled (USE_WEBHOOK=true)');
+        if (webhookUrl) {
+          this.logger.log(`📡 Webhook URL: ${webhookUrl}`);
+        } else {
+          this.logger.warn('⚠️ USE_WEBHOOK=true but TELEGRAM_WEBHOOK_URL is not set! Bot will not receive updates.');
+        }
       }
+    } else {
+      this.logger.error('❌ Client bot token is not set! Bot will not respond to users.');
     }
   }
 
