@@ -1,0 +1,56 @@
+# ============================================
+# API Domain: api.marranasuete.ru (HTTP ONLY)
+# Используется ДО получения SSL сертификатов
+# После получения SSL - переименовать api.conf в active
+# ============================================
+
+server {
+    listen 80;
+    server_name api.marranasuete.ru;
+
+    # Let's Encrypt challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Client body size (для загрузки файлов)
+    client_max_body_size 100M;
+
+    # Proxy settings
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+
+    # WebSocket support
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+
+    # Timeouts
+    proxy_connect_timeout 600s;
+    proxy_send_timeout 600s;
+    proxy_read_timeout 600s;
+    send_timeout 600s;
+
+    # Backend API
+    location / {
+        proxy_pass http://tg-backend:3000;
+        proxy_buffering off;
+        proxy_request_buffering off;
+    }
+
+    # Health check endpoint
+    location /health {
+        access_log off;
+        return 200 "OK\n";
+        add_header Content-Type text/plain;
+    }
+
+    # Access logs
+    access_log /var/log/nginx/api_access.log;
+    error_log /var/log/nginx/api_error.log;
+}
+
