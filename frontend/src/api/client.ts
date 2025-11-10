@@ -7,7 +7,7 @@ const getApiUrl = () => {
   console.log('🔗 Current URL:', currentUrl);
 
   // Priority 1: Check environment variable (highest priority)
-  // But ignore Docker-internal/localhost URLs when running on production domain
+  // Always use VITE_API_URL if it's set and is a valid production URL
   if (import.meta.env.VITE_API_URL) {
     // Ensure /api suffix exists
     let envApiUrl = import.meta.env.VITE_API_URL;
@@ -19,9 +19,7 @@ const getApiUrl = () => {
     const isDockerInternal = envApiUrl.includes('tg-backend') || 
                             envApiUrl.includes('tg-frontend') ||
                             envApiUrl.includes('://backend:') ||
-                            envApiUrl.includes('://frontend:') ||
-                            envApiUrl.includes('localhost:') ||
-                            envApiUrl.includes('127.0.0.1:');
+                            envApiUrl.includes('://frontend:');
     
     // Check if current URL is production domain (not localhost)
     const isProductionDomain = !currentUrl.includes('localhost') && 
@@ -30,6 +28,12 @@ const getApiUrl = () => {
                               !currentUrl.includes('ngrok.io') &&
                               !currentUrl.includes('trycloudflare.com') &&
                               !currentUrl.includes('loca.lt');
+    
+    // If VITE_API_URL is a production URL (starts with https://), always use it
+    if (envApiUrl.startsWith('https://')) {
+      console.log('🔧 Using VITE_API_URL from env (production URL):', envApiUrl);
+      return envApiUrl;
+    }
     
     // If VITE_API_URL points to localhost/Docker-internal but we're on production domain, ignore it
     if (isDockerInternal && isProductionDomain) {
