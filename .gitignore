@@ -50,8 +50,8 @@ Thumbs.db
 
 # Uploads
 uploads/
-# Ignore media uploads but not source code
-/media/
 backend/uploads/
-backend/media/
+# Ignore media uploads directory (uploaded files) but NOT source code
+/media/
+!backend/src/modules/media/
 
