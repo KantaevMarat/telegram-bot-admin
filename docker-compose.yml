@@ -103,14 +103,14 @@ services:
   # Frontend (React/Vite + Nginx)
   # ============================================
   frontend:
-    image: marty141/tg-frontend:latest
-    # build:
-    #   context: ./frontend
-    #   dockerfile: Dockerfile
-    #   target: production
-    #   args:
-    #     VITE_API_URL: https://${API_DOMAIN:-api.marranasuete.ru}
-    #     VITE_TELEGRAM_BOT_USERNAME: ${CLIENT_TG_BOT_USERNAME:-thtgmoneybot}
+    # image: marty141/tg-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+      args:
+        VITE_API_URL: https://${API_DOMAIN:-api.marranasuete.ru}
+        VITE_TELEGRAM_BOT_USERNAME: ${CLIENT_TG_BOT_USERNAME:-thtgmoneybot}
     container_name: tg-frontend
     restart: always
     networks:
