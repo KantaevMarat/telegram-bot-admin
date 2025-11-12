@@ -27,18 +27,14 @@ export function useSync() {
   // Initialize WebSocket connection
   useEffect(() => {
     // Determine WebSocket URL based on API URL
-    let apiUrl: string;
+    let wsUrl: string;
     
     if (window.location.href.includes('localhost') || window.location.href.includes('127.0.0.1')) {
-      apiUrl = 'http://localhost:3000';
-    } else if (import.meta.env.VITE_API_URL) {
-      apiUrl = import.meta.env.VITE_API_URL.replace('/api', '');
+      wsUrl = 'http://localhost:3000';
     } else {
-      // Fallback to same origin
-      apiUrl = window.location.origin;
+      // Always use same origin for production to avoid CORS issues with WebSocket
+      wsUrl = window.location.origin;
     }
-
-    const wsUrl = apiUrl.replace('/api', '');
 
     console.log('🔌 Connecting to WebSocket:', `${wsUrl}/sync`);
 

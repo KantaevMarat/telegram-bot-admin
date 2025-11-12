@@ -576,12 +576,19 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       }
 
       // Create user task record
+      // Calculate reward correctly
+      const reward_min = parseFloat(task.reward_min.toString());
+      const reward_max = parseFloat(task.reward_max.toString());
+      const calculatedReward = parseFloat((reward_min + Math.random() * (reward_max - reward_min)).toFixed(2));
+      
       const userTask = this.userTaskRepo.create({
         user_id: user.id,
         task_id: task.id,
         status: task.task_type === 'manual' ? 'pending' : 'completed',
-        reward: task.reward_min + Math.random() * (task.reward_max - task.reward_min),
+        reward: calculatedReward,
       });
+      
+      this.logger.log(`💰 Assigned reward for task "${task.title}": ${calculatedReward} USDT (range: ${reward_min}-${reward_max})`);
 
       await this.userTaskRepo.save(userTask);
 
@@ -600,18 +607,32 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           total_earned: user.total_earned + userTask.reward,
         });
 
-        await this.sendMessage(
-          chatId,
-          `✅ Задание "${task.title}" выполнено!\n\n` +
-          `💰 Награда: ${userTask.reward.toFixed(2)} USDT\n\n` +
-          `📊 Ваш баланс обновлен.`,
-          await this.getReplyKeyboard()
-        );
+        // Get updated user balance
+        const updatedUser = await this.userRepo.findOne({ where: { id: user.id } });
+        
+        if (updatedUser) {
+          await this.sendMessage(
+            chatId,
+            `✅ *Задание выполнено успешно!*\n\n` +
+            `📋 ${task.title}\n` +
+            `💰 Награда: *${calculatedReward.toFixed(2)} USDT*\n\n` +
+            `━━━━━━━━━━━━━━━━\n` +
+            `💳 Текущий баланс: *${updatedUser.balance_usdt.toFixed(2)} USDT*\n` +
+            `✨ Выполнено заданий: ${updatedUser.tasks_completed}\n` +
+            `📈 Всего заработано: ${updatedUser.total_earned.toFixed(2)} USDT\n\n` +
+            `Поздравляем! Средства зачислены на ваш счет. 🎉`,
+            await this.getReplyKeyboard()
+          );
+        }
       } else {
         await this.sendMessage(
           chatId,
-          `📝 Задание "${task.title}" отправлено на проверку.\n\n` +
-          `⏳ Ожидайте подтверждения администратора.`,
+          `📝 *Задание отправлено на проверку*\n\n` +
+          `📋 ${task.title}\n` +
+          `💰 Потенциальная награда: *${calculatedReward.toFixed(2)} USDT*\n\n` +
+          `⏳ Ожидайте подтверждения администратора.\n` +
+          `Мы проверим выполнение в ближайшее время и отправим вам уведомление.\n\n` +
+          `📬 Вы получите сообщение о результатах проверки.`,
           await this.getReplyKeyboard()
         );
       }
@@ -1487,9 +1508,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`✅ Subscription verified: user ${user.tg_id}, channel ${task.channel_id}`);
     }
 
-    // Calculate reward
-    const reward =
-      Math.floor(Math.random() * (task.reward_max - task.reward_min + 1)) + task.reward_min;
+    // Calculate reward (random value between min and max)
+    const reward_min = parseFloat(task.reward_min.toString());
+    const reward_max = parseFloat(task.reward_max.toString());
+    const reward = parseFloat((reward_min + Math.random() * (reward_max - reward_min)).toFixed(2));
+    
+    this.logger.log(`💰 Calculated reward for task "${task.title}": ${reward} USDT (range: ${reward_min}-${reward_max})`);
 
     // Check if task requires manual review
     // - task_type = 'manual' always requires review
@@ -1505,11 +1529,14 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
       await this.sendMessage(
         chatId,
-        `⏳ *Задание отправлено на проверку!*\n\n` +
+        `📝 *Задание отправлено на модерацию*\n\n` +
         `📋 ${task.title}\n` +
-        `💰 Потенциальная награда: ${reward} USDT\n\n` +
-        `Администратор проверит выполнение в ближайшее время. ` +
-        `Вы получите уведомление о результатах проверки.`,
+        `💰 Потенциальная награда: *${reward.toFixed(2)} USDT*\n\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `⏳ *Статус:* На проверке\n` +
+        `📬 Мы проверим выполнение задания в ближайшее время.\n\n` +
+        `✅ При успешной проверке средства будут зачислены на ваш счет.\n` +
+        `❌ В случае отклонения вы получите уведомление с причиной.`,
         {
           inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
         },
@@ -1546,10 +1573,14 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
       await this.sendMessage(
         chatId,
-        `✅ *Задание выполнено!*\n\n` +
+        `✅ *Задание выполнено успешно!*\n\n` +
         `📋 ${task.title}\n` +
-        `💰 Получено: +${reward} USDT\n\n` +
-        `Ваш баланс: ${user.balance_usdt} USDT`,
+        `💰 Награда: *+${reward.toFixed(2)} USDT*\n\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `💳 Текущий баланс: *${balanceAfter.toFixed(2)} USDT*\n` +
+        `✨ Выполнено заданий: ${user.tasks_completed}\n` +
+        `📈 Всего заработано: ${user.total_earned.toFixed(2)} USDT\n\n` +
+        `Поздравляем! Средства зачислены на ваш счет. 🎉`,
         {
           inline_keyboard: [
             [{ text: '📋 Другие задания', callback_data: 'tasks' }],

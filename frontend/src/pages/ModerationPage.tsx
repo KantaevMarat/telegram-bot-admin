@@ -35,12 +35,22 @@ export default function ModerationPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const queryClient = useQueryClient();
 
-  const { data: userTasks = [], isLoading, refetch } = useQuery({
+  const { data: userTasks = [], isLoading, error, refetch } = useQuery({
     queryKey: ['tasks-moderation', statusFilter, searchQuery],
-    queryFn: () => tasksApi.getPendingReview({ 
-      status: statusFilter || undefined, 
-      search: searchQuery || undefined 
-    }),
+    queryFn: async () => {
+      try {
+        const result = await tasksApi.getPendingReview({ 
+          status: statusFilter || undefined, 
+          search: searchQuery || undefined 
+        });
+        console.log('✅ Moderation data loaded:', result);
+        return result || [];
+      } catch (err: any) {
+        console.error('❌ Error loading moderation data:', err);
+        toast.error(`Ошибка загрузки: ${err.response?.data?.message || err.message}`);
+        throw err;
+      }
+    },
   });
 
   // 🔄 Auto-refresh on sync events
@@ -110,14 +120,52 @@ export default function ModerationPage() {
     return `${user.first_name} ${user.last_name}`.trim() || `ID: ${user.tg_id}`;
   };
 
-  const submittedTasks = userTasks.filter((ut: UserTaskModeration) => ut.status === 'submitted');
-  const inProgressTasks = userTasks.filter((ut: UserTaskModeration) => ut.status === 'in_progress');
+  const safeTasks = Array.isArray(userTasks) ? userTasks : [];
+  const submittedTasks = safeTasks.filter((ut: UserTaskModeration) => ut.status === 'submitted');
+  const inProgressTasks = safeTasks.filter((ut: UserTaskModeration) => ut.status === 'in_progress');
 
   if (isLoading) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center' }}>
-        <div className="spinner"></div>
-        <p>Загрузка...</p>
+      <div className="page">
+        <div style={{ padding: '48px', textAlign: 'center' }}>
+          <div className="spinner" style={{ margin: '0 auto 16px' }}></div>
+          <p style={{ color: 'var(--text-secondary)' }}>Загрузка данных модерации...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="page">
+        <header className="page-header">
+          <div>
+            <h1 className="page-title">
+              <Clock size={28} />
+              Модерация заданий
+            </h1>
+            <p className="page-subtitle">Одобрение и отклонение выполненных заданий</p>
+          </div>
+        </header>
+        <div style={{ 
+          padding: '48px', 
+          textAlign: 'center',
+          background: 'var(--error-light)',
+          borderRadius: 'var(--radius-lg)',
+          border: '1px solid var(--error)'
+        }}>
+          <XCircle size={48} style={{ color: 'var(--error)', marginBottom: '16px' }} />
+          <h3 style={{ marginBottom: '8px', color: 'var(--error)' }}>Ошибка загрузки данных</h3>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>
+            {error instanceof Error ? error.message : 'Не удалось загрузить данные модерации'}
+          </p>
+          <button 
+            onClick={() => refetch()} 
+            className="btn btn--primary"
+          >
+            Повторить попытку
+          </button>
+        </div>
       </div>
     );
   }
@@ -162,7 +210,10 @@ export default function ModerationPage() {
           </div>
           <div className="stat-card__content">
             <div className="stat-card__value">
-              {submittedTasks.reduce((sum: number, ut: UserTaskModeration) => sum + (ut.reward || 0), 0).toFixed(2)}
+              {submittedTasks.reduce((sum: number, ut: UserTaskModeration) => {
+                const reward = parseFloat(String(ut.reward || 0));
+                return sum + (isNaN(reward) ? 0 : reward);
+              }, 0).toFixed(2)}
             </div>
             <div className="stat-card__label">К выплате (USDT)</div>
           </div>
@@ -215,14 +266,14 @@ export default function ModerationPage() {
               </tr>
             </thead>
             <tbody className="table__body">
-              {userTasks.length === 0 ? (
+              {safeTasks.length === 0 ? (
                 <tr className="table__row">
                   <td colSpan={7} className="table__cell table__cell--empty">
                     Нет заданий для модерации
                   </td>
                 </tr>
               ) : (
-                userTasks.map((userTask: UserTaskModeration) => (
+                safeTasks.map((userTask: UserTaskModeration) => (
                   <tr key={userTask.id} className="table__row">
                     <td className="table__cell">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -264,7 +315,10 @@ export default function ModerationPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
                         <DollarSign size={14} style={{ color: 'var(--success)' }} />
                         <span style={{ fontWeight: 'var(--font-weight-semibold)', color: 'var(--success)' }}>
-                          {userTask.reward?.toFixed(2) || '0.00'}
+                          {(() => {
+                            const reward = parseFloat(String(userTask.reward || 0));
+                            return (isNaN(reward) ? 0 : reward).toFixed(2);
+                          })()}
                         </span>
                       </div>
                     </td>

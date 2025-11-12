@@ -1,0 +1,2 @@
+cd /root/tg-main && git pull origin sync/cleanup/2025-10-29 && docker compose down && docker compose up -d --build
+

@@ -75,23 +75,42 @@ export const useAuthStore = create<AuthState>()(
 
           let initData = telegramWebApp.initData || '';
           
+          // Детальное логирование для диагностики
+          console.log('🔍 Telegram WebApp initData check:', {
+            hasWebApp: !!telegramWebApp,
+            hasInitData: !!telegramWebApp?.initData,
+            initDataLength: telegramWebApp?.initData?.length || 0,
+            initDataPreview: telegramWebApp?.initData?.substring(0, 50) || 'empty',
+            hasInitDataUnsafe: !!telegramWebApp?.initDataUnsafe,
+            hasUser: !!telegramWebApp?.initDataUnsafe?.user,
+            user: telegramWebApp?.initDataUnsafe?.user,
+            platform: telegramWebApp?.platform,
+            version: telegramWebApp?.version,
+            currentUrl: window.location.href,
+            isTelegramContext: window.location.href.includes('t.me') || window.location.href.includes('telegram.org'),
+          });
+          
           // Если нет в WebApp, пробуем из store
           if (!initData) {
-            initData = useTelegramStore.getState().getInitData();
+            const storeInitData = useTelegramStore.getState().getInitData();
+            console.log('🔍 Trying to get initData from store:', {
+              hasStoreInitData: !!storeInitData,
+              storeInitDataLength: storeInitData?.length || 0,
+            });
+            initData = storeInitData;
           }
           
-          if (!initData || initData.trim() === '') {
-            console.warn('⚠️ No Telegram initData available');
-            console.warn('⚠️ Telegram WebApp debug:', {
-              exists: !!telegramWebApp,
-              hasInitData: !!telegramWebApp?.initData,
-              initDataLength: telegramWebApp?.initData?.length || 0,
-              initDataUnsafe: !!telegramWebApp?.initDataUnsafe,
-              initDataUnsafeUser: telegramWebApp?.initDataUnsafe?.user,
+          // Проверяем, что initData не является тестовым значением
+          if (initData === 'test' || initData === 'dev' || initData.trim() === '') {
+            console.warn('⚠️ Invalid or empty Telegram initData:', {
+              initData: initData.substring(0, 20),
+              isTest: initData === 'test',
+              isDev: initData === 'dev',
+              isEmpty: initData.trim() === '',
             });
             
             // Fallback: Используем dev login если initData недоступен (работает и в production)
-            console.log('🔧 No initData available, trying dev login fallback...');
+            console.log('🔧 No valid initData available, trying dev login fallback...');
             try {
               const response = await fetch(`${apiUrl}/api/auth/telegram/admin`, {
                 method: 'POST',
@@ -118,7 +137,10 @@ export const useAuthStore = create<AuthState>()(
               console.error('❌ Dev login fallback failed:', devError);
             }
             
-            return { success: false, error: 'No Telegram initData available. Make sure you opened the app through Telegram bot Menu Button, not directly via URL in browser.' };
+            return { 
+              success: false, 
+              error: 'No Telegram initData available. Make sure you opened the app through Telegram bot Menu Button, not directly via URL in browser. If you are testing, the app must be opened from within Telegram.' 
+            };
           }
 
           console.log('🔐 Authenticating with Telegram initData...');
