@@ -34,11 +34,18 @@ let UsersService = UsersService_1 = class UsersService {
     async findAll(page = 1, limit = 20, search, status) {
         const skip = (page - 1) * limit;
         const queryBuilder = this.userRepo.createQueryBuilder('user');
-        if (search) {
-            queryBuilder.where('(user.username ILIKE :search OR user.first_name ILIKE :search OR user.last_name ILIKE :search OR user.tg_id::text ILIKE :search)', { search: `%${search}%` });
+        const hasSearch = search && search.trim().length > 0;
+        const hasStatus = status && status !== 'all';
+        if (hasSearch) {
+            queryBuilder.where('(user.username ILIKE :search OR user.first_name ILIKE :search OR user.last_name ILIKE :search OR user.tg_id::text ILIKE :search)', { search: `%${search.trim()}%` });
         }
-        if (status) {
-            queryBuilder.andWhere('user.status = :status', { status });
+        if (hasStatus) {
+            if (hasSearch) {
+                queryBuilder.andWhere('user.status = :status', { status });
+            }
+            else {
+                queryBuilder.where('user.status = :status', { status });
+            }
         }
         const [users, total] = await queryBuilder
             .orderBy('user.registered_at', 'DESC')

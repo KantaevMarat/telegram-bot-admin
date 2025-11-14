@@ -29,15 +29,25 @@ export class UsersService {
 
     const queryBuilder = this.userRepo.createQueryBuilder('user');
 
-    if (search) {
+    // Проверяем что search не пустая строка
+    const hasSearch = search && search.trim().length > 0;
+    const hasStatus = status && status !== 'all';
+
+    // Если есть поиск, добавляем условие поиска
+    if (hasSearch) {
       queryBuilder.where(
         '(user.username ILIKE :search OR user.first_name ILIKE :search OR user.last_name ILIKE :search OR user.tg_id::text ILIKE :search)',
-        { search: `%${search}%` },
+        { search: `%${search.trim()}%` },
       );
     }
 
-    if (status) {
-      queryBuilder.andWhere('user.status = :status', { status });
+    // Если есть фильтр по статусу, добавляем его (andWhere если уже есть where, иначе where)
+    if (hasStatus) {
+      if (hasSearch) {
+        queryBuilder.andWhere('user.status = :status', { status });
+      } else {
+        queryBuilder.where('user.status = :status', { status });
+      }
     }
 
     const [users, total] = await queryBuilder
