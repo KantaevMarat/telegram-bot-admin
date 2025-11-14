@@ -1,3 +1,0 @@
-git pull origin sync/cleanup/2025-10-29
-./setup-ssl.sh
-

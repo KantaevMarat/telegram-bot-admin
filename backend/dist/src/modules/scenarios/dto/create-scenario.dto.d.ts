@@ -3,7 +3,6 @@ export declare class CreateScenarioDto {
     trigger: string;
     response?: string;
     steps?: any[];
-    is_active?: boolean;
     active?: boolean;
     media_url?: string;
 }

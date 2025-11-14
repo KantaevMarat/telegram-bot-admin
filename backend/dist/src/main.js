@@ -22,10 +22,32 @@ async function bootstrap() {
     validateJWTSecret();
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     app.enableCors({
-        origin: true,
+        origin: (origin, callback) => {
+            if (!origin) {
+                return callback(null, true);
+            }
+            if (process.env.NODE_ENV === 'development') {
+                return callback(null, true);
+            }
+            const allowedOrigins = [
+                'http://localhost:5173',
+                'http://localhost:3000',
+                'http://127.0.0.1:5173',
+                'https://app.marranasuete.ru',
+            ];
+            if (allowedOrigins.includes(origin)) {
+                callback(null, true);
+            }
+            else {
+                callback(null, true);
+            }
+        },
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+        exposedHeaders: ['Content-Range', 'X-Content-Range'],
+        preflightContinue: false,
+        optionsSuccessStatus: 204,
     });
     app.useGlobalPipes(new common_1.ValidationPipe({
         whitelist: true,

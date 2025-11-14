@@ -8,6 +8,8 @@ RUN npm install --legacy-peer-deps
 
 COPY . .
 
+EXPOSE 3000
+
 CMD ["npm", "run", "start:dev"]
 
 FROM node:18-alpine AS build

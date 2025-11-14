@@ -85,20 +85,36 @@ export class MediaService {
   }
 
   async getFileUrl(fileName: string): Promise<string> {
-    // Используем публичный URL если он задан (для доступа из интернета, например для Telegram API)
-    const publicUrl = this.configService.get('MINIO_PUBLIC_URL');
-    if (publicUrl) {
-      // MINIO_PUBLIC_URL должен быть в формате: http://IP:PORT или https://domain.com
-      return `${publicUrl}/${this.bucketName}/${fileName}`;
+    try {
+      // Генерируем presigned URL для публичного доступа (валиден 7 дней)
+      // Это безопаснее чем делать bucket публичным
+      const presignedUrl = await this.minioClient.presignedGetObject(
+        this.bucketName,
+        fileName,
+        7 * 24 * 60 * 60, // 7 дней в секундах
+      );
+
+      // Для локальной разработки заменяем внутренний Docker endpoint на localhost
+      const nodeEnv = this.configService.get('NODE_ENV', 'development');
+      if (nodeEnv === 'development') {
+        // Заменяем minio:9000 на localhost:9002 (внешний порт из docker-compose.dev.yml)
+        return presignedUrl.replace('minio:9000', 'localhost:9002');
+      }
+
+      // Для production используем публичный URL если задан
+      const publicUrl = this.configService.get('MINIO_PUBLIC_URL');
+      if (publicUrl) {
+        // Заменяем internal endpoint на публичный
+        const internalEndpoint = this.configService.get('MINIO_ENDPOINT', 'minio');
+        const port = this.configService.get('MINIO_PORT', '9000');
+        return presignedUrl.replace(`${internalEndpoint}:${port}`, publicUrl.replace(/^https?:\/\//, ''));
+      }
+
+      return presignedUrl;
+    } catch (error) {
+      this.logger.error(`❌ Failed to generate presigned URL for ${fileName}: ${error.message}`);
+      throw error;
     }
-
-    // Иначе используем внутренний endpoint (для локальной разработки)
-    const endpoint = this.configService.get('MINIO_ENDPOINT', 'localhost');
-    const port = this.configService.get('MINIO_PORT', '9000');
-    const useSSL = this.configService.get('MINIO_USE_SSL', 'false') === 'true';
-    const protocol = useSSL ? 'https' : 'http';
-
-    return `${protocol}://${endpoint}:${port}/${this.bucketName}/${fileName}`;
   }
 
   async deleteFile(fileName: string): Promise<void> {

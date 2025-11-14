@@ -373,3 +373,23 @@ export const commandsApi = {
   deleteCommand: (id: string) => api.delete(`/admin/commands/${id}`).then(res => res.data),
 };
 
+// Ranks API
+export const ranksApi = {
+  getSettings: () => api.get('/admin/ranks/settings').then(res => res.data),
+  updateSettings: (data: any) => api.put('/admin/ranks/settings', data).then(res => res.data),
+  getStatistics: () => api.get('/admin/ranks/statistics').then(res => res.data),
+  getUserRank: (userId: string) => api.get(`/admin/ranks/user/${userId}`).then(res => res.data),
+  checkUserRank: (userId: string) => api.put(`/admin/ranks/user/${userId}/check`).then(res => res.data),
+};
+
+// Premium API
+export const premiumApi = {
+  getRequests: (params?: { status?: string; currency?: string }) => 
+    api.get('/admin/premium/requests', { params }).then(res => res.data),
+  markRequisitesSent: (id: string) => api.post(`/admin/premium/requests/${id}/requisites-sent`).then(res => res.data),
+  confirmPayment: (id: string) => api.post(`/admin/premium/requests/${id}/confirm-payment`).then(res => res.data),
+  activateSubscription: (id: string) => api.post(`/admin/premium/requests/${id}/activate`).then(res => res.data),
+  cancelRequest: (id: string, reason?: string) => 
+    api.post(`/admin/premium/requests/${id}/cancel`, { reason }).then(res => res.data),
+};
+

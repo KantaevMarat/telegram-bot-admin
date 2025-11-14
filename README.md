@@ -4,6 +4,7 @@
 
 ## 📋 Содержание
 
+- [Локальная разработка](#локальная-разработка)
 - [Технологический стек](#технологический-стек)
 - [Требования](#требования)
 - [Быстрый старт](#быстрый-старт)
@@ -12,6 +13,144 @@
 - [SSL сертификаты](#ssl-сертификаты)
 - [Обслуживание](#обслуживание)
 - [Команды](#команды)
+
+---
+
+## 💻 Локальная разработка
+
+### Требования
+- **Docker Desktop** для Windows/Mac или Docker для Linux
+- **Git**
+
+### Быстрый старт
+
+```bash
+# 1. Клонировать репозиторий
+git clone <repository-url>
+cd tg-main
+
+# 2. Запустить все сервисы
+docker compose -f docker-compose.dev.yml up -d --build
+
+# 3. Выполнить миграции и инициализацию
+docker exec tg-backend-dev npm run migration:run
+docker exec tg-backend-dev npm run seed
+```
+
+### Доступные сервисы
+
+После запуска вы можете получить доступ к:
+
+| Сервис | URL | Описание |
+|--------|-----|----------|
+| **Frontend** | http://localhost:5173 | Админ панель (React + Vite) |
+| **Backend API** | http://localhost:3000 | REST API (NestJS) |
+| **API Docs** | http://localhost:3000/api/docs | Swagger документация |
+| **MinIO Console** | http://localhost:9003 | Объектное хранилище |
+| **PostgreSQL** | localhost:5433 | База данных |
+| **Redis** | localhost:6380 | Кеш и очереди |
+
+### Учетные данные
+
+**MinIO:**
+- Логин: `minioadmin`
+- Пароль: `minioadmin_secure_password_change_me`
+
+**PostgreSQL:**
+- Host: `localhost:5433`
+- Database: `postgres`
+- User: `postgres`
+- Password: `postgres`
+
+**Тестовый админ (из seed):**
+- Telegram ID: `6971844353`
+- Username: `nabi_arabic`
+- Role: `superadmin`
+
+### Добавление нового админа
+
+```bash
+docker exec tg-backend-dev npm run cli:add-admin <ВАШ_TELEGRAM_ID>
+```
+
+### Полезные команды разработки
+
+```bash
+# Просмотр логов backend
+docker compose -f docker-compose.dev.yml logs -f backend
+
+# Просмотр логов frontend
+docker compose -f docker-compose.dev.yml logs -f frontend
+
+# Просмотр логов всех сервисов
+docker compose -f docker-compose.dev.yml logs -f
+
+# Остановить все сервисы
+docker compose -f docker-compose.dev.yml down
+
+# Перезапустить сервисы
+docker compose -f docker-compose.dev.yml restart
+
+# Пересобрать и перезапустить
+docker compose -f docker-compose.dev.yml up -d --build
+
+# Выполнить миграции
+docker exec tg-backend-dev npm run migration:run
+
+# Создать новую миграцию
+docker exec tg-backend-dev npm run migration:generate -- src/migrations/MigrationName
+
+# Откатить миграцию
+docker exec tg-backend-dev npm run migration:revert
+
+# Пересоздать seed данные
+docker exec tg-backend-dev npm run seed
+```
+
+### Структура для разработки
+
+Все изменения в коде автоматически отслеживаются благодаря volume монтированию:
+
+- `./backend` → `/app` (backend контейнер)
+- `./frontend` → `/app` (frontend контейнер)
+
+Backend работает с `--watch` флагом (auto-reload), frontend использует Vite HMR.
+
+### Отладка
+
+**Backend:**
+- Логи доступны через `docker compose logs -f backend`
+- NestJS работает в режиме watch с автоперезагрузкой
+- Swagger UI доступен по адресу http://localhost:3000/api/docs
+
+**Frontend:**
+- Vite dev server с HMR
+- Логи доступны через `docker compose logs -f frontend`
+- React DevTools работает в браузере
+
+**База данных:**
+```bash
+# Подключение к PostgreSQL
+docker exec -it tg-postgres-dev psql -U postgres -d postgres
+
+# Просмотр таблиц
+\dt
+
+# Выход
+\q
+```
+
+**Redis:**
+```bash
+# Подключение к Redis
+docker exec -it tg-redis-dev redis-cli -a redis_secure_password_change_me
+
+# Просмотр всех ключей
+KEYS *
+
+# Выход
+exit
+```
 
 ---
 

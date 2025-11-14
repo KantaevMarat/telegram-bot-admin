@@ -19,7 +19,7 @@ __decorate([
     __metadata("design:type", String)
 ], Button.prototype, "id", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'varchar' }),
+    (0, typeorm_1.Column)({ type: 'varchar', nullable: true }),
     __metadata("design:type", String)
 ], Button.prototype, "label", void 0);
 __decorate([
@@ -27,7 +27,7 @@ __decorate([
     __metadata("design:type", String)
 ], Button.prototype, "action_type", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'jsonb' }),
+    (0, typeorm_1.Column)({ type: 'jsonb', nullable: true }),
     __metadata("design:type", Object)
 ], Button.prototype, "action_payload", void 0);
 __decorate([

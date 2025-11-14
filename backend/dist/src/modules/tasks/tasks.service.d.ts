@@ -6,13 +6,15 @@ import { BalanceLog } from '../../entities/balance-log.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { SyncService } from '../sync/sync.service';
+import { RanksService } from '../ranks/ranks.service';
 export declare class TasksService {
     private taskRepo;
     private userTaskRepo;
     private userRepo;
     private balanceLogRepo;
     private syncService;
-    constructor(taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, userRepo: Repository<User>, balanceLogRepo: Repository<BalanceLog>, syncService: SyncService);
+    private ranksService;
+    constructor(taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, userRepo: Repository<User>, balanceLogRepo: Repository<BalanceLog>, syncService: SyncService, ranksService: RanksService);
     create(createTaskDto: CreateTaskDto): Promise<Task>;
     findAll(active?: boolean): Promise<Task[]>;
     findOne(id: string): Promise<Task>;
@@ -55,6 +57,10 @@ export declare class TasksService {
         message: string;
         userTask: UserTask;
         balanceAfter: number;
+        rankUpdate: {
+            leveledUp: boolean;
+            newLevel: import("../../entities/user-rank.entity").RankLevel | undefined;
+        } | undefined;
     }>;
     rejectTask(userTaskId: string, reason?: string): Promise<{
         success: boolean;

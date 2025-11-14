@@ -666,9 +666,13 @@ export default function ButtonsPage() {
                     value={formData.button_type}
                     onChange={(e) => setFormData(prev => ({ ...prev, button_type: e.target.value as 'reply' | 'inline' }))}
                   >
-                    <option value="reply">Постоянная кнопка (внизу)</option>
-                    <option value="inline">Кнопка с подкнопками</option>
+                    <option value="reply">⌨️ Постоянная кнопка (показывается всегда внизу экрана)</option>
+                    <option value="inline">🔘 Кнопка с подкнопками (показывается под сообщением)</option>
                   </select>
+                  <small className="form-hint" style={{ marginTop: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                    <strong>Постоянная:</strong> всегда видна внизу чата (как клавиатура)<br/>
+                    <strong>С подкнопками:</strong> показывается под конкретным сообщением
+                  </small>
                 </div>
 
                 <div className="form-group">
@@ -678,9 +682,17 @@ export default function ButtonsPage() {
                     value={formData.action_type}
                     onChange={(e) => setFormData(prev => ({ ...prev, action_type: e.target.value }))}
                   >
-                    <option value="text">Текст</option>
-                    <option value="url">URL</option>
+                    <option value="command">Команда - выполнить команду бота</option>
+                    <option value="text">Текст - отправить текстовое сообщение</option>
+                    <option value="url">URL - открыть ссылку</option>
+                    <option value="scenario">Сценарий - запустить сценарий</option>
                   </select>
+                  <small className="form-hint" style={{ marginTop: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                    💡 <strong>Команда:</strong> запускает действие бота (например /start)<br/>
+                    💡 <strong>Текст:</strong> отправляет текст как сообщение<br/>
+                    💡 <strong>URL:</strong> открывает ссылку в браузере<br/>
+                    💡 <strong>Сценарий:</strong> запускает созданный вами сценарий
+                  </small>
                 </div>
 
                 {formData.button_type === 'reply' && (
@@ -950,7 +962,7 @@ export default function ButtonsPage() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div className="form-group">
-                    <label className="form-label">Строка</label>
+                    <label className="form-label">Строка (ряд)</label>
                     <input
                       type="number"
                       className="form-input"
@@ -959,10 +971,13 @@ export default function ButtonsPage() {
                       min="1"
                       max="10"
                     />
+                    <small className="form-hint" style={{ marginTop: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                      Порядок строки сверху вниз (1-10)
+                    </small>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Колонка</label>
+                    <label className="form-label">Колонка (столбец)</label>
                     <input
                       type="number"
                       className="form-input"
@@ -971,6 +986,9 @@ export default function ButtonsPage() {
                       min="1"
                       max="10"
                     />
+                    <small className="form-hint" style={{ marginTop: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                      Позиция слева направо (1-10)
+                    </small>
                   </div>
                 </div>
 

@@ -35,13 +35,9 @@ __decorate([
     __metadata("design:type", Array)
 ], Scenario.prototype, "steps", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'boolean', default: true }),
+    (0, typeorm_1.Column)({ type: 'boolean', default: true, name: 'active' }),
     __metadata("design:type", Boolean)
 ], Scenario.prototype, "active", void 0);
-__decorate([
-    (0, typeorm_1.Column)({ type: 'boolean', default: true, name: 'is_active' }),
-    __metadata("design:type", Boolean)
-], Scenario.prototype, "is_active", void 0);
 __decorate([
     (0, typeorm_1.Column)({ type: 'varchar', nullable: true }),
     __metadata("design:type", String)

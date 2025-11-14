@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { tasksApi } from '../api/client';
-import { CheckCircle, XCircle, Clock, Search, Filter, User, DollarSign, Calendar } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Search, Filter, User, DollarSign, Calendar, MessageSquare } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSyncRefetch } from '../hooks/useSync';
 
@@ -34,6 +35,7 @@ export default function ModerationPage() {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: userTasks = [], isLoading, error, refetch } = useQuery({
     queryKey: ['tasks-moderation', statusFilter, searchQuery],
@@ -342,26 +344,37 @@ export default function ModerationPage() {
                       {getStatusBadge(userTask.status)}
                     </td>
                     <td className="table__cell table__cell--center">
-                      {userTask.status === 'submitted' && (
-                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                          <button
-                            onClick={() => handleApprove(userTask.id)}
-                            className="btn btn--success btn--icon btn--sm"
-                            title="Одобрить"
-                            disabled={approveMutation.isPending}
-                          >
-                            <CheckCircle size={14} />
-                          </button>
-                          <button
-                            onClick={() => handleReject(userTask.id)}
-                            className="btn btn--danger btn--icon btn--sm"
-                            title="Отклонить"
-                            disabled={rejectMutation.isPending}
-                          >
-                            <XCircle size={14} />
-                          </button>
-                        </div>
-                      )}
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                        {/* Кнопка перехода к чату */}
+                        <button
+                          onClick={() => navigate(`/chats?user=${userTask.user_id}`)}
+                          className="btn btn--secondary btn--icon btn--sm"
+                          title="Открыть чат с пользователем"
+                        >
+                          <MessageSquare size={14} />
+                        </button>
+                        
+                        {userTask.status === 'submitted' && (
+                          <>
+                            <button
+                              onClick={() => handleApprove(userTask.id)}
+                              className="btn btn--success btn--icon btn--sm"
+                              title="Одобрить"
+                              disabled={approveMutation.isPending}
+                            >
+                              <CheckCircle size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleReject(userTask.id)}
+                              className="btn btn--danger btn--icon btn--sm"
+                              title="Отклонить"
+                              disabled={rejectMutation.isPending}
+                            >
+                              <XCircle size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))

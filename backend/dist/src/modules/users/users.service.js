@@ -35,7 +35,7 @@ let UsersService = UsersService_1 = class UsersService {
         const skip = (page - 1) * limit;
         const queryBuilder = this.userRepo.createQueryBuilder('user');
         if (search) {
-            queryBuilder.where('(user.username ILIKE :search OR user.first_name ILIKE :search OR user.tg_id::text ILIKE :search)', { search: `%${search}%` });
+            queryBuilder.where('(user.username ILIKE :search OR user.first_name ILIKE :search OR user.last_name ILIKE :search OR user.tg_id::text ILIKE :search)', { search: `%${search}%` });
         }
         if (status) {
             queryBuilder.andWhere('user.status = :status', { status });

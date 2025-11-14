@@ -31,7 +31,7 @@ export class UsersService {
 
     if (search) {
       queryBuilder.where(
-        '(user.username ILIKE :search OR user.first_name ILIKE :search OR user.tg_id::text ILIKE :search)',
+        '(user.username ILIKE :search OR user.first_name ILIKE :search OR user.last_name ILIKE :search OR user.tg_id::text ILIKE :search)',
         { search: `%${search}%` },
       );
     }

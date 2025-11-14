@@ -50,12 +50,6 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
-], CreateScenarioDto.prototype, "is_active", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Is active (alias)', required: false }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsBoolean)(),
-    __metadata("design:type", Boolean)
 ], CreateScenarioDto.prototype, "active", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ description: 'Media file URL (photo or video)', required: false }),

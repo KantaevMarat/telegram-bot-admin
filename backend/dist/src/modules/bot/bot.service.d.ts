@@ -14,6 +14,8 @@ import { UsersService } from '../users/users.service';
 import { SyncService } from '../sync/sync.service';
 import { ChannelsService } from '../channels/channels.service';
 import { CommandsService } from '../commands/commands.service';
+import { RanksService } from '../ranks/ranks.service';
+import { PremiumService } from '../premium/premium.service';
 export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private userRepo;
     private buttonRepo;
@@ -29,11 +31,13 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private syncService;
     private channelsService;
     private commandsService;
+    private ranksService;
+    private premiumService;
     private readonly logger;
     private botToken;
     private pollingOffset;
     private pollingInterval;
-    constructor(userRepo: Repository<User>, buttonRepo: Repository<Button>, taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, scenarioRepo: Repository<Scenario>, balanceLogRepo: Repository<BalanceLog>, configService: ConfigService, fakeStatsService: FakeStatsService, settingsService: SettingsService, messagesService: MessagesService, usersService: UsersService, syncService: SyncService, channelsService: ChannelsService, commandsService: CommandsService);
+    constructor(userRepo: Repository<User>, buttonRepo: Repository<Button>, taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, scenarioRepo: Repository<Scenario>, balanceLogRepo: Repository<BalanceLog>, configService: ConfigService, fakeStatsService: FakeStatsService, settingsService: SettingsService, messagesService: MessagesService, usersService: UsersService, syncService: SyncService, channelsService: ChannelsService, commandsService: CommandsService, ranksService: RanksService, premiumService: PremiumService);
     onModuleInit(): Promise<void>;
     onModuleDestroy(): Promise<void>;
     handleWebhook(update: any): Promise<void>;
@@ -80,4 +84,8 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
         inline_keyboard: any[][];
     };
     private checkChannelSubscription;
+    private sendRankInfo;
+    private handlePremiumInfo;
+    private handleUpgrade;
+    private handlePaymentMethodChoice;
 }

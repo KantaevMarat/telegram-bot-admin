@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Task } from '../../entities/task.entity';
@@ -8,6 +8,7 @@ import { BalanceLog } from '../../entities/balance-log.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { SyncService } from '../sync/sync.service';
+import { RanksService } from '../ranks/ranks.service';
 
 @Injectable()
 export class TasksService {
@@ -21,6 +22,8 @@ export class TasksService {
     @InjectRepository(BalanceLog)
     private balanceLogRepo: Repository<BalanceLog>,
     private syncService: SyncService,
+    @Inject(forwardRef(() => RanksService))
+    private ranksService: RanksService,
   ) {}
 
   async create(createTaskDto: CreateTaskDto) {
@@ -191,11 +194,22 @@ export class TasksService {
     // Emit sync event
     await this.syncService.emitEntityEvent('user_tasks', 'updated', userTask);
 
+    // Update rank and check for progress
+    await this.ranksService.incrementTasksCompleted(user.id);
+    const rankUpdate = await this.ranksService.checkAndUpdateRank(user.id);
+    
+    // TODO: Send notification to user about rank up if leveledUp is true
+    // This would be handled by BotService
+
     return {
       success: true,
       message: 'Task approved and reward credited',
       userTask,
       balanceAfter,
+      rankUpdate: rankUpdate.leveledUp ? {
+        leveledUp: true,
+        newLevel: rankUpdate.newLevel,
+      } : undefined,
     };
   }
 

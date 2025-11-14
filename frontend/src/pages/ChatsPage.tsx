@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { chatsApi, mediaApi } from '../api/client';
 import { 
   MessageSquare, Send, User, Clock, Search, Filter, Image, Paperclip, 
@@ -49,6 +50,7 @@ const QUICK_REPLIES = [
 ];
 
 export default function ChatsPage() {
+  const [searchParams] = useSearchParams();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [messageText, setMessageText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -71,6 +73,18 @@ export default function ChatsPage() {
     queryFn: () => chatsApi.getChats(),
     refetchInterval: 5000,
   });
+
+  // Автоматически открыть чат если указан в URL
+  useEffect(() => {
+    const userId = searchParams.get('user');
+    if (userId && chats) {
+      const chat = chats.find((c: Chat) => c.user_id === userId);
+      if (chat) {
+        setSelectedUserId(userId);
+        setShowMobileSidebar(false);
+      }
+    }
+  }, [searchParams, chats]);
 
   // 🔄 Auto-refresh chats on new messages
   useSyncRefetch(['messages.created'], refetchChats);

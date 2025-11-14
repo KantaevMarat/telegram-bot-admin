@@ -113,15 +113,24 @@ let MediaService = MediaService_1 = class MediaService {
         }
     }
     async getFileUrl(fileName) {
-        const publicUrl = this.configService.get('MINIO_PUBLIC_URL');
-        if (publicUrl) {
-            return `${publicUrl}/${this.bucketName}/${fileName}`;
+        try {
+            const presignedUrl = await this.minioClient.presignedGetObject(this.bucketName, fileName, 7 * 24 * 60 * 60);
+            const nodeEnv = this.configService.get('NODE_ENV', 'development');
+            if (nodeEnv === 'development') {
+                return presignedUrl.replace('minio:9000', 'localhost:9002');
+            }
+            const publicUrl = this.configService.get('MINIO_PUBLIC_URL');
+            if (publicUrl) {
+                const internalEndpoint = this.configService.get('MINIO_ENDPOINT', 'minio');
+                const port = this.configService.get('MINIO_PORT', '9000');
+                return presignedUrl.replace(`${internalEndpoint}:${port}`, publicUrl.replace(/^https?:\/\//, ''));
+            }
+            return presignedUrl;
         }
-        const endpoint = this.configService.get('MINIO_ENDPOINT', 'localhost');
-        const port = this.configService.get('MINIO_PORT', '9000');
-        const useSSL = this.configService.get('MINIO_USE_SSL', 'false') === 'true';
-        const protocol = useSSL ? 'https' : 'http';
-        return `${protocol}://${endpoint}:${port}/${this.bucketName}/${fileName}`;
+        catch (error) {
+            this.logger.error(`❌ Failed to generate presigned URL for ${fileName}: ${error.message}`);
+            throw error;
+        }
     }
     async deleteFile(fileName) {
         try {

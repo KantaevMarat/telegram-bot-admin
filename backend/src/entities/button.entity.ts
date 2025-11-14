@@ -11,13 +11,13 @@ export class Button {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar' })
+  @Column({ type: 'varchar', nullable: true })
   label: string;
 
   @Column({ type: 'varchar' })
-  action_type: string; // open_url, send_message, open_scenario, play_media, command
+  action_type: string; // command, message, url, scenario
 
-  @Column({ type: 'jsonb' })
+  @Column({ type: 'jsonb', nullable: true })
   action_payload: any;
 
   @Column({ type: 'int', default: 0 })

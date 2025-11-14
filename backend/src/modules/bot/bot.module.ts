@@ -19,6 +19,8 @@ import { SettingsModule } from '../settings/settings.module';
 import { MessagesModule } from '../messages/messages.module';
 import { ChannelsModule } from '../channels/channels.module';
 import { CommandsModule } from '../commands/commands.module';
+import { RanksModule } from '../ranks/ranks.module';
+import { PremiumModule } from '../premium/premium.module';
 
 @Module({
   imports: [
@@ -40,6 +42,8 @@ import { CommandsModule } from '../commands/commands.module';
     forwardRef(() => MessagesModule),
     ChannelsModule,
     forwardRef(() => CommandsModule),
+    forwardRef(() => RanksModule),
+    forwardRef(() => PremiumModule),
   ],
   controllers: [BotController],
   providers: [BotService, AdminBotService],

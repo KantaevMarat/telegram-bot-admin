@@ -5,7 +5,6 @@ export declare class Scenario {
     response?: string;
     steps?: any[];
     active: boolean;
-    is_active: boolean;
     media_url?: string;
     created_at: Date;
     updated_at: Date;

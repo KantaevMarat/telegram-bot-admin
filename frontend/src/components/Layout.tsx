@@ -21,6 +21,7 @@ import {
   Bug,
   Terminal,
   Clock,
+  Award,
 } from 'lucide-react';
 import { DiagnosticsPanel } from './DiagnosticsPanel';
 
@@ -62,6 +63,7 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/moderation', icon: Clock, label: 'Модерация', color: '#f59e0b' },
     { path: '/chats', icon: MessageSquare, label: 'Чаты', color: '#10b981' },
     { path: '/channels', icon: Radio, label: 'Каналы', color: '#14b8a6' },
+    { path: '/ranks', icon: Award, label: 'Ранги', color: '#fbbf24' },
     { path: '/admins', icon: Shield, label: 'Админы', color: '#ef4444' },
   ];
 

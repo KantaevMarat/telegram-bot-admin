@@ -21,6 +21,7 @@ import ChatsPage from './pages/ChatsPage';
 import AdminsPage from './pages/AdminsPage';
 import UserAppPage from './pages/UserAppPage';
 import { ChannelsPage } from './pages/ChannelsPage';
+import RanksPage from './pages/RanksPage';
 
 function App() {
   const { isAuthenticated, refreshToken } = useAuthStore();
@@ -68,6 +69,7 @@ function App() {
               <Route path="/chats" element={<ChatsPage />} />
               <Route path="/channels" element={<ChannelsPage />} />
               <Route path="/admins" element={<AdminsPage />} />
+              <Route path="/ranks" element={<RanksPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Layout>

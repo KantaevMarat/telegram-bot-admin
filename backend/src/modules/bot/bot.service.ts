@@ -16,6 +16,8 @@ import { UsersService } from '../users/users.service';
 import { SyncService } from '../sync/sync.service';
 import { ChannelsService } from '../channels/channels.service';
 import { CommandsService } from '../commands/commands.service';
+import { RanksService } from '../ranks/ranks.service';
+import { PremiumService } from '../premium/premium.service';
 
 @Injectable()
 export class BotService implements OnModuleInit, OnModuleDestroy {
@@ -46,6 +48,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private channelsService: ChannelsService,
     @Inject(forwardRef(() => CommandsService))
     private commandsService: CommandsService,
+    @Inject(forwardRef(() => RanksService))
+    private ranksService: RanksService,
+    @Inject(forwardRef(() => PremiumService))
+    private premiumService: PremiumService,
   ) {
     this.logger.log('BotService constructor called');
     // Use CLIENT_TG_BOT_TOKEN or CLIENT_BOT_TOKEN for client bot (user-facing), fallback to TELEGRAM_BOT_TOKEN
@@ -501,6 +507,19 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
       case '/help':
         await this.sendHelp(chatId);
+        break;
+
+      case '!premium_info':
+        await this.handlePremiumInfo(chatId, user);
+        break;
+
+      case '!upgrade':
+        await this.handleUpgrade(chatId, user);
+        break;
+
+      case '/rank':
+      case '/ranks':
+        await this.sendRankInfo(chatId, user);
         break;
 
       default:
@@ -1508,12 +1527,16 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`✅ Subscription verified: user ${user.tg_id}, channel ${task.channel_id}`);
     }
 
-    // Calculate reward (random value between min and max)
+    // Calculate base reward (random value between min and max)
     const reward_min = parseFloat(task.reward_min.toString());
     const reward_max = parseFloat(task.reward_max.toString());
-    const reward = parseFloat((reward_min + Math.random() * (reward_max - reward_min)).toFixed(2));
+    const baseReward = parseFloat((reward_min + Math.random() * (reward_max - reward_min)).toFixed(2));
     
-    this.logger.log(`💰 Calculated reward for task "${task.title}": ${reward} USDT (range: ${reward_min}-${reward_max})`);
+    // Apply rank bonus
+    const userRank = await this.ranksService.getUserRank(user.id);
+    const reward = this.ranksService.applyRankBonus(baseReward, parseFloat(userRank.bonus_percentage.toString()));
+    
+    this.logger.log(`💰 Calculated reward for task "${task.title}": ${baseReward} USDT (base) -> ${reward} USDT (with +${userRank.bonus_percentage}% rank bonus)`);
 
     // Check if task requires manual review
     // - task_type = 'manual' always requires review
@@ -1558,6 +1581,26 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       user.total_earned = parseFloat(user.total_earned.toString()) + reward;
       user.tasks_completed = user.tasks_completed + 1;
       await this.userRepo.save(user);
+
+      // Update rank tasks counter and check for rank up
+      await this.ranksService.incrementTasksCompleted(user.id);
+      const rankUpdate = await this.ranksService.checkAndUpdateRank(user.id);
+      
+      // Если пользователь повысил ранг
+      if (rankUpdate.leveledUp) {
+        const rankNames = { stone: 'Камень', bronze: 'Бронза', silver: 'Серебро', gold: 'Золото', platinum: 'Платина' };
+        const rankEmojis = { stone: '🪨', bronze: '🥉', silver: '🥈', gold: '🥇', platinum: '💎' };
+        
+        setTimeout(() => {
+          this.sendMessage(
+            chatId,
+            `🎉 *Поздравляем!*\n\n` +
+            `${rankEmojis[rankUpdate.newLevel!]} Ты достиг ранга *${rankNames[rankUpdate.newLevel!]}*!\n\n` +
+            `💰 Новый бонус: *+${rankUpdate.rank.bonus_percentage}%* ко всем наградам!\n\n` +
+            (rankUpdate.newLevel === 'gold' ? `💎 Теперь доступна Платиновая подписка!\nИспользуй !premium_info для подробностей` : ''),
+          ).catch(err => this.logger.error('Failed to send rank up notification:', err));
+        }, 2000);
+      }
 
       // Log balance change
       await this.balanceLogRepo.save({
@@ -2122,7 +2165,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     if (!scenarios) {
       // Fetch from database
       scenarios = await this.scenarioRepo.find({
-        where: { is_active: true },
+        where: { active: true },
       });
       
       // Cache for 60 seconds (will be invalidated on scenario changes)
@@ -2327,6 +2370,234 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       }
       // In case of error (e.g. bot is not admin in channel), return false
       return false;
+    }
+  }
+
+  /**
+   * Отправить информацию о ранге пользователя
+   */
+  private async sendRankInfo(chatId: string, user: User) {
+    const userRank = await this.ranksService.getUserRank(user.id);
+    const progress = await this.ranksService.getRankProgress(user.id);
+    const settings = await this.ranksService.getSettings();
+
+    const rankEmojis = {
+      stone: '🪨',
+      bronze: '🥉',
+      silver: '🥈',
+      gold: '🥇',
+      platinum: '💎',
+    };
+
+    const rankNames = {
+      stone: 'Камень',
+      bronze: 'Бронза',
+      silver: 'Серебро',
+      gold: 'Золото',
+      platinum: 'Платина',
+    };
+
+    let text = `${rankEmojis[userRank.current_rank]} *Твой ранг: ${rankNames[userRank.current_rank]}*\n\n`;
+    text += `💰 Бонус к наградам: *+${userRank.bonus_percentage}%*\n\n`;
+
+    if (userRank.platinum_active && userRank.platinum_expires_at) {
+      const daysLeft = Math.ceil((new Date(userRank.platinum_expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      text += `⏰ Платиновая подписка истекает через: *${daysLeft} дней*\n\n`;
+    }
+
+    if (progress.nextRank) {
+      text += `📊 *Прогресс до ${rankNames[progress.nextRank]}:*\n`;
+      text += `✅ Выполнено заданий: ${progress.tasksProgress.current}/${progress.tasksProgress.required}\n`;
+      text += `👥 Приглашено рефералов: ${progress.referralsProgress.current}/${progress.referralsProgress.required}\n\n`;
+      
+      const overallPercent = Math.floor(progress.progress);
+      text += `Общий прогресс: ${overallPercent}%\n`;
+      text += `${'▓'.repeat(Math.floor(overallPercent / 10))}${'░'.repeat(10 - Math.floor(overallPercent / 10))}\n\n`;
+    }
+
+    text += `🎯 *Система рангов:*\n`;
+    text += `🪨 Камень: 0% бонус\n`;
+    text += `🥉 Бронза: +${settings.bronze_bonus}% бонус\n`;
+    text += `🥈 Серебро: +${settings.silver_bonus}% бонус\n`;
+    text += `🥇 Золото: +${settings.gold_bonus}% бонус\n`;
+    text += `💎 Платина: +${settings.platinum_bonus}% бонус (платная)\n\n`;
+
+    if (userRank.current_rank === 'silver' || userRank.current_rank === 'gold') {
+      text += `\n💡 Используй !premium_info для информации о Платиновой подписке`;
+    }
+
+    await this.sendMessage(chatId, text, await this.getReplyKeyboard());
+  }
+
+  /**
+   * Обработчик команды !premium_info
+   */
+  private async handlePremiumInfo(chatId: string, user: User) {
+    const userRank = await this.ranksService.getUserRank(user.id);
+    const settings = await this.ranksService.getSettings();
+
+    if (userRank.current_rank === 'stone' || userRank.current_rank === 'bronze') {
+      await this.sendMessage(
+        chatId,
+        '⚠️ *Платиновая подписка доступна с уровня Серебро.*\n\n' +
+        'Продолжай выполнять задания и приглашать рефералов для повышения ранга!',
+        await this.getReplyKeyboard(),
+      );
+      return;
+    }
+
+    let text = '🏆 *ПЛАТИНОВАЯ ПОДПИСКА*\n\n';
+    text += '💎 *Преимущества:*\n';
+    text += `• Бонус *+${settings.platinum_bonus}%* на все задания\n`;
+    text += `• 👨‍💼 Персональный менеджер @${settings.manager_username}\n`;
+    text += '• 📢 Закрытый канал с VIP-заданиями\n';
+    text += '• ⚡ Приоритетная поддержка 24/7\n';
+    text += '• 🎁 Расширенная реферальная программа\n\n';
+    text += '💰 *Стоимость:*\n';
+    text += `• ${settings.platinum_price_usd}$ с баланса (мгновенная активация)\n`;
+    text += `• ${settings.platinum_price_rub} рублей на реквизиты\n`;
+    text += `• ${settings.platinum_price_uah} гривен на реквизиты\n\n`;
+    text += `📅 Длительность: ${settings.platinum_duration_days} дней\n\n`;
+
+    if (userRank.current_rank !== 'gold' && userRank.current_rank !== 'platinum') {
+      text += '🎯 *Доступно с уровня Золото*\n\n';
+      const progress = await this.ranksService.getRankProgress(user.id);
+      if (progress.nextRank === 'gold') {
+        text += `Твой прогресс до Золота: ${Math.floor(progress.progress)}%\n`;
+      }
+    } else {
+      text += '\n💎 Используй !upgrade для оформления подписки';
+    }
+
+    await this.sendMessage(chatId, text, await this.getReplyKeyboard());
+  }
+
+  /**
+   * Обработчик команды !upgrade
+   */
+  private async handleUpgrade(chatId: string, user: User) {
+    const userRank = await this.ranksService.getUserRank(user.id);
+    const settings = await this.ranksService.getSettings();
+
+    // Проверка уровня
+    if (userRank.current_rank !== 'gold' && userRank.current_rank !== 'platinum') {
+      await this.sendMessage(
+        chatId,
+        '⚠️ *Платиновая подписка доступна только с уровня Золото*\n\n' +
+        'Продолжай выполнять задания для повышения ранга!\n\n' +
+        'Используй /rank чтобы посмотреть свой прогресс.',
+        await this.getReplyKeyboard(),
+      );
+      return;
+    }
+
+    // Проверка активной подписки
+    if (userRank.platinum_active && userRank.platinum_expires_at) {
+      const daysLeft = Math.ceil((new Date(userRank.platinum_expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      await this.sendMessage(
+        chatId,
+        `💎 *У тебя уже активна Платиновая подписка!*\n\n` +
+        `⏰ Действует еще ${daysLeft} дней\n\n` +
+        `Продление будет доступно за 3 дня до окончания.`,
+        await this.getReplyKeyboard(),
+      );
+      return;
+    }
+
+    // Проверка статистики
+    const progress = await this.ranksService.getRankProgress(user.id);
+    
+    let text = '🔍 *Проверяем твою статистику...*\n\n';
+    text += `✅ Уровень: *${userRank.current_rank === 'gold' ? 'Золото' : 'Платина'}*\n`;
+    text += `✅ Выполнено заданий: *${userRank.tasks_completed}*\n`;
+    text += `✅ Рефералов: *${userRank.referrals_count}*\n\n`;
+    text += '✨ *Ты соответствуешь требованиям для Платиновой подписки!*\n\n';
+    text += '━━━━━━━━━━━━━━━━\n\n';
+    text += '💳 *Выбери способ оплаты Платиновой подписки:*\n\n';
+    text += `1️⃣ Оплата *${settings.platinum_price_usd}$* с баланса\n`;
+    text += '   └ Мгновенная активация\n\n';
+    text += `2️⃣ Оплата *${settings.platinum_price_rub} рублей* на реквизиты\n`;
+    text += '   └ Активация после подтверждения менеджером\n\n';
+    text += `3️⃣ Оплата *${settings.platinum_price_uah} гривен* на реквизиты\n`;
+    text += '   └ Активация после подтверждения менеджером\n\n';
+    text += '📝 Введи номер варианта (1/2/3):';
+
+    await this.sendMessage(chatId, text);
+
+    // Сохранить состояние ожидания выбора способа оплаты
+    // (в реальной реализации нужно использовать state machine или сессии)
+  }
+
+  /**
+   * Обработать выбор способа оплаты (вызывается когда пользователь отправляет 1/2/3)
+   */
+  private async handlePaymentMethodChoice(chatId: string, user: User, choice: string) {
+    const settings = await this.ranksService.getSettings();
+
+    switch (choice) {
+      case '1':
+        // Оплата с баланса
+        const result = await this.premiumService.processBalancePayment(user.id);
+        
+        if (result.success) {
+          await this.sendMessage(
+            chatId,
+            `✅ *Оплата прошла успешно!*\n\n` +
+            `💎 Твоя Платиновая подписка активирована на ${settings.platinum_duration_days} дней\n\n` +
+            `🎁 *Твои преимущества:*\n` +
+            `• Бонус +${settings.platinum_bonus}% на все задания\n` +
+            `• Персональный менеджер: @${settings.manager_username}\n` +
+            `• Доступ к VIP-заданиям\n` +
+            `• Приоритетная поддержка\n\n` +
+            `Добро пожаловать в элиту! 🎉`,
+            await this.getReplyKeyboard(),
+          );
+        } else {
+          await this.sendMessage(
+            chatId,
+            `❌ ${result.message}\n\n` +
+            `Пополни баланс или выбери оплату в рублях/гривнах.\n\n` +
+            `Используй !upgrade чтобы попробовать снова.`,
+            await this.getReplyKeyboard(),
+          );
+        }
+        break;
+
+      case '2':
+        // Оплата рублями
+        const rubRequest = await this.premiumService.createRequest(user.id, 'rub_requisites' as any);
+        await this.sendMessage(
+          chatId,
+          `✅ *Отлично!*\n\n` +
+          `📝 Твой запрос №*${rubRequest.request_number}* принят.\n\n` +
+          `👨‍💼 Менеджер свяжется с тобой в этом же чате для отправки реквизитов в рублях.\n\n` +
+          `⏳ Ожидай сообщения в течение 10 минут!`,
+          await this.getReplyKeyboard(),
+        );
+        // TODO: Уведомить админа о новом запросе
+        break;
+
+      case '3':
+        // Оплата гривнами
+        const uahRequest = await this.premiumService.createRequest(user.id, 'uah_requisites' as any);
+        await this.sendMessage(
+          chatId,
+          `✅ *Отлично!*\n\n` +
+          `📝 Твой запрос №*${uahRequest.request_number}* принят.\n\n` +
+          `👨‍💼 Менеджер свяжется с тобой в этом же чате для отправки реквизитов в гривнах.\n\n` +
+          `⏳ Ожидай сообщения в течение 10 минут!`,
+          await this.getReplyKeyboard(),
+        );
+        // TODO: Уведомить админа о новом запросе
+        break;
+
+      default:
+        await this.sendMessage(
+          chatId,
+          '❌ Неверный выбор. Пожалуйста, введи 1, 2 или 3.\n\n' +
+          'Используй !upgrade чтобы попробовать снова.',
+          await this.getReplyKeyboard(),
+        );
     }
   }
 }

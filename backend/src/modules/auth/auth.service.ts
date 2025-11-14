@@ -245,9 +245,17 @@ export class AuthService {
     this.logger.log(`Total admins in DB: ${allAdmins.length}`);
     allAdmins.forEach(a => this.logger.log(`  - Admin: tg_id="${a.tg_id}", role=${a.role}`));
 
-    const admin = await this.adminRepo.findOne({
+    // Try to find admin - tg_id is stored as bigint in DB but string in entity
+    let admin = await this.adminRepo.findOne({
       where: { tg_id: adminId.toString() },
     });
+    
+    // If not found, try with number (TypeORM might convert it)
+    if (!admin) {
+      admin = await this.adminRepo.findOne({
+        where: { tg_id: adminId as any },
+      });
+    }
 
     if (!admin) {
       this.logger.warn(`Admin not found for TG ID: ${adminId}`);

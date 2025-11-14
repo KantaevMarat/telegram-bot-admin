@@ -15,12 +15,16 @@ const task_entity_1 = require("../../entities/task.entity");
 const user_task_entity_1 = require("../../entities/user-task.entity");
 const user_entity_1 = require("../../entities/user.entity");
 const balance_log_entity_1 = require("../../entities/balance-log.entity");
+const ranks_module_1 = require("../ranks/ranks.module");
 let TasksModule = class TasksModule {
 };
 exports.TasksModule = TasksModule;
 exports.TasksModule = TasksModule = __decorate([
     (0, common_1.Module)({
-        imports: [typeorm_1.TypeOrmModule.forFeature([task_entity_1.Task, user_task_entity_1.UserTask, user_entity_1.User, balance_log_entity_1.BalanceLog])],
+        imports: [
+            typeorm_1.TypeOrmModule.forFeature([task_entity_1.Task, user_task_entity_1.UserTask, user_entity_1.User, balance_log_entity_1.BalanceLog]),
+            (0, common_1.forwardRef)(() => ranks_module_1.RanksModule),
+        ],
         controllers: [tasks_controller_1.TasksController],
         providers: [tasks_service_1.TasksService],
         exports: [tasks_service_1.TasksService],

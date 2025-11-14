@@ -46,6 +46,10 @@ export declare class TasksController {
         message: string;
         userTask: import("../../entities/user-task.entity").UserTask;
         balanceAfter: number;
+        rankUpdate: {
+            leveledUp: boolean;
+            newLevel: import("../../entities/user-rank.entity").RankLevel | undefined;
+        } | undefined;
     }>;
     rejectTask(userTaskId: string, body?: {
         reason?: string;

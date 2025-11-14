@@ -21,13 +21,15 @@ const user_task_entity_1 = require("../../entities/user-task.entity");
 const user_entity_1 = require("../../entities/user.entity");
 const balance_log_entity_1 = require("../../entities/balance-log.entity");
 const sync_service_1 = require("../sync/sync.service");
+const ranks_service_1 = require("../ranks/ranks.service");
 let TasksService = class TasksService {
-    constructor(taskRepo, userTaskRepo, userRepo, balanceLogRepo, syncService) {
+    constructor(taskRepo, userTaskRepo, userRepo, balanceLogRepo, syncService, ranksService) {
         this.taskRepo = taskRepo;
         this.userTaskRepo = userTaskRepo;
         this.userRepo = userRepo;
         this.balanceLogRepo = balanceLogRepo;
         this.syncService = syncService;
+        this.ranksService = ranksService;
     }
     async create(createTaskDto) {
         const task = this.taskRepo.create(createTaskDto);
@@ -154,11 +156,17 @@ let TasksService = class TasksService {
             comment: `Награда за выполнение задания: ${task.title} (одобрено администратором)`,
         });
         await this.syncService.emitEntityEvent('user_tasks', 'updated', userTask);
+        await this.ranksService.incrementTasksCompleted(user.id);
+        const rankUpdate = await this.ranksService.checkAndUpdateRank(user.id);
         return {
             success: true,
             message: 'Task approved and reward credited',
             userTask,
             balanceAfter,
+            rankUpdate: rankUpdate.leveledUp ? {
+                leveledUp: true,
+                newLevel: rankUpdate.newLevel,
+            } : undefined,
         };
     }
     async rejectTask(userTaskId, reason) {
@@ -190,10 +198,12 @@ exports.TasksService = TasksService = __decorate([
     __param(1, (0, typeorm_1.InjectRepository)(user_task_entity_1.UserTask)),
     __param(2, (0, typeorm_1.InjectRepository)(user_entity_1.User)),
     __param(3, (0, typeorm_1.InjectRepository)(balance_log_entity_1.BalanceLog)),
+    __param(5, (0, common_1.Inject)((0, common_1.forwardRef)(() => ranks_service_1.RanksService))),
     __metadata("design:paramtypes", [typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
-        sync_service_1.SyncService])
+        sync_service_1.SyncService,
+        ranks_service_1.RanksService])
 ], TasksService);
 //# sourceMappingURL=tasks.service.js.map
