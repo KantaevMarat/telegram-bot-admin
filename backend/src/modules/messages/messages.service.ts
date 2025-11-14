@@ -30,18 +30,53 @@ export class MessagesService {
         'user.tg_id',
         'user.username',
         'user.first_name',
+        'user.last_name',
         'MAX(message.created_at) as last_message_time',
       ])
       .addSelect(
         'SUM(CASE WHEN message.from_admin_tg_id IS NULL AND message.is_read = false THEN 1 ELSE 0 END)',
         'unread_count',
       )
+      .addSelect(
+        'SUM(CASE WHEN message.media_url IS NOT NULL THEN 1 ELSE 0 END)',
+        'media_count',
+      )
       .groupBy('user.id')
       .having('MAX(message.created_at) IS NOT NULL')
       .orderBy('last_message_time', 'DESC')
       .getRawMany();
 
-    return chats;
+    // Get last message for each user
+    const chatsWithLastMessage = await Promise.all(
+      chats.map(async (chat) => {
+        const lastMessage = await this.messageRepo.findOne({
+          where: { user_id: chat.user_id },
+          order: { created_at: 'DESC' },
+        });
+
+        return {
+          user_id: chat.user_id,
+          user: {
+            id: chat.user_id,
+            tg_id: chat.user_tg_id,
+            username: chat.user_username,
+            first_name: chat.user_first_name,
+            last_name: chat.user_last_name,
+          },
+          last_message: lastMessage
+            ? {
+                text: lastMessage.text,
+                created_at: lastMessage.created_at,
+                from_admin: !!lastMessage.from_admin_tg_id,
+              }
+            : null,
+          unread_count: parseInt(chat.unread_count || '0'),
+          media_count: parseInt(chat.media_count || '0'),
+        };
+      }),
+    );
+
+    return chatsWithLastMessage;
   }
 
   async getMessages(userId: string, limit = 100) {
@@ -127,12 +162,13 @@ export class MessagesService {
     return savedMessage;
   }
 
-  async createUserMessage(userId: string, text: string, mediaUrl?: string) {
+  async createUserMessage(userId: string, text: string, mediaUrl?: string, mediaType?: string) {
     const message = this.messageRepo.create({
       user_id: userId,
       from_admin_tg_id: null,
-      text,
+      text: text || '',
       media_url: mediaUrl,
+      media_type: mediaType,
       is_read: false,
     });
 

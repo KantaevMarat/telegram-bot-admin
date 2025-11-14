@@ -11,6 +11,8 @@ export declare class Task {
     action_url: string;
     channel_id: string;
     task_type: string;
+    command: string;
+    min_completion_time: number;
     cooldown_hours: number;
     active: boolean;
     user_tasks: UserTask[];

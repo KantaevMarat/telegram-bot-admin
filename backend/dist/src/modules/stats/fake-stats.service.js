@@ -32,17 +32,20 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
     }
     async updateFakeStatsCron() {
         this.logger.log('🔄 Running fake stats update (cron)...');
-        await this.generateAndSaveFakeStats();
+        try {
+            await this.generateAndSaveFakeStats();
+        }
+        catch (error) {
+            this.logger.error('❌ Error updating fake stats:', error);
+        }
     }
     async regenerateFakeStats() {
         try {
             this.logger.log('🔄 Manually regenerating fake stats...');
-            const result = await this.generateAndSaveFakeStats();
-            this.logger.log('✅ Fake stats regenerated successfully');
-            return result;
+            return await this.generateAndSaveFakeStats();
         }
         catch (error) {
-            this.logger.error('❌ Error in regenerateFakeStats:', error.message);
+            this.logger.error('❌ Error regenerating fake stats:', error);
             this.logger.error('Stack trace:', error.stack);
             throw error;
         }
@@ -66,13 +69,27 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
     }
     async initializeFakeStats() {
         const realStats = await this.getRealStats();
+        const defaultValues = {
+            online: 1250,
+            active: 8420,
+            paid_usdt: 45678.5,
+        };
+        const online = realStats.users_count > 0
+            ? Math.round(realStats.users_count * 0.8)
+            : defaultValues.online;
+        const active = realStats.users_count > 0
+            ? Math.round(realStats.users_count * 1.2)
+            : defaultValues.active;
+        const paid_usdt = realStats.total_earned > 0
+            ? realStats.total_earned * 1.15
+            : defaultValues.paid_usdt;
         const fakeStats = this.fakeStatsRepo.create({
-            online: Math.round(realStats.users_count * 0.8),
-            active: Math.round(realStats.users_count * 1.2),
-            paid_usdt: realStats.total_earned * 1.15,
+            online,
+            active,
+            paid_usdt,
         });
         await this.fakeStatsRepo.save(fakeStats);
-        this.logger.log('✅ Initialized fake stats');
+        this.logger.log('✅ Initialized fake stats', { online, active, paid_usdt });
         return fakeStats;
     }
     async generateAndSaveFakeStats() {
@@ -84,87 +101,169 @@ let FakeStatsService = FakeStatsService_1 = class FakeStatsService {
         this.logger.log('Step 3: Getting latest fake stats...');
         const previousFake = await this.getLatestFakeStats();
         this.logger.log(`Previous fake stats: online=${previousFake.online}, active=${previousFake.active}`);
-        const maxDeltaPercent = this.configService.get('FAKE_STATS_MAX_DELTA_PERCENT', 15);
-        const trendMin = this.configService.get('FAKE_STATS_TREND_MIN', -0.02);
-        const trendMax = this.configService.get('FAKE_STATS_TREND_MAX', 0.03);
-        const noiseStdDev = this.configService.get('FAKE_STATS_NOISE_STDDEV', 0.01);
-        const newFakeOnline = this.smoothRandomWalk(previousFake.online, realStats.users_count, maxDeltaPercent, trendMin, trendMax, noiseStdDev);
-        const newFakeActive = this.smoothRandomWalk(previousFake.active, realStats.users_count, maxDeltaPercent, trendMin, trendMax, noiseStdDev);
+        if (realStats.users_count === 0) {
+            const defaultValues = {
+                online: 1250 + Math.floor(Math.random() * 600 - 300),
+                active: 8420 + Math.floor(Math.random() * 2000 - 1000),
+                paid_usdt: 45678.5 + (Math.random() * 6000 - 3000),
+            };
+            const newFakeStats = this.fakeStatsRepo.create({
+                online: Math.max(800, defaultValues.online),
+                active: Math.max(5000, defaultValues.active),
+                paid_usdt: Math.max(35000, Math.round(defaultValues.paid_usdt * 100) / 100),
+            });
+            await this.fakeStatsRepo.save(newFakeStats);
+            this.logger.log(`✅ Fake stats updated (default values): online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);
+            return newFakeStats;
+        }
+        const defaultValues = {
+            online: 1250,
+            active: 8420,
+            paid_usdt: 45678.5,
+        };
+        const useDefaultOnline = previousFake.online < 100;
+        const useDefaultActive = previousFake.active < 100;
+        const useDefaultPaid = previousFake.paid_usdt < 1000;
+        const baseOnline = useDefaultOnline ? defaultValues.online : previousFake.online;
+        const baseActive = useDefaultActive ? defaultValues.active : previousFake.active;
+        const basePaid = useDefaultPaid ? defaultValues.paid_usdt : previousFake.paid_usdt;
+        if (useDefaultOnline || useDefaultActive || useDefaultPaid) {
+            this.logger.warn(`⚠️ Previous fake stats are too small (online=${previousFake.online}, active=${previousFake.active}, paid=${previousFake.paid_usdt}). ` +
+                `Using default values as base (online=${baseOnline}, active=${baseActive}, paid=${basePaid})`);
+        }
+        const maxDeltaPercent = this.configService.get('FAKE_STATS_MAX_DELTA_PERCENT', 30);
+        const trendMin = this.configService.get('FAKE_STATS_TREND_MIN', -0.08);
+        const trendMax = this.configService.get('FAKE_STATS_TREND_MAX', 0.12);
+        const noiseStdDev = this.configService.get('FAKE_STATS_NOISE_STDDEV', 0.05);
+        const newFakeOnline = this.smoothRandomWalk(baseOnline, realStats.users_count, maxDeltaPercent, trendMin, trendMax, noiseStdDev);
+        const newFakeActive = this.smoothRandomWalk(baseActive, realStats.users_count, maxDeltaPercent, trendMin, trendMax, noiseStdDev);
         const paidTrendMin = Math.random() < 0.7 ? 0 : trendMin;
-        const paidTrendMax = trendMax * 1.5;
-        const newFakePaid = this.smoothRandomWalk(previousFake.paid_usdt, realStats.total_earned, maxDeltaPercent, paidTrendMin, paidTrendMax, noiseStdDev * 0.5, true);
+        const paidTrendMax = trendMax * 2;
+        const newFakePaid = this.smoothRandomWalk(basePaid, realStats.total_earned, maxDeltaPercent, paidTrendMin, paidTrendMax, noiseStdDev * 1.2, true);
+        const basePaidNum = Number(basePaid);
+        const newFakePaidNum = Number(newFakePaid);
+        const paidChangeBeforeRound = newFakePaidNum - basePaidNum;
+        const paidChangePercentBeforeRound = basePaidNum > 0 ? (paidChangeBeforeRound / basePaidNum * 100).toFixed(4) : '0.00';
+        this.logger.log(`💰 paid_usdt: base=${basePaidNum.toFixed(2)}, newBeforeRound=${newFakePaidNum.toFixed(4)}, change=${paidChangeBeforeRound.toFixed(4)} (${paidChangePercentBeforeRound}%)`);
         const newFakeStats = this.fakeStatsRepo.create({
-            online: Math.round(newFakeOnline),
-            active: Math.round(newFakeActive),
-            paid_usdt: Math.round(newFakePaid * 100) / 100,
+            online: Math.round(isNaN(newFakeOnline) ? defaultValues.online : newFakeOnline),
+            active: Math.round(isNaN(newFakeActive) ? defaultValues.active : newFakeActive),
+            paid_usdt: isNaN(newFakePaid) ? defaultValues.paid_usdt : Math.round(newFakePaid * 100) / 100,
         });
+        const paidAfterRound = Number(newFakeStats.paid_usdt);
+        const paidChangeAfterRound = paidAfterRound - basePaidNum;
+        const paidChangePercentAfterRound = basePaidNum > 0 ? (paidChangeAfterRound / basePaidNum * 100).toFixed(4) : '0.00';
+        this.logger.log(`💰 paid_usdt after round: ${paidAfterRound.toFixed(2)}, change=${paidChangeAfterRound.toFixed(2)} (${paidChangePercentAfterRound}%)`);
+        const previousPaidNum = Number(previousFake.paid_usdt);
+        const newPaidNum = Number(newFakeStats.paid_usdt);
+        const onlineChangePercent = baseOnline > 0 ? ((newFakeStats.online - baseOnline) / baseOnline * 100).toFixed(2) : '0.00';
+        const activeChangePercent = baseActive > 0 ? ((newFakeStats.active - baseActive) / baseActive * 100).toFixed(2) : '0.00';
+        const paidChangePercent = basePaidNum > 0 ? ((newPaidNum - basePaidNum) / basePaidNum * 100).toFixed(2) : '0.00';
+        this.logger.log(`📊 Base (used): online=${baseOnline}, active=${baseActive}, paid=${basePaidNum.toFixed(2)}`);
+        this.logger.log(`📊 Previous (from DB): online=${previousFake.online}, active=${previousFake.active}, paid=${previousPaidNum.toFixed(2)}`);
+        this.logger.log(`📊 New: online=${newFakeStats.online} (${onlineChangePercent}%), active=${newFakeStats.active} (${activeChangePercent}%), paid=${newPaidNum.toFixed(2)} (${paidChangePercent}%)`);
         await this.fakeStatsRepo.save(newFakeStats);
         this.logger.log(`✅ Fake stats updated: online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);
         return newFakeStats;
     }
     smoothRandomWalk(previousValue, realValue, maxDeltaPercent, trendMin, trendMax, noiseStdDev, onlyGrowth = false) {
-        if (realValue <= 0) {
-            realValue = 10;
+        const baseValue = previousValue;
+        const variationPercent = maxDeltaPercent / 100;
+        const targetMin = baseValue * (1 - variationPercent);
+        const targetMax = baseValue * (1 + variationPercent);
+        const trend = this.randomUniform(trendMin, trendMax);
+        const randomVariation = previousValue * this.randomUniform(-0.15, 0.15);
+        const noise = this.randomGaussian(0, noiseStdDev * previousValue);
+        let newValue = previousValue + trend * previousValue + randomVariation + noise;
+        newValue = this.clamp(newValue, targetMin, targetMax);
+        const minChange = previousValue * 0.03;
+        const actualChange = Math.abs(newValue - previousValue);
+        if (actualChange < minChange && !onlyGrowth) {
+            const direction = Math.random() > 0.5 ? 1 : -1;
+            const forcedChange = previousValue * this.randomUniform(0.03, 0.08);
+            newValue = previousValue + direction * forcedChange;
+            newValue = this.clamp(newValue, targetMin, targetMax);
         }
-        if (previousValue <= 0) {
-            previousValue = realValue * 0.8;
+        if (onlyGrowth) {
+            if (newValue < previousValue) {
+                const growth = previousValue * this.randomUniform(0.03, 0.08);
+                newValue = previousValue + growth;
+                newValue = this.clamp(newValue, previousValue, targetMax);
+            }
+            else {
+                const actualChange = newValue - previousValue;
+                const minChangeForGrowth = previousValue * 0.03;
+                if (actualChange < minChangeForGrowth) {
+                    const growth = previousValue * this.randomUniform(0.03, 0.08);
+                    newValue = previousValue + growth;
+                    newValue = this.clamp(newValue, previousValue, targetMax);
+                }
+            }
         }
-        const drift = this.randomUniform(trendMin, trendMax);
-        const noise = this.randomGaussian(0, noiseStdDev);
-        const hour = new Date().getHours();
-        const seasonal = Math.sin((hour * Math.PI) / 12) * 0.01;
-        let multiplier = 1 + drift + noise + seasonal;
-        if (onlyGrowth && multiplier < 1) {
-            multiplier = 1 + Math.abs(drift) * 0.5 + Math.abs(noise) * 0.5;
+        const finalChange = Math.abs(newValue - previousValue);
+        if (finalChange < previousValue * 0.02 && !onlyGrowth) {
+            const direction = Math.random() > 0.5 ? 1 : -1;
+            newValue = previousValue * (1 + direction * this.randomUniform(0.02, 0.06));
+            newValue = this.clamp(newValue, targetMin, targetMax);
         }
-        let newValue = previousValue * multiplier;
-        const minBound = realValue * (1 - maxDeltaPercent / 100);
-        const maxBound = realValue * (1 + maxDeltaPercent / 100);
-        newValue = this.clamp(newValue, minBound, maxBound);
-        if (isNaN(newValue) || !isFinite(newValue)) {
-            this.logger.warn(`Invalid newValue detected, using realValue instead. Previous: ${previousValue}, Real: ${realValue}`);
-            newValue = realValue;
+        if (onlyGrowth) {
+            const finalChangeForGrowth = newValue - previousValue;
+            const absoluteMinChange = previousValue * 0.02;
+            if (finalChangeForGrowth < absoluteMinChange) {
+                const forcedValue = previousValue * 1.02;
+                newValue = this.clamp(forcedValue, previousValue, targetMax);
+                if (Math.abs(newValue - forcedValue) > 0.01) {
+                }
+            }
+        }
+        if (!isFinite(newValue) || isNaN(newValue)) {
+            if (onlyGrowth) {
+                newValue = previousValue * 1.03;
+            }
+            else {
+                newValue = previousValue * (1 + this.randomUniform(-0.05, 0.05));
+            }
+            newValue = this.clamp(newValue, targetMin, targetMax);
         }
         return newValue;
     }
     async getRealStats() {
         const usersCount = await this.userRepo.count();
-        const totalBalanceResult = await this.userRepo
-            .createQueryBuilder('user')
-            .select('COALESCE(SUM(user.balance_usdt), 0)', 'total')
-            .getRawOne();
         const totalEarnedResult = await this.userRepo
             .createQueryBuilder('user')
             .select('COALESCE(SUM(user.total_earned), 0)', 'total')
             .getRawOne();
-        const oneDayAgo = new Date();
-        oneDayAgo.setDate(oneDayAgo.getDate() - 1);
-        const activeUsers24h = await this.userRepo
-            .createQueryBuilder('user')
-            .where('user.updated_at > :oneDayAgo', { oneDayAgo })
-            .getCount();
+        const totalEarned = parseFloat(totalEarnedResult?.total || '0');
         return {
-            users_count: usersCount || 0,
-            total_balance: parseFloat(totalBalanceResult?.total || '0'),
-            total_earned: parseFloat(totalEarnedResult?.total || '0'),
-            active_users_24h: activeUsers24h || 0,
+            users_count: usersCount,
+            total_earned: totalEarned,
         };
     }
     async saveRealStatsSnapshot(realStats) {
-        const snapshot = this.realStatsRepo.create(realStats);
+        const snapshot = this.realStatsRepo.create({
+            users_count: realStats.users_count,
+            total_earned: realStats.total_earned,
+        });
         await this.realStatsRepo.save(snapshot);
     }
     randomUniform(min, max) {
-        return Math.random() * (max - min) + min;
+        return min + Math.random() * (max - min);
     }
     randomGaussian(mean, stdDev) {
         let u1 = Math.random();
-        let u2 = Math.random();
-        while (u1 <= Number.EPSILON) {
+        while (u1 <= 0 || u1 >= 1) {
             u1 = Math.random();
         }
+        if (u1 < 1e-10) {
+            u1 = 1e-10;
+        }
+        const u2 = Math.random();
         const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-        return z0 * stdDev + mean;
+        const result = mean + z0 * stdDev;
+        if (!isFinite(result)) {
+            return mean + (Math.random() - 0.5) * stdDev * 2;
+        }
+        return result;
     }
     clamp(value, min, max) {
         return Math.max(min, Math.min(max, value));

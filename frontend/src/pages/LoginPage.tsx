@@ -172,14 +172,48 @@ export default function LoginPage() {
 
   // Auto-login on mount if in Telegram
   useEffect(() => {
-    if (window.Telegram?.WebApp) {
-      window.Telegram.WebApp.ready();
-      // Only auto-login if we have valid initData
-      if (window.Telegram.WebApp.initData) {
-        handleLogin();
+    let attemptCount = 0;
+    const maxAttempts = 20; // 5 seconds total (20 * 250ms)
+    
+    const tryAutoLogin = () => {
+      attemptCount++;
+      
+      // Wait for Telegram WebApp to be available
+      if (!window.Telegram?.WebApp) {
+        if (attemptCount < maxAttempts) {
+          console.log(`⏳ Waiting for Telegram WebApp... (${attemptCount}/${maxAttempts})`);
+          setTimeout(tryAutoLogin, 250);
+          return;
+        } else {
+          console.warn('⚠️ Telegram WebApp not available after waiting');
+          return;
+        }
       }
-    }
-    // Don't auto-login in dev mode - let user choose
+
+      // Initialize Telegram WebApp
+      window.Telegram.WebApp.ready();
+      console.log('✅ Telegram WebApp is ready');
+
+      // Wait for initData to be available (can take a moment)
+      if (!window.Telegram.WebApp.initData) {
+        if (attemptCount < maxAttempts) {
+          console.log(`⏳ Waiting for initData... (${attemptCount}/${maxAttempts})`);
+          setTimeout(tryAutoLogin, 250);
+          return;
+        } else {
+          console.warn('⚠️ initData not available after waiting. Attempting login anyway...');
+          // Try to login anyway - loginWithTelegram will handle empty initData
+        }
+      }
+
+      // Auto-login if we have Telegram WebApp
+      console.log('🚀 Attempting auto-login with Telegram...');
+      console.log('📊 initData available:', !!window.Telegram.WebApp.initData);
+      handleLogin();
+    };
+
+    // Start auto-login attempt
+    tryAutoLogin();
   }, []);
 
   // Check if already authenticated and refresh token if needed

@@ -31,9 +31,15 @@ lerna-debug.log*
 # IDE
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 *~
+
+# Temporary files
+.env.production.temp
+.env.local
+.env.*.temp
 
 # OS
 Thumbs.db
@@ -44,5 +50,8 @@ Thumbs.db
 
 # Uploads
 uploads/
-media/
+backend/uploads/
+# Ignore media uploads directory (uploaded files) but NOT source code
+/media/
+!backend/src/modules/media/
 

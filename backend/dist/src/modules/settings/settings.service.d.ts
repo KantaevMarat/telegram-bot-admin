@@ -7,6 +7,8 @@ export declare class SettingsService {
     private settingsRepository;
     private settingsHistoryRepository;
     private syncService;
+    private settingsCache;
+    private readonly CACHE_TTL;
     constructor(settingsRepository: Repository<Settings>, settingsHistoryRepository: Repository<SettingsHistory>, syncService: SyncService);
     findAll(): Promise<Settings[]>;
     findOne(key: string): Promise<Settings | null>;

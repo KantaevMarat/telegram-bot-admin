@@ -9,6 +9,9 @@ import { SyncService } from '../sync/sync.service';
 
 @Injectable()
 export class SettingsService {
+  private settingsCache: Map<string, { value: string; timestamp: number }> = new Map();
+  private readonly CACHE_TTL = 60000; // 60 seconds cache
+
   constructor(
     @InjectRepository(Settings)
     private settingsRepository: Repository<Settings>,
@@ -71,6 +74,9 @@ export class SettingsService {
         value,
         oldValue,
       });
+
+      // Clear cache for this key
+      this.settingsCache.delete(key);
     }
 
     return savedSetting;
@@ -109,6 +115,9 @@ export class SettingsService {
         ipAddress,
         userAgent,
       );
+
+      // Clear cache for this key
+      this.settingsCache.delete(key);
     }
 
     return updated;
@@ -145,6 +154,9 @@ export class SettingsService {
             ipAddress,
             userAgent,
           );
+
+          // Clear cache for this key
+          this.settingsCache.delete(dto.key);
         }
 
         updatedSettings.push(updated);
@@ -154,14 +166,28 @@ export class SettingsService {
   }
 
   async getValue(key: string, defaultValue: string = ''): Promise<string> {
+    // Check cache first
+    const cached = this.settingsCache.get(key);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.value;
+    }
+
+    // Fetch from DB
     const setting = await this.settingsRepository.findOne({ where: { key } });
-    return setting?.value || defaultValue;
+    const value = setting?.value || defaultValue;
+
+    // Update cache
+    this.settingsCache.set(key, { value, timestamp: Date.now() });
+
+    return value;
   }
 
   async remove(key: string) {
     const setting = await this.settingsRepository.findOne({ where: { key } });
     if (setting) {
       await this.settingsRepository.remove(setting);
+      // Clear cache for this key
+      this.settingsCache.delete(key);
     }
     return { success: true };
   }

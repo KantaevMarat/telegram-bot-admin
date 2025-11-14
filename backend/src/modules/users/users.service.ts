@@ -1,12 +1,16 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
 import { User } from '../../entities/user.entity';
 import { BalanceLog } from '../../entities/balance-log.entity';
 import { Payout } from '../../entities/payout.entity';
+import { BotService } from '../bot/bot.service';
+import { FakeStatsService } from '../stats/fake-stats.service';
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     @InjectRepository(User)
     private userRepo: Repository<User>,
@@ -14,6 +18,10 @@ export class UsersService {
     private balanceLogRepo: Repository<BalanceLog>,
     @InjectRepository(Payout)
     private payoutRepo: Repository<Payout>,
+    @Inject(forwardRef(() => BotService))
+    private botService: BotService,
+    @Inject(forwardRef(() => FakeStatsService))
+    private fakeStatsService: FakeStatsService,
   ) {}
 
   async findAll(page = 1, limit = 20, search?: string, status?: string) {
@@ -21,15 +29,30 @@ export class UsersService {
 
     const queryBuilder = this.userRepo.createQueryBuilder('user');
 
-    if (search) {
+    // Проверяем что search не пустая строка
+    const hasSearch = search && search.trim().length > 0;
+    const hasStatus = status && status !== 'all';
+
+    this.logger.debug(`🔍 Users search: search="${search}", hasSearch=${hasSearch}, status="${status}", hasStatus=${hasStatus}`);
+
+    // Если есть поиск, добавляем условие поиска
+    // Используем COALESCE для обработки NULL значений
+    if (hasSearch) {
+      const searchTerm = `%${search.trim()}%`;
+      this.logger.debug(`🔍 Applying search filter with term: "${searchTerm}"`);
       queryBuilder.where(
-        '(user.username ILIKE :search OR user.first_name ILIKE :search OR user.tg_id::text ILIKE :search)',
-        { search: `%${search}%` },
+        '(COALESCE(user.username, \'\') ILIKE :search OR COALESCE(user.first_name, \'\') ILIKE :search OR COALESCE(user.last_name, \'\') ILIKE :search OR CAST(user.tg_id AS TEXT) ILIKE :search)',
+        { search: searchTerm },
       );
     }
 
-    if (status) {
-      queryBuilder.andWhere('user.status = :status', { status });
+    // Если есть фильтр по статусу, добавляем его (andWhere если уже есть where, иначе where)
+    if (hasStatus) {
+      if (hasSearch) {
+        queryBuilder.andWhere('user.status = :status', { status });
+      } else {
+        queryBuilder.where('user.status = :status', { status });
+      }
     }
 
     const [users, total] = await queryBuilder
@@ -86,7 +109,7 @@ export class UsersService {
     await this.userRepo.save(user);
 
     // Log balance change
-    await this.balanceLogRepo.save({
+    const balanceLog = await this.balanceLogRepo.save({
       user_id: user.id,
       admin_tg_id: adminTgId,
       delta,
@@ -95,6 +118,42 @@ export class UsersService {
       reason,
       comment,
     });
+
+    this.logger.log(
+      `Balance updated: user=${tgId}, delta=${delta}, reason=${reason}, ` +
+      `balance: ${balanceBefore} → ${balanceAfter}`
+    );
+
+    // 📱 Send notification to user in Telegram (async, non-blocking)
+    // We don't await this to prevent blocking the response
+    this.botService
+      .sendBalanceChangeNotification(
+        tgId,
+        balanceBefore,
+        balanceAfter,
+        delta,
+        reason,
+        comment,
+      )
+      .then(() => {
+        this.logger.log(`✅ Balance notification sent to user ${tgId}`);
+      })
+      .catch((error) => {
+        this.logger.error(`❌ Failed to send balance notification to user ${tgId}:`, error.message);
+        // Notification failure should not break the transaction
+      });
+
+    // 📊 Update fake stats (async, non-blocking)
+    // Trigger regeneration of fake stats to reflect the balance change
+    this.fakeStatsService
+      .regenerateFakeStats()
+      .then(() => {
+        this.logger.log('✅ Fake stats updated after balance change');
+      })
+      .catch((error) => {
+        this.logger.error('❌ Failed to update fake stats:', error.message);
+        // Fake stats update failure should not break the transaction
+      });
 
     return user;
   }
@@ -122,7 +181,8 @@ export class UsersService {
   async createPayoutRequest(user: User, amount: number, walletAddress: string) {
     // Deduct balance immediately
     const balanceBefore = parseFloat(user.balance_usdt.toString());
-    user.balance_usdt = balanceBefore - amount;
+    const balanceAfter = balanceBefore - amount;
+    user.balance_usdt = balanceAfter;
     await this.userRepo.save(user);
 
     // Create payout request
@@ -136,15 +196,48 @@ export class UsersService {
 
     await this.payoutRepo.save(payout);
 
+    const comment = `Заявка на вывод на кошелёк ${walletAddress}`;
+
     // Log balance change
     await this.balanceLogRepo.save({
       user_id: user.id,
       delta: -amount,
       balance_before: balanceBefore,
-      balance_after: user.balance_usdt,
+      balance_after: balanceAfter,
       reason: 'payout_request',
-      comment: `Withdrawal to ${walletAddress}`,
+      comment,
     });
+
+    this.logger.log(
+      `Payout request created: user=${user.tg_id}, amount=${amount}, wallet=${walletAddress}`
+    );
+
+    // 📱 Send notification to user in Telegram (async, non-blocking)
+    this.botService
+      .sendBalanceChangeNotification(
+        user.tg_id,
+        balanceBefore,
+        balanceAfter,
+        -amount,
+        'payout_request',
+        comment,
+      )
+      .then(() => {
+        this.logger.log(`✅ Payout notification sent to user ${user.tg_id}`);
+      })
+      .catch((error) => {
+        this.logger.error(`❌ Failed to send payout notification to user ${user.tg_id}:`, error.message);
+      });
+
+    // 📊 Update fake stats (async, non-blocking)
+    this.fakeStatsService
+      .regenerateFakeStats()
+      .then(() => {
+        this.logger.log('✅ Fake stats updated after payout request');
+      })
+      .catch((error) => {
+        this.logger.error('❌ Failed to update fake stats:', error.message);
+      });
 
     return payout;
   }

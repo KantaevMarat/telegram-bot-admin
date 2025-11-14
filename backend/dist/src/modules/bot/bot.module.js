@@ -21,11 +21,15 @@ const message_entity_1 = require("../../entities/message.entity");
 const scenario_entity_1 = require("../../entities/scenario.entity");
 const fake_stats_entity_1 = require("../../entities/fake-stats.entity");
 const settings_entity_1 = require("../../entities/settings.entity");
+const balance_log_entity_1 = require("../../entities/balance-log.entity");
 const users_module_1 = require("../users/users.module");
 const stats_module_1 = require("../stats/stats.module");
 const settings_module_1 = require("../settings/settings.module");
 const messages_module_1 = require("../messages/messages.module");
 const channels_module_1 = require("../channels/channels.module");
+const commands_module_1 = require("../commands/commands.module");
+const ranks_module_1 = require("../ranks/ranks.module");
+const premium_module_1 = require("../premium/premium.module");
 let BotModule = class BotModule {
 };
 exports.BotModule = BotModule;
@@ -42,12 +46,16 @@ exports.BotModule = BotModule = __decorate([
                 scenario_entity_1.Scenario,
                 fake_stats_entity_1.FakeStats,
                 settings_entity_1.Settings,
+                balance_log_entity_1.BalanceLog,
             ]),
             users_module_1.UsersModule,
             stats_module_1.StatsModule,
             settings_module_1.SettingsModule,
             (0, common_1.forwardRef)(() => messages_module_1.MessagesModule),
             channels_module_1.ChannelsModule,
+            (0, common_1.forwardRef)(() => commands_module_1.CommandsModule),
+            (0, common_1.forwardRef)(() => ranks_module_1.RanksModule),
+            (0, common_1.forwardRef)(() => premium_module_1.PremiumModule),
         ],
         controllers: [bot_controller_1.BotController],
         providers: [bot_service_1.BotService, admin_bot_service_1.AdminBotService],

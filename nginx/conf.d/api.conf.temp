@@ -1,0 +1,21 @@
+# ============================================
+# API Domain: api.marranasuete.ru
+# Temporary HTTP-only config for SSL setup
+# ============================================
+
+server {
+    listen 80;
+    server_name api.marranasuete.ru;
+
+    # Let's Encrypt challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Temporary: allow all traffic for testing
+    location / {
+        return 200 "API domain is ready for SSL setup\n";
+        add_header Content-Type text/plain;
+    }
+}
+

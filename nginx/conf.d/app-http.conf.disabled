@@ -1,0 +1,67 @@
+# ============================================
+# App Domain: app.marranasuete.ru (HTTP ONLY)
+# Используется ДО получения SSL сертификатов
+# После получения SSL - переименовать app.conf в active
+# ============================================
+
+server {
+    listen 80;
+    server_name app.marranasuete.ru;
+
+    # Let's Encrypt challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml text/javascript 
+               application/x-javascript application/xml+rss 
+               application/javascript application/json 
+               application/xml image/svg+xml;
+
+    # Client body size
+    client_max_body_size 100M;
+
+    # Proxy settings для frontend
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # WebSocket support для Socket.IO
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+
+    # Frontend application
+    location / {
+        proxy_pass http://tg-frontend:80;
+        proxy_buffering off;
+        proxy_request_buffering off;
+    }
+
+    # Cache static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        proxy_pass http://tg-frontend:80;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    # Health check endpoint
+    location /health {
+        access_log off;
+        return 200 "OK\n";
+        add_header Content-Type text/plain;
+    }
+
+    # Access logs
+    access_log /var/log/nginx/app_access.log;
+    error_log /var/log/nginx/app_error.log;
+}
+

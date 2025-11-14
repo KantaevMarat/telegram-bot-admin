@@ -7,7 +7,7 @@ const getApiUrl = () => {
   console.log('🔗 Current URL:', currentUrl);
 
   // Priority 1: Check environment variable (highest priority)
-  // But ignore Docker-internal hostnames when running in browser
+  // Always use VITE_API_URL if it's set and is a valid production URL
   if (import.meta.env.VITE_API_URL) {
     // Ensure /api suffix exists
     let envApiUrl = import.meta.env.VITE_API_URL;
@@ -15,26 +15,73 @@ const getApiUrl = () => {
       envApiUrl = envApiUrl + '/api';
     }
     
-    // Check if this is a Docker-internal hostname
+    // Check if this is a Docker-internal or localhost URL
     const isDockerInternal = envApiUrl.includes('tg-backend') || 
                             envApiUrl.includes('tg-frontend') ||
                             envApiUrl.includes('://backend:') ||
                             envApiUrl.includes('://frontend:');
     
-    // If we're in a browser (localhost) but env has Docker hostname, ignore it
-    if (isDockerInternal && (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1'))) {
-      console.log('⚠️ Ignoring Docker-internal VITE_API_URL in browser:', envApiUrl);
+    // Check if current URL is production domain (not localhost)
+    const isProductionDomain = !currentUrl.includes('localhost') && 
+                              !currentUrl.includes('127.0.0.1') &&
+                              !currentUrl.includes('serveo.net') &&
+                              !currentUrl.includes('ngrok.io') &&
+                              !currentUrl.includes('trycloudflare.com') &&
+                              !currentUrl.includes('loca.lt');
+    
+    // If VITE_API_URL is a production URL (starts with https://)
+    // BUT: If we're on app.marranasuete.ru, ALWAYS use same-origin API to avoid CORS/network issues
+    if (envApiUrl.startsWith('https://')) {
+      const currentOrigin = window.location.origin;
+      const isOnAppDomain = currentOrigin.includes('app.marranasuete.ru');
+      
+      // ALWAYS use same-origin API when on app.marranasuete.ru (regardless of VITE_API_URL)
+      if (isOnAppDomain) {
+        const sameOriginApi = `${currentOrigin}/api`;
+        console.log('🔧 On app.marranasuete.ru, FORCING same-origin API:', sameOriginApi);
+        console.log('⚠️ Ignoring VITE_API_URL to avoid network/CORS issues');
+        console.log('⚠️ VITE_API_URL was:', envApiUrl);
+        return sameOriginApi;
+      }
+      
+      console.log('🔧 Using VITE_API_URL from env (production URL):', envApiUrl);
+      return envApiUrl;
+    }
+    
+    // If VITE_API_URL points to localhost/Docker-internal but we're on production domain, ignore it
+    if (isDockerInternal && isProductionDomain) {
+      console.log('⚠️ Ignoring Docker-internal/localhost VITE_API_URL on production domain:', envApiUrl);
+      console.log('⚠️ Current URL is production:', currentUrl);
+    } else if (isDockerInternal && (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1'))) {
+      console.log('⚠️ Ignoring Docker-internal VITE_API_URL in local browser:', envApiUrl);
     } else {
       console.log('🔧 Using VITE_API_URL from env:', envApiUrl);
       return envApiUrl;
     }
   }
 
-  // Priority 2: For Telegram Web Apps (serveo, ngrok, etc.)
-  if (currentUrl.includes('serveo.net') || currentUrl.includes('ngrok.io') || currentUrl.includes('trycloudflare.com') || currentUrl.includes('loca.lt')) {
+  // Priority 2: For Telegram Web Apps with tunneling (serveo, ngrok, etc.)
+  // Skip this for production Telegram Mini Apps that access via domain directly
+  const isTelegramWebApp = window.Telegram?.WebApp?.initData;
+  if (!isTelegramWebApp && (currentUrl.includes('serveo.net') || currentUrl.includes('ngrok.io') || currentUrl.includes('trycloudflare.com') || currentUrl.includes('loca.lt'))) {
     const apiUrl = 'http://localhost:3000/api';
-    console.log('📱 Telegram Web App detected - using localhost API:', apiUrl);
+    console.log('📱 Telegram Web App with tunnel detected - using localhost API:', apiUrl);
     return apiUrl;
+  }
+  
+  // For Telegram Mini Apps running on production domain
+  // Check if Telegram WebApp exists (even without initData)
+  // BUT: Only use same-origin API if VITE_API_URL is NOT set or is not a production URL
+  // IMPORTANT: This should NOT execute if VITE_API_URL was already returned above
+  const hasTelegramWebApp = typeof window !== 'undefined' && window.Telegram?.WebApp;
+  if (hasTelegramWebApp && !currentUrl.includes('localhost') && !currentUrl.includes('127.0.0.1')) {
+    // Double-check: if VITE_API_URL was set and is a production URL, it should have been returned already
+    // This is a fallback ONLY if VITE_API_URL was not set or was ignored
+    const origin = window.location.origin;
+    const telegramApiUrl = `${origin}/api`;
+    console.warn('⚠️ Telegram Mini App detected, but VITE_API_URL was not used. Using same origin API:', telegramApiUrl);
+    console.warn('⚠️ This should not happen if VITE_API_URL is set to a production URL!');
+    return telegramApiUrl;
   }
 
   // Priority 3: Running locally (localhost or 127.0.0.1)
@@ -44,15 +91,31 @@ const getApiUrl = () => {
     return apiUrl;
   }
 
-  // Fallback: production or unknown environment
-  const fallbackUrl = 'http://localhost:3000/api';
-  console.log('🔄 Using fallback API URL:', fallbackUrl);
-  return fallbackUrl;
+  // Priority 4: Production environment - use same origin + /api
+  const origin = window.location.origin;
+  const productionUrl = `${origin}/api`;
+  console.log('🚀 Production environment - using same origin API:', productionUrl);
+  return productionUrl;
 };
 
 export const API_URL = getApiUrl();
-console.log('Using API URL:', API_URL);
-console.log('Environment variables:', import.meta.env);
+console.log('✅ Using API URL:', API_URL);
+console.log('📦 Environment variables:', {
+  VITE_API_URL: import.meta.env.VITE_API_URL,
+  MODE: import.meta.env.MODE,
+  PROD: import.meta.env.PROD,
+  DEV: import.meta.env.DEV,
+});
+console.log('🌐 Window location:', {
+  href: window.location.href,
+  origin: window.location.origin,
+  hostname: window.location.hostname,
+});
+console.log('📱 Telegram WebApp:', {
+  exists: typeof window !== 'undefined' && !!window.Telegram,
+  hasWebApp: typeof window !== 'undefined' && !!window.Telegram?.WebApp,
+  hasInitData: typeof window !== 'undefined' && !!window.Telegram?.WebApp?.initData,
+});
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -60,6 +123,23 @@ export const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// Override axios defaults to handle FormData correctly
+api.defaults.transformRequest = [(data, headers) => {
+  // If data is FormData, don't set Content-Type - let axios set it automatically with boundary
+  if (data instanceof FormData) {
+    delete headers['Content-Type'];
+    return data;
+  }
+  // For regular objects, stringify them to JSON
+  if (typeof data === 'object' && data !== null) {
+    return JSON.stringify(data);
+  }
+  return data;
+}];
+
+console.log('🔧 Axios instance created with baseURL:', api.defaults.baseURL);
+console.log('🔧 Full API URL will be:', API_URL);
 
 // Add request logging
 api.interceptors.request.use((config) => {
@@ -77,8 +157,19 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    console.error('❌ API Error:', error.response?.status || 'Network Error', error.config?.url || 'Unknown URL');
-    console.error('❌ Error details:', error.response?.data || error.message);
+    if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
+      console.error('❌ Network Error - API недоступен:', error.config?.baseURL + error.config?.url);
+      console.error('❌ Проверьте:', {
+        baseURL: error.config?.baseURL,
+        url: error.config?.url,
+        fullURL: error.config?.baseURL + error.config?.url,
+        message: error.message,
+        code: error.code
+      });
+    } else {
+      console.error('❌ API Error:', error.response?.status || 'Unknown', error.config?.url || 'Unknown URL');
+      console.error('❌ Error details:', error.response?.data || error.message);
+    }
     return Promise.reject(error);
   }
 );
@@ -88,6 +179,10 @@ api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token;
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  // Don't set Content-Type for FormData - axios will set it automatically with boundary
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
   }
   return config;
 });
@@ -231,6 +326,14 @@ export const tasksApi = {
   createTask: (data: any) => api.post('/admin/tasks', data).then(res => res.data),
   updateTask: (id: string, data: any) => api.put(`/admin/tasks/${id}`, data).then(res => res.data),
   deleteTask: (id: string) => api.delete(`/admin/tasks/${id}`).then(res => res.data),
+  
+  // Moderation
+  getPendingReview: (params?: { status?: string; search?: string }) => 
+    api.get('/admin/tasks/moderation/pending', { params }).then(res => res.data),
+  approveTask: (userTaskId: string) => 
+    api.post(`/admin/tasks/moderation/${userTaskId}/approve`).then(res => res.data),
+  rejectTask: (userTaskId: string, reason?: string) => 
+    api.post(`/admin/tasks/moderation/${userTaskId}/reject`, { reason }).then(res => res.data),
 };
 
 // Chats API
@@ -256,9 +359,37 @@ export const mediaApi = {
   uploadFile: (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    return api.post('/admin/media/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }).then(res => res.data);
+    // Don't set Content-Type header - axios will set it automatically with boundary for FormData
+    return api.post('/admin/media/upload', formData).then(res => res.data);
   },
+};
+
+// Commands API
+export const commandsApi = {
+  getCommands: () => api.get('/admin/commands').then(res => res.data),
+  getCommand: (id: string) => api.get(`/admin/commands/${id}`).then(res => res.data),
+  createCommand: (data: any) => api.post('/admin/commands', data).then(res => res.data),
+  updateCommand: (id: string, data: any) => api.put(`/admin/commands/${id}`, data).then(res => res.data),
+  deleteCommand: (id: string) => api.delete(`/admin/commands/${id}`).then(res => res.data),
+};
+
+// Ranks API
+export const ranksApi = {
+  getSettings: () => api.get('/admin/ranks/settings').then(res => res.data),
+  updateSettings: (data: any) => api.put('/admin/ranks/settings', data).then(res => res.data),
+  getStatistics: () => api.get('/admin/ranks/statistics').then(res => res.data),
+  getUserRank: (userId: string) => api.get(`/admin/ranks/user/${userId}`).then(res => res.data),
+  checkUserRank: (userId: string) => api.put(`/admin/ranks/user/${userId}/check`).then(res => res.data),
+};
+
+// Premium API
+export const premiumApi = {
+  getRequests: (params?: { status?: string; currency?: string }) => 
+    api.get('/admin/premium/requests', { params }).then(res => res.data),
+  markRequisitesSent: (id: string) => api.post(`/admin/premium/requests/${id}/requisites-sent`).then(res => res.data),
+  confirmPayment: (id: string) => api.post(`/admin/premium/requests/${id}/confirm-payment`).then(res => res.data),
+  activateSubscription: (id: string) => api.post(`/admin/premium/requests/${id}/activate`).then(res => res.data),
+  cancelRequest: (id: string, reason?: string) => 
+    api.post(`/admin/premium/requests/${id}/cancel`, { reason }).then(res => res.data),
 };
 

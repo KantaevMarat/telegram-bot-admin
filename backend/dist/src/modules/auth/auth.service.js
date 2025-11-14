@@ -220,9 +220,14 @@ let AuthService = AuthService_1 = class AuthService {
         const allAdmins = await this.adminRepo.find();
         this.logger.log(`Total admins in DB: ${allAdmins.length}`);
         allAdmins.forEach(a => this.logger.log(`  - Admin: tg_id="${a.tg_id}", role=${a.role}`));
-        const admin = await this.adminRepo.findOne({
+        let admin = await this.adminRepo.findOne({
             where: { tg_id: adminId.toString() },
         });
+        if (!admin) {
+            admin = await this.adminRepo.findOne({
+                where: { tg_id: adminId },
+            });
+        }
         if (!admin) {
             this.logger.warn(`Admin not found for TG ID: ${adminId}`);
             throw new common_1.UnauthorizedException('Admin not found');

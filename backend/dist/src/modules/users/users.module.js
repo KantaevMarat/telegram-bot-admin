@@ -14,12 +14,18 @@ const users_controller_1 = require("./users.controller");
 const user_entity_1 = require("../../entities/user.entity");
 const balance_log_entity_1 = require("../../entities/balance-log.entity");
 const payout_entity_1 = require("../../entities/payout.entity");
+const bot_module_1 = require("../bot/bot.module");
+const stats_module_1 = require("../stats/stats.module");
 let UsersModule = class UsersModule {
 };
 exports.UsersModule = UsersModule;
 exports.UsersModule = UsersModule = __decorate([
     (0, common_1.Module)({
-        imports: [typeorm_1.TypeOrmModule.forFeature([user_entity_1.User, balance_log_entity_1.BalanceLog, payout_entity_1.Payout])],
+        imports: [
+            typeorm_1.TypeOrmModule.forFeature([user_entity_1.User, balance_log_entity_1.BalanceLog, payout_entity_1.Payout]),
+            (0, common_1.forwardRef)(() => bot_module_1.BotModule),
+            (0, common_1.forwardRef)(() => stats_module_1.StatsModule),
+        ],
         controllers: [users_controller_1.UsersController],
         providers: [users_service_1.UsersService],
         exports: [users_service_1.UsersService],

@@ -15,10 +15,13 @@ import BroadcastPage from './pages/BroadcastPage';
 import ButtonsPage from './pages/ButtonsPage';
 import ScenariosPage from './pages/ScenariosPage';
 import TasksPage from './pages/TasksPage';
+import CommandsPage from './pages/CommandsPage';
+import ModerationPage from './pages/ModerationPage';
 import ChatsPage from './pages/ChatsPage';
 import AdminsPage from './pages/AdminsPage';
 import UserAppPage from './pages/UserAppPage';
 import { ChannelsPage } from './pages/ChannelsPage';
+import RanksPage from './pages/RanksPage';
 
 function App() {
   const { isAuthenticated, refreshToken } = useAuthStore();
@@ -61,9 +64,12 @@ function App() {
               <Route path="/buttons" element={<ButtonsPage />} />
               <Route path="/scenarios" element={<ScenariosPage />} />
               <Route path="/tasks" element={<TasksPage />} />
+              <Route path="/commands" element={<CommandsPage />} />
+              <Route path="/moderation" element={<ModerationPage />} />
               <Route path="/chats" element={<ChatsPage />} />
               <Route path="/channels" element={<ChannelsPage />} />
               <Route path="/admins" element={<AdminsPage />} />
+              <Route path="/ranks" element={<RanksPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Layout>

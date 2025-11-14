@@ -18,6 +18,10 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { BroadcastModule } from './modules/broadcast/broadcast.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { ChannelsModule } from './modules/channels/channels.module';
+import { MediaModule } from './modules/media/media.module';
+import { CommandsModule } from './modules/commands/commands.module';
+import { RanksModule } from './modules/ranks/ranks.module';
+import { PremiumModule } from './modules/premium/premium.module';
 import { typeOrmConfig } from './config/typeorm.config';
 
 @Module({
@@ -69,6 +73,10 @@ import { typeOrmConfig } from './config/typeorm.config';
     SettingsModule,
     BroadcastModule,
     ChannelsModule,
+    MediaModule,
+    CommandsModule,
+    RanksModule,
+    PremiumModule,
   ],
 })
 export class AppModule {}

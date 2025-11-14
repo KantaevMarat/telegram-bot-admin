@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tasksApi } from '../api/client';
-import { CheckSquare, Plus, Edit, Trash2, X, Upload, TrendingUp, DollarSign, Check, XCircle, LayoutGrid, LayoutList } from 'lucide-react';
+import { CheckSquare, Plus, Edit, Trash2, X, Upload, TrendingUp, DollarSign, Check, XCircle, LayoutGrid, LayoutList, AlertCircle, Link as LinkIcon, Clock, Target } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSyncRefetch } from '../hooks/useSync';
 
@@ -15,6 +15,8 @@ interface Task {
   media_url?: string;
   channel_id?: string;
   task_type?: string;
+  command?: string;
+  min_completion_time?: number;
   active: boolean;
   completions_count: number;
 }
@@ -33,6 +35,8 @@ export default function TasksPage() {
     media_url: '',
     channel_id: '',
     task_type: 'subscription',
+    command: '',
+    min_completion_time: 0,
     active: true,
   });
 
@@ -86,6 +90,8 @@ export default function TasksPage() {
       media_url: '',
       channel_id: '',
       task_type: 'subscription',
+      command: '',
+      min_completion_time: 0,
       active: true,
     });
     setShowModal(true);
@@ -102,6 +108,8 @@ export default function TasksPage() {
       media_url: task.media_url || '',
       channel_id: task.channel_id || '',
       task_type: task.task_type || 'subscription',
+      command: task.command || '',
+      min_completion_time: task.min_completion_time || 0,
       active: task.active,
     });
     setShowModal(true);
@@ -119,6 +127,8 @@ export default function TasksPage() {
       media_url: '',
       channel_id: '',
       task_type: 'subscription',
+      command: '',
+      min_completion_time: 0,
       active: true,
     });
   };
@@ -469,139 +479,325 @@ export default function TasksPage() {
             </div>
             
             <div className="modal__body">
-              <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div className="form-group">
-                  <label className="form-label">Название задания *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={formData.title}
-                    onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                    placeholder="Введите название задания"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Описание *</label>
-                  <textarea
-                    className="form-textarea"
-                    value={formData.description}
-                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="Опишите задание для пользователей"
-                    rows={4}
-                    required
-                  />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div className="form-group">
-                    <label className="form-label">Минимальная награда (USDT) *</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={formData.reward_min}
-                      onChange={(e) => setFormData(prev => ({ ...prev, reward_min: parseFloat(e.target.value) || 0 }))}
-                      placeholder="0.00"
-                      min="0"
-                      step="0.01"
-                      required
-                    />
+              <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                
+                {/* Секция 1: Основная информация */}
+                <div style={{ 
+                  padding: '16px', 
+                  background: 'var(--card-bg)', 
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid var(--border)'
+                }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    marginBottom: '16px',
+                    color: 'var(--accent)'
+                  }}>
+                    <Target size={20} />
+                    <h3 style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-semibold)' }}>
+                      Основная информация
+                    </h3>
                   </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Максимальная награда (USDT) *</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={formData.reward_max}
-                      onChange={(e) => setFormData(prev => ({ ...prev, reward_max: parseFloat(e.target.value) || 0 }))}
-                      placeholder="0.00"
-                      min="0"
-                      step="0.01"
-                      required
-                    />
-                  </div>
-                </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div className="form-group">
+                      <label className="form-label">Название задания *</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={formData.title}
+                        onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                        placeholder="Например: Подпишись на наш канал"
+                        required
+                      />
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        Краткое и понятное название, которое увидят пользователи
+                      </div>
+                    </div>
 
-                <div className="form-group">
-                  <label className="form-label">Ссылка на действие</label>
-                  <input
-                    type="url"
-                    className="form-input"
-                    value={formData.action_url}
-                    onChange={(e) => setFormData(prev => ({ ...prev, action_url: e.target.value }))}
-                    placeholder="https://example.com"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">URL медиафайла</label>
-                  <div className="search-input">
-                    <Upload size={18} className="search-input__icon" />
-                    <input
-                      type="url"
-                      className="search-input__field"
-                      value={formData.media_url}
-                      onChange={(e) => setFormData(prev => ({ ...prev, media_url: e.target.value }))}
-                      placeholder="https://example.com/image.jpg"
-                    />
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div className="form-group">
-                    <label className="form-label">ID канала Telegram</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={formData.channel_id}
-                      onChange={(e) => setFormData(prev => ({ ...prev, channel_id: e.target.value }))}
-                      placeholder="@channel или -1001234567890"
-                    />
-                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                      Для проверки подписки. Бот должен быть админом канала!
+                    <div className="form-group">
+                      <label className="form-label">Описание *</label>
+                      <textarea
+                        className="form-textarea"
+                        value={formData.description}
+                        onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                        placeholder="Опишите, что нужно сделать пользователю для выполнения задания"
+                        rows={4}
+                        required
+                      />
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        Детальное описание задания и инструкции для пользователя
+                      </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Секция 2: Тип задания и настройки */}
+                <div style={{ 
+                  padding: '16px', 
+                  background: 'var(--card-bg)', 
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid var(--border)'
+                }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    marginBottom: '16px',
+                    color: 'var(--info)'
+                  }}>
+                    <CheckSquare size={20} />
+                    <h3 style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-semibold)' }}>
+                      Тип и настройки задания
+                    </h3>
+                  </div>
 
                   <div className="form-group">
-                    <label className="form-label">Тип задания</label>
+                    <label className="form-label">Тип задания *</label>
                     <select
                       className="form-input"
                       value={formData.task_type}
                       onChange={(e) => setFormData(prev => ({ ...prev, task_type: e.target.value }))}
+                      style={{ cursor: 'pointer' }}
                     >
-                      <option value="subscription">Подписка на канал</option>
-                      <option value="action">Действие (без проверки)</option>
-                      <option value="manual">Ручная проверка</option>
+                      <option value="subscription">📢 Подписка на канал (автопроверка)</option>
+                      <option value="action">⚡ Простое действие (без проверки)</option>
+                      <option value="manual">✋ Ручная проверка админом</option>
                     </select>
+                    <div style={{ 
+                      fontSize: 'var(--font-size-xs)', 
+                      color: 'var(--text-tertiary)', 
+                      marginTop: '6px',
+                      padding: '8px 12px',
+                      background: 'var(--warning-light)',
+                      borderRadius: 'var(--radius-md)',
+                      display: 'flex',
+                      gap: '8px',
+                      alignItems: 'flex-start'
+                    }}>
+                      <AlertCircle size={14} style={{ marginTop: '2px', flexShrink: 0 }} />
+                      <div>
+                        {formData.task_type === 'subscription' && 
+                          'Бот автоматически проверит подписку на канал. Укажите ID канала ниже.'
+                        }
+                        {formData.task_type === 'action' && 
+                          'Задание завершается сразу после нажатия кнопки. Подходит для переходов по ссылкам.'
+                        }
+                        {formData.task_type === 'manual' && 
+                          'Требуется ручное подтверждение администратором. Для сложных заданий.'
+                        }
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Условные поля для подписки */}
+                  {formData.task_type === 'subscription' && (
+                    <div className="form-group" style={{ marginTop: '16px' }}>
+                      <label className="form-label">ID канала Telegram *</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={formData.channel_id}
+                        onChange={(e) => setFormData(prev => ({ ...prev, channel_id: e.target.value }))}
+                        placeholder="@channel или -1001234567890"
+                        required={formData.task_type === 'subscription'}
+                      />
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        ⚠️ Важно: Бот должен быть администратором канала для проверки подписки!
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="form-group" style={{ marginTop: '16px' }}>
+                    <label className="form-label">Ссылка для перехода {formData.task_type === 'action' ? '*' : ''}</label>
+                    <div className="search-input">
+                      <LinkIcon size={18} className="search-input__icon" />
+                      <input
+                        type="url"
+                        className="search-input__field"
+                        value={formData.action_url}
+                        onChange={(e) => setFormData(prev => ({ ...prev, action_url: e.target.value }))}
+                        placeholder="https://t.me/yourchannel"
+                        required={formData.task_type === 'action'}
+                      />
+                    </div>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                      Куда перенаправить пользователя (канал, группа, веб-сайт)
+                    </div>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    type="checkbox"
-                    id="active"
-                    checked={formData.active}
-                    onChange={(e) => setFormData(prev => ({ ...prev, active: e.target.checked }))}
-                  />
-                  <label htmlFor="active" className="form-label" style={{ margin: 0 }}>
-                    Активное задание
-                  </label>
+                {/* Секция 3: Награда */}
+                <div style={{ 
+                  padding: '16px', 
+                  background: 'var(--card-bg)', 
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid var(--border)'
+                }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    marginBottom: '16px',
+                    color: 'var(--success)'
+                  }}>
+                    <DollarSign size={20} />
+                    <h3 style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-semibold)' }}>
+                      Награда за выполнение
+                    </h3>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group">
+                      <label className="form-label">Минимум (USDT) *</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={formData.reward_min}
+                        onChange={(e) => setFormData(prev => ({ ...prev, reward_min: parseFloat(e.target.value) || 0 }))}
+                        placeholder="0.00"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Максимум (USDT) *</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={formData.reward_max}
+                        onChange={(e) => setFormData(prev => ({ ...prev, reward_max: parseFloat(e.target.value) || 0 }))}
+                        placeholder="0.00"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '8px' }}>
+                    💡 Награда будет начислена случайным образом в указанном диапазоне
+                  </div>
                 </div>
 
+                {/* Секция 4: Дополнительные настройки */}
+                <div style={{ 
+                  padding: '16px', 
+                  background: 'var(--card-bg)', 
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid var(--border)'
+                }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    marginBottom: '16px',
+                    color: 'var(--text-secondary)'
+                  }}>
+                    <Clock size={20} />
+                    <h3 style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-semibold)' }}>
+                      Дополнительные настройки
+                    </h3>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div className="form-group">
+                      <label className="form-label">⏱️ Минимальное время выполнения (минуты)</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        min="0"
+                        value={formData.min_completion_time}
+                        onChange={(e) => setFormData(prev => ({ ...prev, min_completion_time: parseInt(e.target.value) || 0 }))}
+                        placeholder="0"
+                      />
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        Кнопка подтверждения станет доступна через указанное время (0 = мгновенно)
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">📷 URL медиафайла (изображение/видео)</label>
+                      <div className="search-input">
+                        <Upload size={18} className="search-input__icon" />
+                        <input
+                          type="url"
+                          className="search-input__field"
+                          value={formData.media_url}
+                          onChange={(e) => setFormData(prev => ({ ...prev, media_url: e.target.value }))}
+                          placeholder="https://example.com/image.jpg"
+                        />
+                      </div>
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        Изображение или видео, которое будет показано в боте вместе с заданием
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">⌨️ Команда для активации</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={formData.command}
+                        onChange={(e) => setFormData(prev => ({ ...prev, command: e.target.value }))}
+                        placeholder="/tasks или task_123"
+                      />
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        Команда бота, по которой откроется это задание (необязательно)
+                      </div>
+                    </div>
+
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '12px',
+                      padding: '12px',
+                      background: formData.active ? 'var(--success-light)' : 'var(--error-light)',
+                      borderRadius: 'var(--radius-md)'
+                    }}>
+                      <input
+                        type="checkbox"
+                        id="active"
+                        checked={formData.active}
+                        onChange={(e) => setFormData(prev => ({ ...prev, active: e.target.checked }))}
+                        style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                      />
+                      <label htmlFor="active" className="form-label" style={{ margin: 0, cursor: 'pointer', flex: 1 }}>
+                        <span style={{ fontWeight: 'var(--font-weight-semibold)' }}>
+                          {formData.active ? '✅ Активное задание' : '❌ Неактивное задание'}
+                        </span>
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                          {formData.active 
+                            ? 'Задание доступно для выполнения пользователям' 
+                            : 'Задание скрыто и недоступно для пользователей'
+                          }
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Кнопки действий */}
                 <div style={{ 
                   display: 'flex', 
                   gap: '12px', 
                   paddingTop: '16px',
-                  borderTop: '1px solid var(--border)'
+                  borderTop: '2px solid var(--border)'
                 }}>
                   <button
                     type="submit"
                     className="btn btn--primary"
                     disabled={createMutation.isPending || updateMutation.isPending}
+                    style={{ flex: 1 }}
                   >
-                    {editingTask ? 'Обновить' : 'Создать'}
+                    {createMutation.isPending || updateMutation.isPending ? (
+                      <>⏳ Сохранение...</>
+                    ) : (
+                      <>{editingTask ? '💾 Сохранить изменения' : '✨ Создать задание'}</>
+                    )}
                   </button>
                   
                   <button

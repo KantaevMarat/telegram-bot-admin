@@ -2,11 +2,16 @@ import { Repository } from 'typeorm';
 import { User } from '../../entities/user.entity';
 import { BalanceLog } from '../../entities/balance-log.entity';
 import { Payout } from '../../entities/payout.entity';
+import { BotService } from '../bot/bot.service';
+import { FakeStatsService } from '../stats/fake-stats.service';
 export declare class UsersService {
     private userRepo;
     private balanceLogRepo;
     private payoutRepo;
-    constructor(userRepo: Repository<User>, balanceLogRepo: Repository<BalanceLog>, payoutRepo: Repository<Payout>);
+    private botService;
+    private fakeStatsService;
+    private readonly logger;
+    constructor(userRepo: Repository<User>, balanceLogRepo: Repository<BalanceLog>, payoutRepo: Repository<Payout>, botService: BotService, fakeStatsService: FakeStatsService);
     findAll(page?: number, limit?: number, search?: string, status?: string): Promise<{
         data: User[];
         total: number;

@@ -2,16 +2,17 @@ import { IsString, IsNumber, IsBoolean, IsOptional, IsObject } from 'class-valid
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateButtonDto {
-  @ApiProperty({ description: 'Button label' })
+  @ApiProperty({ description: 'Button label', required: false })
+  @IsOptional()
   @IsString()
-  label: string;
+  label?: string;
 
   @ApiProperty({ description: 'Action type', example: 'open_url' })
   @IsString()
   action_type: string;
 
   @ApiProperty({ description: 'Action payload', example: { url: 'https://example.com' } })
-  @IsObject()
+  @IsOptional()
   action_payload: any;
 
   @ApiProperty({ description: 'Row position', required: false })
@@ -28,6 +29,11 @@ export class CreateButtonDto {
   @IsOptional()
   @IsString()
   media_url?: string;
+
+  @ApiProperty({ description: 'Command to execute when button is clicked (e.g., /start)', required: false })
+  @IsOptional()
+  @IsString()
+  command?: string;
 
   @ApiProperty({ description: 'Is active', required: false })
   @IsOptional()

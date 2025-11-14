@@ -25,6 +25,8 @@ let SettingsService = class SettingsService {
         this.settingsRepository = settingsRepository;
         this.settingsHistoryRepository = settingsHistoryRepository;
         this.syncService = syncService;
+        this.settingsCache = new Map();
+        this.CACHE_TTL = 60000;
     }
     async findAll() {
         return await this.settingsRepository.find({ order: { key: 'ASC' } });
@@ -55,6 +57,7 @@ let SettingsService = class SettingsService {
                 value,
                 oldValue,
             });
+            this.settingsCache.delete(key);
         }
         return savedSetting;
     }
@@ -69,6 +72,7 @@ let SettingsService = class SettingsService {
         const updated = await this.settingsRepository.save(setting);
         if (oldValue !== value) {
             await this.recordHistory(key, oldValue, value, changeReason, adminTgId, adminUsername, adminFirstName, ipAddress, userAgent);
+            this.settingsCache.delete(key);
         }
         return updated;
     }
@@ -83,6 +87,7 @@ let SettingsService = class SettingsService {
                 const updated = await this.settingsRepository.save(setting);
                 if (oldValue !== dto.value) {
                     await this.recordHistory(dto.key, oldValue, dto.value, changeReason, adminTgId, adminUsername, adminFirstName, ipAddress, userAgent);
+                    this.settingsCache.delete(dto.key);
                 }
                 updatedSettings.push(updated);
             }
@@ -90,13 +95,20 @@ let SettingsService = class SettingsService {
         return updatedSettings;
     }
     async getValue(key, defaultValue = '') {
+        const cached = this.settingsCache.get(key);
+        if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+            return cached.value;
+        }
         const setting = await this.settingsRepository.findOne({ where: { key } });
-        return setting?.value || defaultValue;
+        const value = setting?.value || defaultValue;
+        this.settingsCache.set(key, { value, timestamp: Date.now() });
+        return value;
     }
     async remove(key) {
         const setting = await this.settingsRepository.findOne({ where: { key } });
         if (setting) {
             await this.settingsRepository.remove(setting);
+            this.settingsCache.delete(key);
         }
         return { success: true };
     }

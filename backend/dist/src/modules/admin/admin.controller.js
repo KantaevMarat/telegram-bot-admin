@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var AdminController_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AdminController = void 0;
 const common_1 = require("@nestjs/common");
@@ -20,12 +21,23 @@ const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
 const admin_guard_1 = require("../auth/guards/admin.guard");
 const create_admin_dto_1 = require("./dto/create-admin.dto");
 const update_admin_dto_1 = require("./dto/update-admin.dto");
-let AdminController = class AdminController {
+let AdminController = AdminController_1 = class AdminController {
     constructor(adminService) {
         this.adminService = adminService;
+        this.logger = new common_1.Logger(AdminController_1.name);
     }
-    async findAll() {
-        return await this.adminService.findAll();
+    async findAll(req) {
+        this.logger.log(`📥 GET /admin/admins - Request from ${req.ip || 'unknown'}`);
+        this.logger.debug(`Headers: ${JSON.stringify(req.headers)}`);
+        try {
+            const result = await this.adminService.findAll();
+            this.logger.log(`✅ GET /admin/admins - Success, returning ${Array.isArray(result) ? result.length : 'unknown'} admins`);
+            return result;
+        }
+        catch (error) {
+            this.logger.error(`❌ GET /admin/admins - Error: ${error.message}`, error.stack);
+            throw error;
+        }
     }
     async findOne(id) {
         return await this.adminService.findOne(id);
@@ -44,8 +56,9 @@ exports.AdminController = AdminController;
 __decorate([
     (0, common_1.Get)(),
     (0, swagger_1.ApiOperation)({ summary: 'Get all admins' }),
+    __param(0, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "findAll", null);
 __decorate([
@@ -81,7 +94,7 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "remove", null);
-exports.AdminController = AdminController = __decorate([
+exports.AdminController = AdminController = AdminController_1 = __decorate([
     (0, swagger_1.ApiTags)('admin'),
     (0, common_1.Controller)('admin/admins'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, admin_guard_1.AdminGuard),

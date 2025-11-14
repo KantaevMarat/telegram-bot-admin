@@ -31,10 +31,10 @@ export class CreateScenarioDto {
   @ApiProperty({ description: 'Is active', required: false })
   @IsOptional()
   @IsBoolean()
-  is_active?: boolean;
-
-  @ApiProperty({ description: 'Is active (alias)', required: false })
-  @IsOptional()
-  @IsBoolean()
   active?: boolean;
+
+  @ApiProperty({ description: 'Media file URL (photo or video)', required: false })
+  @IsOptional()
+  @IsString()
+  media_url?: string;
 }

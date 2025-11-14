@@ -27,19 +27,24 @@ const button_entity_1 = require("../../entities/button.entity");
 const task_entity_1 = require("../../entities/task.entity");
 const user_task_entity_1 = require("../../entities/user-task.entity");
 const scenario_entity_1 = require("../../entities/scenario.entity");
+const balance_log_entity_1 = require("../../entities/balance-log.entity");
 const fake_stats_service_1 = require("../stats/fake-stats.service");
 const settings_service_1 = require("../settings/settings.service");
 const messages_service_1 = require("../messages/messages.service");
 const users_service_1 = require("../users/users.service");
 const sync_service_1 = require("../sync/sync.service");
 const channels_service_1 = require("../channels/channels.service");
+const commands_service_1 = require("../commands/commands.service");
+const ranks_service_1 = require("../ranks/ranks.service");
+const premium_service_1 = require("../premium/premium.service");
 let BotService = BotService_1 = class BotService {
-    constructor(userRepo, buttonRepo, taskRepo, userTaskRepo, scenarioRepo, configService, fakeStatsService, settingsService, messagesService, usersService, syncService, channelsService) {
+    constructor(userRepo, buttonRepo, taskRepo, userTaskRepo, scenarioRepo, balanceLogRepo, configService, fakeStatsService, settingsService, messagesService, usersService, syncService, channelsService, commandsService, ranksService, premiumService) {
         this.userRepo = userRepo;
         this.buttonRepo = buttonRepo;
         this.taskRepo = taskRepo;
         this.userTaskRepo = userTaskRepo;
         this.scenarioRepo = scenarioRepo;
+        this.balanceLogRepo = balanceLogRepo;
         this.configService = configService;
         this.fakeStatsService = fakeStatsService;
         this.settingsService = settingsService;
@@ -47,16 +52,27 @@ let BotService = BotService_1 = class BotService {
         this.usersService = usersService;
         this.syncService = syncService;
         this.channelsService = channelsService;
+        this.commandsService = commandsService;
+        this.ranksService = ranksService;
+        this.premiumService = premiumService;
         this.logger = new common_1.Logger(BotService_1.name);
         this.botToken = '';
         this.pollingOffset = 0;
         this.pollingInterval = null;
         this.logger.log('BotService constructor called');
-        this.botToken = this.configService.get('TELEGRAM_BOT_TOKEN') || '';
+        const clientToken = this.configService.get('CLIENT_TG_BOT_TOKEN') || this.configService.get('CLIENT_BOT_TOKEN');
+        const telegramToken = this.configService.get('TELEGRAM_BOT_TOKEN');
+        this.botToken = clientToken || telegramToken || '';
         this.logger.log(`Bot token loaded: ${this.botToken ? 'YES' : 'NO'}`);
         this.logger.log(`Bot token preview: ${this.botToken ? this.botToken.substring(0, 10) + '...' : 'EMPTY'}`);
+        if (clientToken) {
+            this.logger.log(`✅ Using CLIENT_TG_BOT_TOKEN/CLIENT_BOT_TOKEN for client bot (${clientToken.substring(0, 10)}...)`);
+        }
+        else if (telegramToken) {
+            this.logger.log(`⚠️ Using TELEGRAM_BOT_TOKEN as fallback (${telegramToken.substring(0, 10)}...)`);
+        }
         if (!this.botToken) {
-            this.logger.error('TELEGRAM_BOT_TOKEN is not set!');
+            this.logger.error('⚠️ Neither TELEGRAM_BOT_TOKEN nor CLIENT_BOT_TOKEN is set!');
         }
     }
     async onModuleInit() {
@@ -85,8 +101,26 @@ let BotService = BotService_1 = class BotService {
         this.syncService.on('tasks.updated', () => this.syncService.invalidateCache('tasks'));
         this.syncService.on('tasks.deleted', () => this.syncService.invalidateCache('tasks'));
         this.logger.log('✅ BotService subscribed to sync events');
-        if (process.env.NODE_ENV === 'development') {
-            this.startPolling();
+        if (this.botToken) {
+            const useWebhook = this.configService.get('USE_WEBHOOK', 'false') === 'true';
+            const webhookUrl = this.configService.get('TELEGRAM_WEBHOOK_URL');
+            if (!useWebhook) {
+                this.logger.log('🤖 Starting client bot polling (polling mode - default)');
+                this.logger.log('💡 To use webhook mode, set USE_WEBHOOK=true and configure webhook via /api/bot/set-webhook');
+                this.startPolling();
+            }
+            else {
+                this.logger.log('📡 Webhook mode: polling disabled (USE_WEBHOOK=true)');
+                if (webhookUrl) {
+                    this.logger.log(`📡 Webhook URL: ${webhookUrl}`);
+                }
+                else {
+                    this.logger.warn('⚠️ USE_WEBHOOK=true but TELEGRAM_WEBHOOK_URL is not set! Bot will not receive updates.');
+                }
+            }
+        }
+        else {
+            this.logger.error('❌ Client bot token is not set! Bot will not respond to users.');
         }
     }
     async onModuleDestroy() {
@@ -110,7 +144,7 @@ let BotService = BotService_1 = class BotService {
         }
     }
     startPolling() {
-        this.logger.log('🤖 Starting bot polling for development...');
+        this.logger.log('🤖 Starting bot polling...');
         this.pollingInterval = setInterval(() => { }, 1000000);
         this.pollUpdates();
     }
@@ -152,9 +186,19 @@ let BotService = BotService_1 = class BotService {
     async handleMessage(message) {
         const chatId = message.chat.id.toString();
         const text = message.text;
+        const maintenanceMode = await this.settingsService.getValue('maintenance_mode', 'false');
+        if (maintenanceMode === 'true') {
+            await this.sendMessage(chatId, '🛠 Бот находится на техническом обслуживании. Попробуйте позже.');
+            return;
+        }
         let user = await this.userRepo.findOne({ where: { tg_id: chatId } });
         const isNewUser = !user;
         if (!user) {
+            const registrationEnabled = await this.settingsService.getValue('registration_enabled', 'true');
+            if (registrationEnabled === 'false') {
+                await this.sendMessage(chatId, '🚫 Регистрация новых пользователей временно приостановлена.');
+                return;
+            }
             let refBy;
             if (text?.startsWith('/start ref')) {
                 refBy = text.replace('/start ref', '').trim();
@@ -169,6 +213,43 @@ let BotService = BotService_1 = class BotService {
         if (user.status === 'blocked') {
             await this.sendMessage(chatId, 'Ваш аккаунт заблокирован.');
             return;
+        }
+        const hasPhoto = message.photo && message.photo.length > 0;
+        const hasVideo = message.video;
+        const hasDocument = message.document;
+        const caption = message.caption || '';
+        if (hasPhoto || hasVideo || hasDocument) {
+            try {
+                let fileId;
+                let mediaType;
+                let fileName;
+                if (hasPhoto) {
+                    const largestPhoto = message.photo[message.photo.length - 1];
+                    fileId = largestPhoto.file_id;
+                    mediaType = 'photo';
+                }
+                else if (hasVideo) {
+                    fileId = message.video.file_id;
+                    mediaType = 'video';
+                    fileName = message.video.file_name;
+                }
+                else if (hasDocument) {
+                    fileId = message.document.file_id;
+                    mediaType = 'document';
+                    fileName = message.document.file_name;
+                }
+                else {
+                    return;
+                }
+                const fileUrl = await this.getFileUrl(fileId);
+                await this.messagesService.createUserMessage(user.id, caption, fileUrl, mediaType);
+                this.logger.log(`Saved ${mediaType} from user ${chatId} (file: ${fileUrl})`);
+                return;
+            }
+            catch (error) {
+                this.logger.error(`Failed to save media from user ${chatId}:`, error);
+                return;
+            }
         }
         if (text?.startsWith('/')) {
             await this.handleCommand(chatId, text, user);
@@ -234,11 +315,27 @@ let BotService = BotService_1 = class BotService {
         try {
             const referrer = await this.userRepo.findOne({ where: { tg_id: referrerTgId } });
             if (referrer) {
-                const refBonus = await this.settingsService.getValue('ref_bonus', '10');
-                const bonusAmount = 5;
-                referrer.balance_usdt = parseFloat(referrer.balance_usdt.toString()) + bonusAmount;
+                const refBonusPercent = await this.settingsService.getValue('ref_bonus_percent', '5.00');
+                const bonusAmount = parseFloat(refBonusPercent);
+                const balanceBefore = parseFloat(referrer.balance_usdt.toString());
+                const balanceAfter = balanceBefore + bonusAmount;
+                referrer.balance_usdt = balanceAfter;
                 await this.userRepo.save(referrer);
+                await this.balanceLogRepo.save({
+                    user_id: referrer.id,
+                    delta: bonusAmount,
+                    balance_before: balanceBefore,
+                    balance_after: balanceAfter,
+                    reason: 'referral_bonus',
+                    comment: 'Бонус за приглашение реферала',
+                });
                 this.logger.log(`Referral bonus ${bonusAmount} USDT given to user ${referrerTgId}`);
+                this.sendBalanceChangeNotification(referrerTgId, balanceBefore, balanceAfter, bonusAmount, 'referral_bonus', 'Бонус за приглашение реферала').catch(error => {
+                    this.logger.error(`Failed to send referral bonus notification:`, error.message);
+                });
+                this.fakeStatsService.regenerateFakeStats().catch(error => {
+                    this.logger.error(`Failed to update fake stats after referral bonus:`, error.message);
+                });
             }
         }
         catch (error) {
@@ -300,8 +397,106 @@ let BotService = BotService_1 = class BotService {
             case '/help':
                 await this.sendHelp(chatId);
                 break;
+            case '!premium_info':
+                await this.handlePremiumInfo(chatId, user);
+                break;
+            case '!upgrade':
+                await this.handleUpgrade(chatId, user);
+                break;
+            case '/rank':
+            case '/ranks':
+                await this.sendRankInfo(chatId, user);
+                break;
             default:
-                await this.sendMessage(chatId, 'Неизвестная команда. Используйте /help для списка команд.', await this.getReplyKeyboard());
+                const task = await this.taskRepo.findOne({
+                    where: {
+                        command: cmd,
+                        active: true
+                    }
+                });
+                if (task) {
+                    await this.handleTaskCommand(chatId, user, task);
+                }
+                else {
+                    const customCommand = await this.commandsService.findByName(cmd);
+                    if (customCommand) {
+                        if (customCommand.media_url) {
+                            await this.sendMessageWithMedia(chatId, customCommand.response, customCommand.media_url);
+                        }
+                        else {
+                            await this.sendMessage(chatId, customCommand.response, await this.getReplyKeyboard());
+                        }
+                    }
+                    else {
+                        await this.sendMessage(chatId, 'Неизвестная команда. Используйте /help для списка команд.', await this.getReplyKeyboard());
+                    }
+                }
+        }
+    }
+    async handleTaskCommand(chatId, user, task) {
+        try {
+            if (task.cooldown_hours > 0) {
+                const lastCompletion = await this.userTaskRepo.findOne({
+                    where: { user_id: user.id, task_id: task.id },
+                    order: { created_at: 'DESC' },
+                });
+                if (lastCompletion) {
+                    const hoursSinceCompletion = (Date.now() - new Date(lastCompletion.created_at).getTime()) / (1000 * 60 * 60);
+                    if (hoursSinceCompletion < task.cooldown_hours) {
+                        const remainingHours = Math.ceil(task.cooldown_hours - hoursSinceCompletion);
+                        await this.sendMessage(chatId, `⏳ Это задание можно выполнить повторно через ${remainingHours} ${remainingHours === 1 ? 'час' : 'часов'}.`, await this.getReplyKeyboard());
+                        return;
+                    }
+                }
+            }
+            const completedCount = await this.userTaskRepo.count({
+                where: { user_id: user.id, task_id: task.id },
+            });
+            if (completedCount >= task.max_per_user) {
+                await this.sendMessage(chatId, '✅ Вы уже выполнили это задание максимальное количество раз.', await this.getReplyKeyboard());
+                return;
+            }
+            const reward_min = parseFloat(task.reward_min.toString());
+            const reward_max = parseFloat(task.reward_max.toString());
+            const calculatedReward = parseFloat((reward_min + Math.random() * (reward_max - reward_min)).toFixed(2));
+            const userTask = this.userTaskRepo.create({
+                user_id: user.id,
+                task_id: task.id,
+                status: task.task_type === 'manual' ? 'pending' : 'completed',
+                reward: calculatedReward,
+            });
+            this.logger.log(`💰 Assigned reward for task "${task.title}": ${calculatedReward} USDT (range: ${reward_min}-${reward_max})`);
+            await this.userTaskRepo.save(userTask);
+            if (task.task_type !== 'manual') {
+                await this.usersService.updateBalance(user.tg_id, userTask.reward, `Выполнение задания: ${task.title}`);
+                await this.userRepo.update(user.id, {
+                    tasks_completed: user.tasks_completed + 1,
+                    total_earned: user.total_earned + userTask.reward,
+                });
+                const updatedUser = await this.userRepo.findOne({ where: { id: user.id } });
+                if (updatedUser) {
+                    await this.sendMessage(chatId, `✅ *Задание выполнено успешно!*\n\n` +
+                        `📋 ${task.title}\n` +
+                        `💰 Награда: *${calculatedReward.toFixed(2)} USDT*\n\n` +
+                        `━━━━━━━━━━━━━━━━\n` +
+                        `💳 Текущий баланс: *${updatedUser.balance_usdt.toFixed(2)} USDT*\n` +
+                        `✨ Выполнено заданий: ${updatedUser.tasks_completed}\n` +
+                        `📈 Всего заработано: ${updatedUser.total_earned.toFixed(2)} USDT\n\n` +
+                        `Поздравляем! Средства зачислены на ваш счет. 🎉`, await this.getReplyKeyboard());
+                }
+            }
+            else {
+                await this.sendMessage(chatId, `📝 *Задание отправлено на проверку*\n\n` +
+                    `📋 ${task.title}\n` +
+                    `💰 Потенциальная награда: *${calculatedReward.toFixed(2)} USDT*\n\n` +
+                    `⏳ Ожидайте подтверждения администратора.\n` +
+                    `Мы проверим выполнение в ближайшее время и отправим вам уведомление.\n\n` +
+                    `📬 Вы получите сообщение о результатах проверки.`, await this.getReplyKeyboard());
+            }
+        }
+        catch (error) {
+            this.logger.error(`Error handling task command:`, error);
+            await this.sendMessage(chatId, 'Произошла ошибка при выполнении задания. Попробуйте позже.', await this.getReplyKeyboard());
         }
     }
     async sendHelp(chatId) {
@@ -584,15 +779,37 @@ let BotService = BotService_1 = class BotService {
     async sendMessage(chatId, text, replyMarkup) {
         const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
         try {
-            await axios_1.default.post(url, {
+            this.logger.debug(`📤 Sending message to ${chatId}, text length: ${text?.length || 0}`);
+            const response = await axios_1.default.post(url, {
                 chat_id: chatId,
                 text,
                 parse_mode: 'HTML',
                 reply_markup: replyMarkup,
             });
+            this.logger.debug(`✅ Message sent successfully to ${chatId}`);
+            return response.data;
         }
         catch (error) {
-            this.logger.error(`Failed to send message to ${chatId}:`, error.message);
+            this.logger.error(`❌ Failed to send message to ${chatId}:`, error.message);
+            if (error.response?.data) {
+                this.logger.error(`Telegram API error:`, JSON.stringify(error.response.data));
+            }
+            throw error;
+        }
+    }
+    async getFileUrl(fileId) {
+        try {
+            const getFileUrl = `https://api.telegram.org/bot${this.botToken}/getFile`;
+            const response = await axios_1.default.post(getFileUrl, {
+                file_id: fileId,
+            });
+            const filePath = response.data.result.file_path;
+            const fileUrl = `https://api.telegram.org/file/bot${this.botToken}/${filePath}`;
+            return fileUrl;
+        }
+        catch (error) {
+            this.logger.error(`Failed to get file URL for file_id ${fileId}:`, error);
+            throw error;
         }
     }
     async sendMessageWithMedia(chatId, text, mediaUrl, mediaType) {
@@ -625,37 +842,75 @@ let BotService = BotService_1 = class BotService {
                     break;
             }
             const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
-            const urlParts = mediaUrl.split('/');
-            const encodedFilename = urlParts[urlParts.length - 1];
-            const decodedFilename = decodeURIComponent(encodedFilename);
-            const cleanFilename = decodedFilename.includes('-')
-                ? decodedFilename.substring(decodedFilename.indexOf('-') + 1)
-                : decodedFilename;
             await axios_1.default.post(url, {
                 chat_id: chatId,
                 [mediaField]: mediaUrl,
-                caption: text || `📎 ${cleanFilename}`,
-                parse_mode: 'HTML',
+                caption: text || undefined,
+                parse_mode: text ? 'HTML' : undefined,
             });
-            this.logger.log(`Sent ${mediaType} message to ${chatId}`);
+            this.logger.log(`✅ Sent ${mediaType} message to ${chatId}`);
         }
         catch (error) {
-            this.logger.error(`Failed to send media message to ${chatId}:`, error.response?.data || error.message);
-            try {
-                const urlParts = mediaUrl.split('/');
-                const encodedFilename = urlParts[urlParts.length - 1];
-                const decodedFilename = decodeURIComponent(encodedFilename);
-                const cleanFilename = decodedFilename.includes('-')
-                    ? decodedFilename.substring(decodedFilename.indexOf('-') + 1)
-                    : decodedFilename;
-                const fallbackText = text
-                    ? `${text}\n\n📎 Файл: ${cleanFilename}\n\n⚠️ Для получения файла используйте ссылку:\n${mediaUrl}`
-                    : `📎 Отправлен файл: ${cleanFilename}\n\n⚠️ Для получения файла используйте ссылку:\n${mediaUrl}`;
-                await this.sendMessage(chatId, fallbackText);
+            this.logger.error(`❌ Failed to send media message to ${chatId}:`, {
+                error: error.response?.data || error.message,
+                mediaUrl,
+                mediaType,
+                status: error.response?.status,
+            });
+        }
+    }
+    async sendBalanceChangeNotification(chatId, balanceBefore, balanceAfter, delta, reason, comment) {
+        try {
+            this.logger.log(`Sending balance notification to ${chatId}: delta=${delta}, reason=${reason}`);
+            const isAddition = delta > 0;
+            const emoji = isAddition ? '💰' : '💸';
+            const operationType = isAddition ? 'Пополнение' : 'Списание';
+            const amountStr = isAddition ? `+${delta.toFixed(2)}` : delta.toFixed(2);
+            let reasonText = comment || 'Причина не указана';
+            const reasonTranslations = {
+                'manual_adjustment': 'Ручная корректировка администратором',
+                'admin_add': 'Пополнение администратором',
+                'admin_deduct': 'Списание администратором',
+                'task_reward': 'Награда за выполнение задания',
+                'referral_bonus': 'Реферальный бонус',
+                'payout_request': 'Заявка на вывод средств',
+                'payout_rejected': 'Отклонение заявки на вывод',
+                'payout_completed': 'Завершение вывода средств',
+            };
+            if (!comment && reasonTranslations[reason]) {
+                reasonText = reasonTranslations[reason];
             }
-            catch (fallbackError) {
-                this.logger.error(`Failed to send fallback message:`, fallbackError);
-                await this.sendMessage(chatId, text || '📎 Отправлен файл');
+            else if (!comment) {
+                reasonText = reason;
+            }
+            const currentDate = new Date().toLocaleString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+            const message = `${emoji} *${operationType} баланса*\n\n` +
+                `💵 Сумма: *${amountStr} USDT*\n` +
+                `📊 Было: ${balanceBefore.toFixed(2)} USDT\n` +
+                `📈 Стало: *${balanceAfter.toFixed(2)} USDT*\n\n` +
+                `📝 Причина: _${reasonText}_\n` +
+                `📅 Дата: ${currentDate}`;
+            await this.sendMessage(chatId, message);
+            this.logger.log(`✅ Balance notification sent successfully to ${chatId}`);
+        }
+        catch (error) {
+            if (error.response?.data?.error_code === 403) {
+                this.logger.warn(`User ${chatId} has blocked the bot - notification not sent`);
+            }
+            else if (error.response?.data?.description?.includes('chat not found')) {
+                this.logger.warn(`Chat ${chatId} not found - notification not sent`);
+            }
+            else {
+                this.logger.error(`Failed to send balance notification to ${chatId}:`, error.message);
+                if (error.response?.data) {
+                    this.logger.error('Telegram API error:', JSON.stringify(error.response.data));
+                }
             }
         }
     }
@@ -710,7 +965,7 @@ let BotService = BotService_1 = class BotService {
         await this.sendMessage(chatId, text, await this.getReplyKeyboard());
     }
     async sendWithdrawInfo(chatId, user) {
-        const minWithdraw = await this.settingsService.getValue('min_withdraw', '10');
+        const minWithdraw = await this.settingsService.getValue('min_withdraw_usdt', '10.00');
         if (parseFloat(user.balance_usdt.toString()) < parseFloat(minWithdraw)) {
             await this.sendMessage(chatId, `❌ *Недостаточно средств для вывода*\n\n` +
                 `Минимальная сумма: ${minWithdraw} USDT\n` +
@@ -733,15 +988,15 @@ let BotService = BotService_1 = class BotService {
         const refCount = await this.userRepo.count({
             where: { referred_by: user.id },
         });
-        const refBonus = await this.settingsService.getValue('ref_bonus', '5');
+        const refBonusPercent = await this.settingsService.getValue('ref_bonus_percent', '5.00');
         const botUsername = await this.settingsService.getValue('bot_username', 'yourbot');
         const refLink = `https://t.me/${botUsername}?start=ref${user.tg_id}`;
         const text = `👥 *Реферальная программа*\n\n` +
-            `💰 Получайте *${refBonus} USDT* за каждого друга!\n` +
+            `💰 Получайте *${refBonusPercent} USDT* за каждого друга!\n` +
             `🎁 Ваш друг также получит бонус при регистрации\n\n` +
             `📊 *Ваша статистика:*\n` +
             `👥 Приглашено: *${refCount} чел.*\n` +
-            `💵 Заработано с рефералов: ${refCount * parseInt(refBonus)} USDT\n\n` +
+            `💵 Заработано с рефералов: ${(refCount * parseFloat(refBonusPercent)).toFixed(2)} USDT\n\n` +
             `🔗 *Ваша реферальная ссылка:*\n` +
             `\`${refLink}\`\n\n` +
             `📤 Скопируйте ссылку и делитесь с друзьями!\n` +
@@ -849,6 +1104,32 @@ let BotService = BotService_1 = class BotService {
             await this.sendMessage(chatId, '❌ Задание не найдено. Начните его выполнение заново.');
             return;
         }
+        if (task.min_completion_time > 0 && userTask.started_at) {
+            const now = new Date();
+            const startedAt = new Date(userTask.started_at);
+            const elapsedMinutes = Math.floor((now.getTime() - startedAt.getTime()) / (1000 * 60));
+            const remainingMinutes = task.min_completion_time - elapsedMinutes;
+            if (remainingMinutes > 0) {
+                const hours = Math.floor(remainingMinutes / 60);
+                const minutes = remainingMinutes % 60;
+                let timeText = '';
+                if (hours > 0) {
+                    timeText = `${hours} ч ${minutes} мин`;
+                }
+                else {
+                    timeText = `${minutes} мин`;
+                }
+                await this.sendMessage(chatId, `⏳ *Подождите немного!*\n\n` +
+                    `Кнопка подтверждения выполнения станет доступна через:\n` +
+                    `⏱️ ${timeText}\n\n` +
+                    `Это необходимо для проверки честного выполнения задания.`, {
+                    inline_keyboard: [
+                        [{ text: '🔙 К заданиям', callback_data: 'tasks' }],
+                    ],
+                });
+                return;
+            }
+        }
         if (task.task_type === 'subscription' && task.channel_id) {
             const isSubscribed = await this.checkChannelSubscription(user.tg_id, task.channel_id);
             if (!isSubscribed) {
@@ -866,18 +1147,26 @@ let BotService = BotService_1 = class BotService {
             }
             this.logger.log(`✅ Subscription verified: user ${user.tg_id}, channel ${task.channel_id}`);
         }
-        const reward = Math.floor(Math.random() * (task.reward_max - task.reward_min + 1)) + task.reward_min;
-        const requiresManualReview = task.reward_max > 50;
+        const reward_min = parseFloat(task.reward_min.toString());
+        const reward_max = parseFloat(task.reward_max.toString());
+        const baseReward = parseFloat((reward_min + Math.random() * (reward_max - reward_min)).toFixed(2));
+        const userRank = await this.ranksService.getUserRank(user.id);
+        const reward = this.ranksService.applyRankBonus(baseReward, parseFloat(userRank.bonus_percentage.toString()));
+        this.logger.log(`💰 Calculated reward for task "${task.title}": ${baseReward} USDT (base) -> ${reward} USDT (with +${userRank.bonus_percentage}% rank bonus)`);
+        const requiresManualReview = task.task_type === 'manual' || task.reward_max > 50;
         if (requiresManualReview) {
             userTask.status = 'submitted';
             userTask.reward = reward;
             userTask.submitted_at = new Date();
             await this.userTaskRepo.save(userTask);
-            await this.sendMessage(chatId, `⏳ *Задание отправлено на проверку!*\n\n` +
+            await this.sendMessage(chatId, `📝 *Задание отправлено на модерацию*\n\n` +
                 `📋 ${task.title}\n` +
-                `💰 Потенциальная награда: ${reward} USDT\n\n` +
-                `Администратор проверит выполнение в ближайшее время. ` +
-                `Вы получите уведомление о результатах проверки.`, {
+                `💰 Потенциальная награда: *${reward.toFixed(2)} USDT*\n\n` +
+                `━━━━━━━━━━━━━━━━\n` +
+                `⏳ *Статус:* На проверке\n` +
+                `📬 Мы проверим выполнение задания в ближайшее время.\n\n` +
+                `✅ При успешной проверке средства будут зачислены на ваш счет.\n` +
+                `❌ В случае отклонения вы получите уведомление с причиной.`, {
                 inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
             });
         }
@@ -886,18 +1175,51 @@ let BotService = BotService_1 = class BotService {
             userTask.reward = reward;
             userTask.completed_at = new Date();
             await this.userTaskRepo.save(userTask);
-            user.balance_usdt = parseFloat(user.balance_usdt.toString()) + reward;
+            const balanceBefore = parseFloat(user.balance_usdt.toString());
+            const balanceAfter = balanceBefore + reward;
+            user.balance_usdt = balanceAfter;
             user.total_earned = parseFloat(user.total_earned.toString()) + reward;
             user.tasks_completed = user.tasks_completed + 1;
             await this.userRepo.save(user);
-            await this.sendMessage(chatId, `✅ *Задание выполнено!*\n\n` +
+            await this.ranksService.incrementTasksCompleted(user.id);
+            const rankUpdate = await this.ranksService.checkAndUpdateRank(user.id);
+            if (rankUpdate.leveledUp) {
+                const rankNames = { stone: 'Камень', bronze: 'Бронза', silver: 'Серебро', gold: 'Золото', platinum: 'Платина' };
+                const rankEmojis = { stone: '🪨', bronze: '🥉', silver: '🥈', gold: '🥇', platinum: '💎' };
+                setTimeout(() => {
+                    this.sendMessage(chatId, `🎉 *Поздравляем!*\n\n` +
+                        `${rankEmojis[rankUpdate.newLevel]} Ты достиг ранга *${rankNames[rankUpdate.newLevel]}*!\n\n` +
+                        `💰 Новый бонус: *+${rankUpdate.rank.bonus_percentage}%* ко всем наградам!\n\n` +
+                        (rankUpdate.newLevel === 'gold' ? `💎 Теперь доступна Платиновая подписка!\nИспользуй !premium_info для подробностей` : '')).catch(err => this.logger.error('Failed to send rank up notification:', err));
+                }, 2000);
+            }
+            await this.balanceLogRepo.save({
+                user_id: user.id,
+                delta: reward,
+                balance_before: balanceBefore,
+                balance_after: balanceAfter,
+                reason: 'task_reward',
+                comment: `Награда за выполнение задания: ${task.title}`,
+            });
+            this.logger.log(`User ${user.tg_id} completed task ${task.id} and earned ${reward} USDT`);
+            await this.sendMessage(chatId, `✅ *Задание выполнено успешно!*\n\n` +
                 `📋 ${task.title}\n` +
-                `💰 Получено: +${reward} USDT\n\n` +
-                `Ваш баланс: ${user.balance_usdt} USDT`, {
+                `💰 Награда: *+${reward.toFixed(2)} USDT*\n\n` +
+                `━━━━━━━━━━━━━━━━\n` +
+                `💳 Текущий баланс: *${balanceAfter.toFixed(2)} USDT*\n` +
+                `✨ Выполнено заданий: ${user.tasks_completed}\n` +
+                `📈 Всего заработано: ${user.total_earned.toFixed(2)} USDT\n\n` +
+                `Поздравляем! Средства зачислены на ваш счет. 🎉`, {
                 inline_keyboard: [
                     [{ text: '📋 Другие задания', callback_data: 'tasks' }],
                     [{ text: '💰 Мой баланс', callback_data: 'balance' }],
                 ],
+            });
+            this.sendBalanceChangeNotification(user.tg_id, balanceBefore, balanceAfter, reward, 'task_reward', `Награда за выполнение задания: ${task.title}`).catch(error => {
+                this.logger.error(`Failed to send task reward notification:`, error.message);
+            });
+            this.fakeStatsService.regenerateFakeStats().catch(error => {
+                this.logger.error(`Failed to update fake stats after task completion:`, error.message);
             });
         }
     }
@@ -969,6 +1291,13 @@ let BotService = BotService_1 = class BotService {
         });
     }
     async handleCustomButton(chatId, user, button) {
+        if (button.command) {
+            this.logger.log(`Executing command from button ${button.id}: ${button.command}`);
+            await this.handleCommand(chatId, button.command, user);
+            if (!button.action_payload && !button.media_url) {
+                return;
+            }
+        }
         let text = 'Информация';
         let keyboard = { inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'menu' }]] };
         if (button.action_payload?.inline_buttons && Array.isArray(button.action_payload.inline_buttons)) {
@@ -1001,7 +1330,35 @@ let BotService = BotService_1 = class BotService {
                 .replace(/{username}/g, user.username || user.first_name || 'Друг')
                 .replace(/{balance}/g, user.balance_usdt.toString())
                 .replace(/{tasks_completed}/g, user.tasks_completed.toString());
-            await this.sendMessage(chatId, text, keyboard);
+            if (button.media_url) {
+                try {
+                    const mediaUrl = button.media_url;
+                    const urlWithoutQuery = mediaUrl.split('?')[0];
+                    const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
+                    let mediaType = 'photo';
+                    if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
+                        mediaType = 'video';
+                    }
+                    else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
+                        mediaType = 'document';
+                    }
+                    else if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+                        mediaType = 'photo';
+                    }
+                    this.logger.log(`Sending media for button ${button.id}: ${mediaType} from ${mediaUrl}`);
+                    await this.sendMessageWithMedia(chatId, text, mediaUrl, mediaType);
+                    if (keyboard && keyboard.inline_keyboard && keyboard.inline_keyboard.length > 0) {
+                        await this.sendMessage(chatId, '👇 Выберите действие:', keyboard);
+                    }
+                }
+                catch (error) {
+                    this.logger.error(`Failed to send media for button ${button.id}:`, error);
+                    await this.sendMessage(chatId, text, keyboard);
+                }
+            }
+            else {
+                await this.sendMessage(chatId, text, keyboard);
+            }
             return;
         }
         if (button.action_type === 'text' || button.action_type === 'send_message') {
@@ -1129,7 +1486,35 @@ let BotService = BotService_1 = class BotService {
                 };
             }
         }
-        await this.sendMessage(chatId, text, keyboard);
+        if (button.media_url) {
+            try {
+                const mediaUrl = button.media_url;
+                const urlWithoutQuery = mediaUrl.split('?')[0];
+                const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
+                let mediaType = 'photo';
+                if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
+                    mediaType = 'video';
+                }
+                else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
+                    mediaType = 'document';
+                }
+                else if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+                    mediaType = 'photo';
+                }
+                this.logger.log(`Sending media for button ${button.id}: ${mediaType} from ${mediaUrl}`);
+                await this.sendMessageWithMedia(chatId, text, mediaUrl, mediaType);
+                if (keyboard && keyboard.inline_keyboard && keyboard.inline_keyboard.length > 0) {
+                    await this.sendMessage(chatId, '👇 Выберите действие:', keyboard);
+                }
+            }
+            catch (error) {
+                this.logger.error(`Failed to send media for button ${button.id}:`, error);
+                await this.sendMessage(chatId, text, keyboard);
+            }
+        }
+        else {
+            await this.sendMessage(chatId, text, keyboard);
+        }
     }
     async handleTaskVerification(chatId, user, data) {
         const parts = data.replace('verify_', '').split('_');
@@ -1158,10 +1543,20 @@ let BotService = BotService_1 = class BotService {
             status: 'completed',
         });
         await this.userTaskRepo.save(userTask);
-        user.balance_usdt = parseFloat(user.balance_usdt.toString()) + reward;
+        const balanceBefore = parseFloat(user.balance_usdt.toString());
+        const balanceAfter = balanceBefore + reward;
+        user.balance_usdt = balanceAfter;
         user.total_earned = parseFloat(user.total_earned.toString()) + reward;
         user.tasks_completed = user.tasks_completed + 1;
         await this.userRepo.save(user);
+        await this.balanceLogRepo.save({
+            user_id: user.id,
+            delta: reward,
+            balance_before: balanceBefore,
+            balance_after: balanceAfter,
+            reason: 'task_reward',
+            comment: `Награда за выполнение задания (верифицировано): ${task.title}`,
+        });
         const text = `✅ *Задание выполнено!*\n\n` +
             `💰 Вы получили: ${reward} USDT\n` +
             `💵 Ваш новый баланс: ${user.balance_usdt} USDT\n\n` +
@@ -1174,6 +1569,12 @@ let BotService = BotService_1 = class BotService {
         };
         await this.sendMessage(chatId, text, keyboard);
         this.logger.log(`User ${user.tg_id} completed task ${taskId} and earned ${reward} USDT`);
+        this.sendBalanceChangeNotification(user.tg_id, balanceBefore, balanceAfter, reward, 'task_reward', `Награда за выполнение задания (верифицировано): ${task.title}`).catch(error => {
+            this.logger.error(`Failed to send task verification notification:`, error.message);
+        });
+        this.fakeStatsService.regenerateFakeStats().catch(error => {
+            this.logger.error(`Failed to update fake stats after task verification:`, error.message);
+        });
     }
     async handleWithdrawalRequest(chatId, user, text) {
         const parts = text.split(' ');
@@ -1187,8 +1588,8 @@ let BotService = BotService_1 = class BotService {
             await this.sendMessage(chatId, '❌ Неверная сумма');
             return;
         }
-        const minWithdraw = parseFloat(await this.settingsService.getValue('min_withdraw', '10'));
-        const maxWithdraw = parseFloat(await this.settingsService.getValue('max_withdraw', '10000'));
+        const minWithdraw = parseFloat(await this.settingsService.getValue('min_withdraw_usdt', '10.00'));
+        const maxWithdraw = parseFloat(await this.settingsService.getValue('max_withdraw_usdt', '5000.00'));
         if (amount < minWithdraw) {
             await this.sendMessage(chatId, `❌ Минимальная сумма для вывода: ${minWithdraw} USDT`);
             return;
@@ -1226,7 +1627,7 @@ let BotService = BotService_1 = class BotService {
         let scenarios = this.syncService.getCache(cacheKey);
         if (!scenarios) {
             scenarios = await this.scenarioRepo.find({
-                where: { is_active: true },
+                where: { active: true },
             });
             this.syncService.setCache(cacheKey, scenarios, 60);
         }
@@ -1252,7 +1653,32 @@ let BotService = BotService_1 = class BotService {
                     .replace(/{balance}/g, user.balance_usdt.toString())
                     .replace(/{tasks_completed}/g, user.tasks_completed.toString())
                     .replace(/{total_earned}/g, user.total_earned.toString());
-                await this.sendMessage(chatId, text);
+                if (scenario.media_url) {
+                    try {
+                        const mediaUrl = scenario.media_url;
+                        const urlWithoutQuery = mediaUrl.split('?')[0];
+                        const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
+                        let mediaType = 'photo';
+                        if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
+                            mediaType = 'video';
+                        }
+                        else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
+                            mediaType = 'document';
+                        }
+                        else if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+                            mediaType = 'photo';
+                        }
+                        this.logger.log(`Sending media for scenario ${scenario.id}: ${mediaType} from ${mediaUrl}`);
+                        await this.sendMessageWithMedia(chatId, text, mediaUrl, mediaType);
+                    }
+                    catch (error) {
+                        this.logger.error(`Failed to send media for scenario ${scenario.id}:`, error);
+                        await this.sendMessage(chatId, text);
+                    }
+                }
+                else {
+                    await this.sendMessage(chatId, text);
+                }
                 return;
             }
             if (scenario.steps && Array.isArray(scenario.steps)) {
@@ -1340,6 +1766,154 @@ let BotService = BotService_1 = class BotService {
             return false;
         }
     }
+    async sendRankInfo(chatId, user) {
+        const userRank = await this.ranksService.getUserRank(user.id);
+        const progress = await this.ranksService.getRankProgress(user.id);
+        const settings = await this.ranksService.getSettings();
+        const rankEmojis = {
+            stone: '🪨',
+            bronze: '🥉',
+            silver: '🥈',
+            gold: '🥇',
+            platinum: '💎',
+        };
+        const rankNames = {
+            stone: 'Камень',
+            bronze: 'Бронза',
+            silver: 'Серебро',
+            gold: 'Золото',
+            platinum: 'Платина',
+        };
+        let text = `${rankEmojis[userRank.current_rank]} *Твой ранг: ${rankNames[userRank.current_rank]}*\n\n`;
+        text += `💰 Бонус к наградам: *+${userRank.bonus_percentage}%*\n\n`;
+        if (userRank.platinum_active && userRank.platinum_expires_at) {
+            const daysLeft = Math.ceil((new Date(userRank.platinum_expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+            text += `⏰ Платиновая подписка истекает через: *${daysLeft} дней*\n\n`;
+        }
+        if (progress.nextRank) {
+            text += `📊 *Прогресс до ${rankNames[progress.nextRank]}:*\n`;
+            text += `✅ Выполнено заданий: ${progress.tasksProgress.current}/${progress.tasksProgress.required}\n`;
+            text += `👥 Приглашено рефералов: ${progress.referralsProgress.current}/${progress.referralsProgress.required}\n\n`;
+            const overallPercent = Math.floor(progress.progress);
+            text += `Общий прогресс: ${overallPercent}%\n`;
+            text += `${'▓'.repeat(Math.floor(overallPercent / 10))}${'░'.repeat(10 - Math.floor(overallPercent / 10))}\n\n`;
+        }
+        text += `🎯 *Система рангов:*\n`;
+        text += `🪨 Камень: 0% бонус\n`;
+        text += `🥉 Бронза: +${settings.bronze_bonus}% бонус\n`;
+        text += `🥈 Серебро: +${settings.silver_bonus}% бонус\n`;
+        text += `🥇 Золото: +${settings.gold_bonus}% бонус\n`;
+        text += `💎 Платина: +${settings.platinum_bonus}% бонус (платная)\n\n`;
+        if (userRank.current_rank === 'silver' || userRank.current_rank === 'gold') {
+            text += `\n💡 Используй !premium_info для информации о Платиновой подписке`;
+        }
+        await this.sendMessage(chatId, text, await this.getReplyKeyboard());
+    }
+    async handlePremiumInfo(chatId, user) {
+        const userRank = await this.ranksService.getUserRank(user.id);
+        const settings = await this.ranksService.getSettings();
+        if (userRank.current_rank === 'stone' || userRank.current_rank === 'bronze') {
+            await this.sendMessage(chatId, '⚠️ *Платиновая подписка доступна с уровня Серебро.*\n\n' +
+                'Продолжай выполнять задания и приглашать рефералов для повышения ранга!', await this.getReplyKeyboard());
+            return;
+        }
+        let text = '🏆 *ПЛАТИНОВАЯ ПОДПИСКА*\n\n';
+        text += '💎 *Преимущества:*\n';
+        text += `• Бонус *+${settings.platinum_bonus}%* на все задания\n`;
+        text += `• 👨‍💼 Персональный менеджер @${settings.manager_username}\n`;
+        text += '• 📢 Закрытый канал с VIP-заданиями\n';
+        text += '• ⚡ Приоритетная поддержка 24/7\n';
+        text += '• 🎁 Расширенная реферальная программа\n\n';
+        text += '💰 *Стоимость:*\n';
+        text += `• ${settings.platinum_price_usd}$ с баланса (мгновенная активация)\n`;
+        text += `• ${settings.platinum_price_rub} рублей на реквизиты\n`;
+        text += `• ${settings.platinum_price_uah} гривен на реквизиты\n\n`;
+        text += `📅 Длительность: ${settings.platinum_duration_days} дней\n\n`;
+        if (userRank.current_rank !== 'gold' && userRank.current_rank !== 'platinum') {
+            text += '🎯 *Доступно с уровня Золото*\n\n';
+            const progress = await this.ranksService.getRankProgress(user.id);
+            if (progress.nextRank === 'gold') {
+                text += `Твой прогресс до Золота: ${Math.floor(progress.progress)}%\n`;
+            }
+        }
+        else {
+            text += '\n💎 Используй !upgrade для оформления подписки';
+        }
+        await this.sendMessage(chatId, text, await this.getReplyKeyboard());
+    }
+    async handleUpgrade(chatId, user) {
+        const userRank = await this.ranksService.getUserRank(user.id);
+        const settings = await this.ranksService.getSettings();
+        if (userRank.current_rank !== 'gold' && userRank.current_rank !== 'platinum') {
+            await this.sendMessage(chatId, '⚠️ *Платиновая подписка доступна только с уровня Золото*\n\n' +
+                'Продолжай выполнять задания для повышения ранга!\n\n' +
+                'Используй /rank чтобы посмотреть свой прогресс.', await this.getReplyKeyboard());
+            return;
+        }
+        if (userRank.platinum_active && userRank.platinum_expires_at) {
+            const daysLeft = Math.ceil((new Date(userRank.platinum_expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+            await this.sendMessage(chatId, `💎 *У тебя уже активна Платиновая подписка!*\n\n` +
+                `⏰ Действует еще ${daysLeft} дней\n\n` +
+                `Продление будет доступно за 3 дня до окончания.`, await this.getReplyKeyboard());
+            return;
+        }
+        const progress = await this.ranksService.getRankProgress(user.id);
+        let text = '🔍 *Проверяем твою статистику...*\n\n';
+        text += `✅ Уровень: *${userRank.current_rank === 'gold' ? 'Золото' : 'Платина'}*\n`;
+        text += `✅ Выполнено заданий: *${userRank.tasks_completed}*\n`;
+        text += `✅ Рефералов: *${userRank.referrals_count}*\n\n`;
+        text += '✨ *Ты соответствуешь требованиям для Платиновой подписки!*\n\n';
+        text += '━━━━━━━━━━━━━━━━\n\n';
+        text += '💳 *Выбери способ оплаты Платиновой подписки:*\n\n';
+        text += `1️⃣ Оплата *${settings.platinum_price_usd}$* с баланса\n`;
+        text += '   └ Мгновенная активация\n\n';
+        text += `2️⃣ Оплата *${settings.platinum_price_rub} рублей* на реквизиты\n`;
+        text += '   └ Активация после подтверждения менеджером\n\n';
+        text += `3️⃣ Оплата *${settings.platinum_price_uah} гривен* на реквизиты\n`;
+        text += '   └ Активация после подтверждения менеджером\n\n';
+        text += '📝 Введи номер варианта (1/2/3):';
+        await this.sendMessage(chatId, text);
+    }
+    async handlePaymentMethodChoice(chatId, user, choice) {
+        const settings = await this.ranksService.getSettings();
+        switch (choice) {
+            case '1':
+                const result = await this.premiumService.processBalancePayment(user.id);
+                if (result.success) {
+                    await this.sendMessage(chatId, `✅ *Оплата прошла успешно!*\n\n` +
+                        `💎 Твоя Платиновая подписка активирована на ${settings.platinum_duration_days} дней\n\n` +
+                        `🎁 *Твои преимущества:*\n` +
+                        `• Бонус +${settings.platinum_bonus}% на все задания\n` +
+                        `• Персональный менеджер: @${settings.manager_username}\n` +
+                        `• Доступ к VIP-заданиям\n` +
+                        `• Приоритетная поддержка\n\n` +
+                        `Добро пожаловать в элиту! 🎉`, await this.getReplyKeyboard());
+                }
+                else {
+                    await this.sendMessage(chatId, `❌ ${result.message}\n\n` +
+                        `Пополни баланс или выбери оплату в рублях/гривнах.\n\n` +
+                        `Используй !upgrade чтобы попробовать снова.`, await this.getReplyKeyboard());
+                }
+                break;
+            case '2':
+                const rubRequest = await this.premiumService.createRequest(user.id, 'rub_requisites');
+                await this.sendMessage(chatId, `✅ *Отлично!*\n\n` +
+                    `📝 Твой запрос №*${rubRequest.request_number}* принят.\n\n` +
+                    `👨‍💼 Менеджер свяжется с тобой в этом же чате для отправки реквизитов в рублях.\n\n` +
+                    `⏳ Ожидай сообщения в течение 10 минут!`, await this.getReplyKeyboard());
+                break;
+            case '3':
+                const uahRequest = await this.premiumService.createRequest(user.id, 'uah_requisites');
+                await this.sendMessage(chatId, `✅ *Отлично!*\n\n` +
+                    `📝 Твой запрос №*${uahRequest.request_number}* принят.\n\n` +
+                    `👨‍💼 Менеджер свяжется с тобой в этом же чате для отправки реквизитов в гривнах.\n\n` +
+                    `⏳ Ожидай сообщения в течение 10 минут!`, await this.getReplyKeyboard());
+                break;
+            default:
+                await this.sendMessage(chatId, '❌ Неверный выбор. Пожалуйста, введи 1, 2 или 3.\n\n' +
+                    'Используй !upgrade чтобы попробовать снова.', await this.getReplyKeyboard());
+        }
+    }
 };
 exports.BotService = BotService;
 exports.BotService = BotService = BotService_1 = __decorate([
@@ -1349,7 +1923,12 @@ exports.BotService = BotService = BotService_1 = __decorate([
     __param(2, (0, typeorm_1.InjectRepository)(task_entity_1.Task)),
     __param(3, (0, typeorm_1.InjectRepository)(user_task_entity_1.UserTask)),
     __param(4, (0, typeorm_1.InjectRepository)(scenario_entity_1.Scenario)),
+    __param(5, (0, typeorm_1.InjectRepository)(balance_log_entity_1.BalanceLog)),
+    __param(13, (0, common_1.Inject)((0, common_1.forwardRef)(() => commands_service_1.CommandsService))),
+    __param(14, (0, common_1.Inject)((0, common_1.forwardRef)(() => ranks_service_1.RanksService))),
+    __param(15, (0, common_1.Inject)((0, common_1.forwardRef)(() => premium_service_1.PremiumService))),
     __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
@@ -1360,6 +1939,9 @@ exports.BotService = BotService = BotService_1 = __decorate([
         messages_service_1.MessagesService,
         users_service_1.UsersService,
         sync_service_1.SyncService,
-        channels_service_1.ChannelsService])
+        channels_service_1.ChannelsService,
+        commands_service_1.CommandsService,
+        ranks_service_1.RanksService,
+        premium_service_1.PremiumService])
 ], BotService);
 //# sourceMappingURL=bot.service.js.map

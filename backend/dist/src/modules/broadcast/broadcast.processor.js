@@ -29,7 +29,18 @@ let BroadcastProcessor = BroadcastProcessor_1 = class BroadcastProcessor extends
         this.broadcastService = broadcastService;
         this.logger = new common_1.Logger(BroadcastProcessor_1.name);
         this.botToken = '';
-        this.botToken = this.configService.get('TELEGRAM_BOT_TOKEN') || '';
+        const clientToken = this.configService.get('CLIENT_TG_BOT_TOKEN') || this.configService.get('CLIENT_BOT_TOKEN');
+        const telegramToken = this.configService.get('TELEGRAM_BOT_TOKEN');
+        this.botToken = clientToken || telegramToken || '';
+        if (clientToken) {
+            this.logger.log(`✅ Using CLIENT_TG_BOT_TOKEN/CLIENT_BOT_TOKEN for broadcast (${clientToken.substring(0, 10)}...)`);
+        }
+        else if (telegramToken) {
+            this.logger.log(`⚠️ Using TELEGRAM_BOT_TOKEN as fallback for broadcast (${telegramToken.substring(0, 10)}...)`);
+        }
+        else {
+            this.logger.error('⚠️ Neither CLIENT_TG_BOT_TOKEN/CLIENT_BOT_TOKEN nor TELEGRAM_BOT_TOKEN is set for broadcast!');
+        }
     }
     async process(job) {
         const { broadcastId, users, text, media_urls } = job.data;
@@ -52,32 +63,45 @@ let BroadcastProcessor = BroadcastProcessor_1 = class BroadcastProcessor extends
         return { successCount, errorCount };
     }
     async sendMessage(chatId, text, mediaUrls) {
-        const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
-        await axios_1.default.post(url, {
-            chat_id: chatId,
-            text,
-            parse_mode: 'HTML',
-        });
         if (mediaUrls && mediaUrls.length > 0) {
-            for (const mediaUrl of mediaUrls) {
-                await this.sendMedia(chatId, mediaUrl);
+            await this.sendMedia(chatId, mediaUrls[0], text);
+            for (let i = 1; i < mediaUrls.length; i++) {
+                await this.sendMedia(chatId, mediaUrls[i]);
+            }
+        }
+        else {
+            if (text) {
+                const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
+                await axios_1.default.post(url, {
+                    chat_id: chatId,
+                    text,
+                    parse_mode: 'HTML',
+                });
             }
         }
     }
-    async sendMedia(chatId, mediaUrl) {
+    async sendMedia(chatId, mediaUrl, caption) {
         const ext = mediaUrl.split('.').pop()?.toLowerCase() || '';
         let method = 'sendPhoto';
-        if (['mp4', 'mov', 'avi'].includes(ext)) {
+        let mediaField = 'photo';
+        if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
             method = 'sendVideo';
+            mediaField = 'video';
         }
-        else if (['pdf', 'doc', 'docx'].includes(ext)) {
+        else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
             method = 'sendDocument';
+            mediaField = 'document';
         }
         const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
-        await axios_1.default.post(url, {
+        const payload = {
             chat_id: chatId,
-            [method === 'sendPhoto' ? 'photo' : method === 'sendVideo' ? 'video' : 'document']: mediaUrl,
-        });
+            [mediaField]: mediaUrl,
+        };
+        if (caption && caption.trim()) {
+            payload.caption = caption;
+            payload.parse_mode = 'HTML';
+        }
+        await axios_1.default.post(url, payload);
     }
 };
 exports.BroadcastProcessor = BroadcastProcessor;
