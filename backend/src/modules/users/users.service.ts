@@ -33,11 +33,16 @@ export class UsersService {
     const hasSearch = search && search.trim().length > 0;
     const hasStatus = status && status !== 'all';
 
+    this.logger.debug(`🔍 Users search: search="${search}", hasSearch=${hasSearch}, status="${status}", hasStatus=${hasStatus}`);
+
     // Если есть поиск, добавляем условие поиска
+    // Используем COALESCE для обработки NULL значений
     if (hasSearch) {
+      const searchTerm = `%${search.trim()}%`;
+      this.logger.debug(`🔍 Applying search filter with term: "${searchTerm}"`);
       queryBuilder.where(
-        '(user.username ILIKE :search OR user.first_name ILIKE :search OR user.last_name ILIKE :search OR user.tg_id::text ILIKE :search)',
-        { search: `%${search.trim()}%` },
+        '(COALESCE(user.username, \'\') ILIKE :search OR COALESCE(user.first_name, \'\') ILIKE :search OR COALESCE(user.last_name, \'\') ILIKE :search OR user.tg_id::text ILIKE :search)',
+        { search: searchTerm },
       );
     }
 
