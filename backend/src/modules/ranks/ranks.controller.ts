@@ -3,13 +3,17 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { RanksService } from './ranks.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
+import { SyncService } from '../sync/sync.service';
 
 @ApiTags('admin')
 @Controller('admin/ranks')
 @UseGuards(JwtAuthGuard, AdminGuard)
 @ApiBearerAuth()
 export class RanksController {
-  constructor(private readonly ranksService: RanksService) {}
+  constructor(
+    private readonly ranksService: RanksService,
+    private readonly syncService: SyncService,
+  ) {}
 
   @Get('settings')
   @ApiOperation({ summary: 'Get rank settings' })
@@ -20,7 +24,10 @@ export class RanksController {
   @Put('settings')
   @ApiOperation({ summary: 'Update rank settings' })
   async updateSettings(@Body() data: any) {
-    return await this.ranksService.updateSettings(data);
+    const result = await this.ranksService.updateSettings(data);
+    // Notify all clients about settings update
+    await this.syncService.publish('ranks.settings_updated', result);
+    return result;
   }
 
   @Get('statistics')

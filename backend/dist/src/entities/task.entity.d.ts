@@ -15,6 +15,8 @@ export declare class Task {
     min_completion_time: number;
     cooldown_hours: number;
     active: boolean;
+    available_for: string;
+    target_ranks: string;
     user_tasks: UserTask[];
     created_at: Date;
     updated_at: Date;

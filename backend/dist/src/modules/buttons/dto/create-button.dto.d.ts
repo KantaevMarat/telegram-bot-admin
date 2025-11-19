@@ -7,4 +7,5 @@ export declare class CreateButtonDto {
     media_url?: string;
     command?: string;
     active?: boolean;
+    admin_only?: boolean;
 }

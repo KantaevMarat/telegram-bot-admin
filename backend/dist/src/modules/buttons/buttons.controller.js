@@ -28,6 +28,9 @@ let ButtonsController = class ButtonsController {
         const activeFilter = active === 'true' ? true : active === 'false' ? false : undefined;
         return await this.buttonsService.findAll(activeFilter);
     }
+    async testButtonConfig(config) {
+        return await this.buttonsService.testButtonConfig(config);
+    }
     async findOne(id) {
         return await this.buttonsService.findOne(id);
     }
@@ -40,6 +43,12 @@ let ButtonsController = class ButtonsController {
     async remove(id) {
         return await this.buttonsService.remove(id);
     }
+    async testButton(id, testData) {
+        return await this.buttonsService.testButton(id, testData);
+    }
+    async exportButton(id) {
+        return await this.buttonsService.exportButton(id);
+    }
 };
 exports.ButtonsController = ButtonsController;
 __decorate([
@@ -50,6 +59,14 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], ButtonsController.prototype, "findAll", null);
+__decorate([
+    (0, common_1.Post)('test-config'),
+    (0, swagger_1.ApiOperation)({ summary: 'Test button configuration without saving' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], ButtonsController.prototype, "testButtonConfig", null);
 __decorate([
     (0, common_1.Get)(':id'),
     (0, swagger_1.ApiOperation)({ summary: 'Get button by ID' }),
@@ -83,6 +100,23 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], ButtonsController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)(':id/test'),
+    (0, swagger_1.ApiOperation)({ summary: 'Test button configuration' }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], ButtonsController.prototype, "testButton", null);
+__decorate([
+    (0, common_1.Post)(':id/export'),
+    (0, swagger_1.ApiOperation)({ summary: 'Export button configuration as JSON' }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], ButtonsController.prototype, "exportButton", null);
 exports.ButtonsController = ButtonsController = __decorate([
     (0, swagger_1.ApiTags)('admin'),
     (0, common_1.Controller)('admin/buttons'),

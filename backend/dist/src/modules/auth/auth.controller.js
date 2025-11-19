@@ -45,6 +45,9 @@ let AuthController = AuthController_1 = class AuthController {
     async loginUser(loginDto) {
         return await this.authService.loginUser(loginDto.initData);
     }
+    async getUserStatus(loginDto) {
+        return await this.authService.getUserStatus(loginDto.initData);
+    }
     async testAdmins() {
         return await this.authService.debugAdminLookup();
     }
@@ -66,6 +69,14 @@ __decorate([
     __metadata("design:paramtypes", [login_dto_1.LoginDto]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "loginUser", null);
+__decorate([
+    (0, common_1.Post)('telegram/user/status'),
+    (0, swagger_1.ApiOperation)({ summary: 'Check user status (blocked/active) using Telegram Web App data' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [login_dto_1.LoginDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "getUserStatus", null);
 __decorate([
     (0, common_1.Get)('test-admins'),
     (0, swagger_1.ApiOperation)({ summary: 'DEBUG: Test admin lookup' }),

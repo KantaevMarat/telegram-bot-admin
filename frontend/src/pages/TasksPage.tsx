@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tasksApi } from '../api/client';
-import { CheckSquare, Plus, Edit, Trash2, X, Upload, TrendingUp, DollarSign, Check, XCircle, LayoutGrid, LayoutList, AlertCircle, Link as LinkIcon, Clock, Target } from 'lucide-react';
+import { CheckSquare, Plus, Edit, Trash2, X, Upload, TrendingUp, DollarSign, Check, XCircle, LayoutGrid, LayoutList, List, AlertCircle, Link as LinkIcon, Clock, Target } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSyncRefetch } from '../hooks/useSync';
 
@@ -19,12 +19,21 @@ interface Task {
   min_completion_time?: number;
   active: boolean;
   completions_count: number;
+  available_for?: string;
+  target_ranks?: string;
+  rank_stats?: {
+    stone: number;
+    bronze: number;
+    silver: number;
+    gold: number;
+    platinum: number;
+  };
 }
 
 export default function TasksPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'list' | 'cards'>('table');
   
   const [formData, setFormData] = useState({
     title: '',
@@ -38,7 +47,10 @@ export default function TasksPage() {
     command: '',
     min_completion_time: 0,
     active: true,
+    available_for: 'all',
+    target_ranks: '',
   });
+  const [selectedRanks, setSelectedRanks] = useState<string[]>([]);
 
   const queryClient = useQueryClient();
 
@@ -93,12 +105,24 @@ export default function TasksPage() {
       command: '',
       min_completion_time: 0,
       active: true,
+      available_for: 'all',
+      target_ranks: '',
     });
+    setSelectedRanks([]);
     setShowModal(true);
   };
 
   const handleEditTask = (task: Task) => {
     setEditingTask(task);
+    let ranks: string[] = [];
+    if (task.target_ranks) {
+      try {
+        ranks = JSON.parse(task.target_ranks);
+      } catch (e) {
+        ranks = [];
+      }
+    }
+    setSelectedRanks(ranks);
     setFormData({
       title: task.title,
       description: task.description,
@@ -111,6 +135,8 @@ export default function TasksPage() {
       command: task.command || '',
       min_completion_time: task.min_completion_time || 0,
       active: task.active,
+      available_for: task.available_for || 'all',
+      target_ranks: task.target_ranks || '',
     });
     setShowModal(true);
   };
@@ -130,17 +156,45 @@ export default function TasksPage() {
       command: '',
       min_completion_time: 0,
       active: true,
+      available_for: 'all',
+      target_ranks: '',
     });
+    setSelectedRanks([]);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (editingTask) {
-      updateMutation.mutate({ id: editingTask.id, data: formData });
-    } else {
-      createMutation.mutate(formData);
+    // Валидация: если выбрано "ranks", должен быть выбран хотя бы один ранг
+    if (formData.available_for === 'ranks' && selectedRanks.length === 0) {
+      toast.error('Выберите хотя бы один ранг для задания');
+      return;
     }
+    
+    const submitData = { ...formData };
+    
+    // Если выбраны ранги, сохраняем их как JSON
+    if (formData.available_for === 'ranks' && selectedRanks.length > 0) {
+      submitData.target_ranks = JSON.stringify(selectedRanks);
+    } else {
+      submitData.target_ranks = '';
+    }
+    
+    if (editingTask) {
+      updateMutation.mutate({ id: editingTask.id, data: submitData });
+    } else {
+      createMutation.mutate(submitData);
+    }
+  };
+
+  const toggleRank = (rank: string) => {
+    setSelectedRanks(prev => {
+      if (prev.includes(rank)) {
+        return prev.filter(r => r !== rank);
+      } else {
+        return [...prev, rank];
+      }
+    });
   };
 
   const handleDelete = (id: string) => {
@@ -186,6 +240,13 @@ export default function TasksPage() {
               title="Табличный вид"
             >
               <LayoutList size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'list' ? 'btn--active' : ''}`}
+              title="Списочный вид"
+            >
+              <List size={18} />
             </button>
             <button
               onClick={() => setViewMode('cards')}
@@ -252,7 +313,7 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Tasks Table or Cards */}
+      {/* Tasks Table, List or Cards */}
       {viewMode === 'table' ? (
         <div className="table-responsive">
           <div className="table-container">
@@ -262,6 +323,7 @@ export default function TasksPage() {
                 <th className="table__cell">Задание</th>
                 <th className="table__cell">Награда</th>
                 <th className="table__cell">Выполнений</th>
+                <th className="table__cell">Ранги</th>
                 <th className="table__cell table__cell--center">Статус</th>
                 <th className="table__cell table__cell--center">Действия</th>
               </tr>
@@ -269,7 +331,7 @@ export default function TasksPage() {
             <tbody className="table__body">
               {tasks.length === 0 ? (
                 <tr className="table__row">
-                  <td colSpan={5} className="table__cell table__cell--empty">
+                  <td colSpan={6} className="table__cell table__cell--empty">
                     Задания не найдены
                   </td>
                 </tr>
@@ -352,6 +414,89 @@ export default function TasksPage() {
                         {task.completions_count || 0}
                       </div>
                     </td>
+                    <td className="table__cell">
+                      {task.rank_stats ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                          {task.rank_stats.platinum > 0 && (
+                            <span style={{ 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '4px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                              color: 'white',
+                              fontSize: 'var(--font-size-xs)',
+                              fontWeight: 'var(--font-weight-semibold)'
+                            }}>
+                              💎 {task.rank_stats.platinum}
+                            </span>
+                          )}
+                          {task.rank_stats.gold > 0 && (
+                            <span style={{ 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '4px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: '#fbbf24',
+                              color: 'white',
+                              fontSize: 'var(--font-size-xs)',
+                              fontWeight: 'var(--font-weight-semibold)'
+                            }}>
+                              🥇 {task.rank_stats.gold}
+                            </span>
+                          )}
+                          {task.rank_stats.silver > 0 && (
+                            <span style={{ 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '4px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: '#9ca3af',
+                              color: 'white',
+                              fontSize: 'var(--font-size-xs)',
+                              fontWeight: 'var(--font-weight-semibold)'
+                            }}>
+                              🥈 {task.rank_stats.silver}
+                            </span>
+                          )}
+                          {task.rank_stats.bronze > 0 && (
+                            <span style={{ 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '4px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: '#cd7f32',
+                              color: 'white',
+                              fontSize: 'var(--font-size-xs)',
+                              fontWeight: 'var(--font-weight-semibold)'
+                            }}>
+                              🥉 {task.rank_stats.bronze}
+                            </span>
+                          )}
+                          {task.rank_stats.stone > 0 && (
+                            <span style={{ 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '4px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: '#6b7280',
+                              color: 'white',
+                              fontSize: 'var(--font-size-xs)',
+                              fontWeight: 'var(--font-weight-semibold)'
+                            }}>
+                              🪨 {task.rank_stats.stone}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-size-sm)' }}>—</span>
+                      )}
+                    </td>
                     <td className="table__cell table__cell--center">
                       <span className={`badge ${task.active ? 'badge--success' : 'badge--danger'}`}>
                         {task.active ? <><Check size={14} /> Активно</> : <><XCircle size={14} /> Неактивно</>}
@@ -382,6 +527,65 @@ export default function TasksPage() {
             </tbody>
           </table>
           </div>
+        </div>
+      ) : viewMode === 'list' ? (
+        <div className="list-container">
+          {tasks.length === 0 ? (
+            <div className="empty-state">
+              <CheckSquare size={48} />
+              <p>Задания не найдены</p>
+            </div>
+          ) : (
+            tasks.map((task) => (
+              <div key={task.id} className="list-item">
+                <div className="list-item__icon">
+                  <CheckSquare size={20} />
+                </div>
+                <div className="list-item__content">
+                  <div className="list-item__header">
+                    <h3 className="list-item__title">{task.title}</h3>
+                    <span className={`badge ${task.active ? 'badge--success' : 'badge--danger'}`}>
+                      {task.active ? <><Check size={14} /> Активно</> : <><XCircle size={14} /> Неактивно</>}
+                    </span>
+                  </div>
+                  <p className="list-item__description">{task.description}</p>
+                  <div className="list-item__meta">
+                    <span className="list-item__meta-item">
+                      <DollarSign size={14} />
+                      ${task.reward_min || 0} - ${task.reward_max || 0}
+                    </span>
+                    <span className="list-item__meta-item">
+                      <TrendingUp size={14} />
+                      {task.completions_count || 0} выполнений
+                    </span>
+                    {task.rank_stats && (
+                      <span className="list-item__meta-item">
+                        <Target size={14} />
+                        Ранги: {(Object.values(task.rank_stats) as number[]).reduce((sum, val) => sum + val, 0)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="list-item__actions">
+                  <button
+                    onClick={() => handleEditTask(task)}
+                    className="btn btn--secondary btn--icon btn--sm"
+                    title="Редактировать"
+                  >
+                    <Edit size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(task.id)}
+                    className="btn btn--danger btn--icon btn--sm"
+                    title="Удалить"
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       ) : (
         <div className="cards-grid">
@@ -436,6 +640,101 @@ export default function TasksPage() {
                     </div>
                   )}
                 </div>
+
+                {task.rank_stats && (
+                  <div className="task-card__ranks" style={{ 
+                    marginTop: '12px', 
+                    paddingTop: '12px', 
+                    borderTop: '1px solid var(--border-color)',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '6px',
+                    alignItems: 'center'
+                  }}>
+                    <span style={{ 
+                      fontSize: 'var(--font-size-xs)', 
+                      color: 'var(--text-secondary)',
+                      marginRight: '4px'
+                    }}>
+                      Ранги:
+                    </span>
+                    {task.rank_stats.platinum > 0 && (
+                      <span style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        color: 'white',
+                        fontSize: 'var(--font-size-xs)',
+                        fontWeight: 'var(--font-weight-semibold)'
+                      }}>
+                        💎 {task.rank_stats.platinum}
+                      </span>
+                    )}
+                    {task.rank_stats.gold > 0 && (
+                      <span style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: '#fbbf24',
+                        color: 'white',
+                        fontSize: 'var(--font-size-xs)',
+                        fontWeight: 'var(--font-weight-semibold)'
+                      }}>
+                        🥇 {task.rank_stats.gold}
+                      </span>
+                    )}
+                    {task.rank_stats.silver > 0 && (
+                      <span style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: '#9ca3af',
+                        color: 'white',
+                        fontSize: 'var(--font-size-xs)',
+                        fontWeight: 'var(--font-weight-semibold)'
+                      }}>
+                        🥈 {task.rank_stats.silver}
+                      </span>
+                    )}
+                    {task.rank_stats.bronze > 0 && (
+                      <span style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: '#cd7f32',
+                        color: 'white',
+                        fontSize: 'var(--font-size-xs)',
+                        fontWeight: 'var(--font-weight-semibold)'
+                      }}>
+                        🥉 {task.rank_stats.bronze}
+                      </span>
+                    )}
+                    {task.rank_stats.stone > 0 && (
+                      <span style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: '#6b7280',
+                        color: 'white',
+                        fontSize: 'var(--font-size-xs)',
+                        fontWeight: 'var(--font-weight-semibold)'
+                      }}>
+                        🪨 {task.rank_stats.stone}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 <div className="task-card__actions">
                   <button
@@ -607,6 +906,78 @@ export default function TasksPage() {
                       <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
                         ⚠️ Важно: Бот должен быть администратором канала для проверки подписки!
                       </div>
+                    </div>
+                  )}
+
+                  {/* Целевая аудитория */}
+                  <div className="form-group" style={{ marginTop: '16px' }}>
+                    <label className="form-label">Доступно для *</label>
+                    <select
+                      className="form-input"
+                      value={formData.available_for}
+                      onChange={(e) => {
+                        setFormData(prev => ({ ...prev, available_for: e.target.value }));
+                        if (e.target.value !== 'ranks') {
+                          setSelectedRanks([]);
+                        }
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <option value="all">👥 Для всех пользователей</option>
+                      <option value="platinum">💎 Только платиновая подписка</option>
+                      <option value="ranks">🏆 По рангам (выбрать конкретные)</option>
+                    </select>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                      {formData.available_for === 'all' && 'Задание будет доступно всем пользователям'}
+                      {formData.available_for === 'platinum' && 'Задание будет доступно только пользователям с активной платиновой подпиской'}
+                      {formData.available_for === 'ranks' && 'Выберите ранги, для которых будет доступно задание'}
+                    </div>
+                  </div>
+
+                  {/* Выбор рангов */}
+                  {formData.available_for === 'ranks' && (
+                    <div className="form-group" style={{ marginTop: '16px' }}>
+                      <label className="form-label">Выберите ранги *</label>
+                      <div style={{ 
+                        display: 'flex', 
+                        flexWrap: 'wrap', 
+                        gap: '8px',
+                        padding: '12px',
+                        background: 'var(--bg-secondary)',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border)'
+                      }}>
+                        {[
+                          { value: 'stone', label: '🪨 Камень', color: '#6b7280' },
+                          { value: 'bronze', label: '🥉 Бронза', color: '#cd7f32' },
+                          { value: 'silver', label: '🥈 Серебро', color: '#9ca3af' },
+                          { value: 'gold', label: '🥇 Золото', color: '#fbbf24' },
+                        ].map((rank) => (
+                          <button
+                            key={rank.value}
+                            type="button"
+                            onClick={() => toggleRank(rank.value)}
+                            style={{
+                              padding: '8px 16px',
+                              borderRadius: 'var(--radius-md)',
+                              border: `2px solid ${selectedRanks.includes(rank.value) ? rank.color : 'var(--border)'}`,
+                              background: selectedRanks.includes(rank.value) ? rank.color : 'transparent',
+                              color: selectedRanks.includes(rank.value) ? 'white' : 'var(--text-primary)',
+                              cursor: 'pointer',
+                              fontSize: 'var(--font-size-sm)',
+                              fontWeight: selectedRanks.includes(rank.value) ? 'var(--font-weight-semibold)' : 'var(--font-weight-normal)',
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            {rank.label}
+                          </button>
+                        ))}
+                      </div>
+                      {selectedRanks.length === 0 && (
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--error)', marginTop: '4px' }}>
+                          ⚠️ Выберите хотя бы один ранг
+                        </div>
+                      )}
                     </div>
                   )}
 

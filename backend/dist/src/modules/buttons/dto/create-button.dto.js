@@ -61,4 +61,10 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], CreateButtonDto.prototype, "active", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Admin only button', required: false, default: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateButtonDto.prototype, "admin_only", void 0);
 //# sourceMappingURL=create-button.dto.js.map

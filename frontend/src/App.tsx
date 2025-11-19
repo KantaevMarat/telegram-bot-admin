@@ -12,7 +12,7 @@ import BalancePage from './pages/BalancePage';
 import PayoutsPage from './pages/PayoutsPage';
 import SettingsPage from './pages/SettingsPage';
 import BroadcastPage from './pages/BroadcastPage';
-import ButtonsPage from './pages/ButtonsPage';
+import ButtonsPage from './pages/ButtonsPageV2';
 import ScenariosPage from './pages/ScenariosPage';
 import TasksPage from './pages/TasksPage';
 import CommandsPage from './pages/CommandsPage';
@@ -27,7 +27,7 @@ function App() {
   const { isAuthenticated, refreshToken } = useAuthStore();
 
   useEffect(() => {
-    // Auto-login in development mode
+    // Auto-login in development mode (only once on mount)
     if (import.meta.env.DEV && !isAuthenticated) {
       console.log('🚀 Auto-login in development mode...');
       refreshToken().then(() => {
@@ -38,9 +38,12 @@ function App() {
         } else {
           console.warn('⚠️ Auto-login failed, user needs to login manually');
         }
+      }).catch((error) => {
+        console.error('❌ Auto-login error:', error);
       });
     }
-  }, [isAuthenticated, refreshToken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount, not when isAuthenticated changes
 
   return (
     <Routes>

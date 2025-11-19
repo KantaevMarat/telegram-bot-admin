@@ -7,6 +7,7 @@ import { Task } from '../../entities/task.entity';
 import { UserTask } from '../../entities/user-task.entity';
 import { Scenario } from '../../entities/scenario.entity';
 import { BalanceLog } from '../../entities/balance-log.entity';
+import { Admin } from '../../entities/admin.entity';
 import { FakeStatsService } from '../stats/fake-stats.service';
 import { SettingsService } from '../settings/settings.service';
 import { MessagesService } from '../messages/messages.service';
@@ -23,6 +24,7 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private userTaskRepo;
     private scenarioRepo;
     private balanceLogRepo;
+    private adminRepo;
     private configService;
     private fakeStatsService;
     private settingsService;
@@ -37,7 +39,8 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private botToken;
     private pollingOffset;
     private pollingInterval;
-    constructor(userRepo: Repository<User>, buttonRepo: Repository<Button>, taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, scenarioRepo: Repository<Scenario>, balanceLogRepo: Repository<BalanceLog>, configService: ConfigService, fakeStatsService: FakeStatsService, settingsService: SettingsService, messagesService: MessagesService, usersService: UsersService, syncService: SyncService, channelsService: ChannelsService, commandsService: CommandsService, ranksService: RanksService, premiumService: PremiumService);
+    private consecutiveErrors;
+    constructor(userRepo: Repository<User>, buttonRepo: Repository<Button>, taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, scenarioRepo: Repository<Scenario>, balanceLogRepo: Repository<BalanceLog>, adminRepo: Repository<Admin>, configService: ConfigService, fakeStatsService: FakeStatsService, settingsService: SettingsService, messagesService: MessagesService, usersService: UsersService, syncService: SyncService, channelsService: ChannelsService, commandsService: CommandsService, ranksService: RanksService, premiumService: PremiumService);
     onModuleInit(): Promise<void>;
     onModuleDestroy(): Promise<void>;
     handleWebhook(update: any): Promise<void>;
@@ -46,6 +49,7 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private handleMessage;
     private createUser;
     private giveReferralBonus;
+    private checkUserBlocked;
     private notifyReferrer;
     private sendWelcomeMessage;
     private handleCommand;
@@ -55,6 +59,7 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private handleCallbackQuery;
     private getMainKeyboard;
     private getReplyKeyboard;
+    private isUserAdmin;
     private handleReplyButton;
     sendMessage(chatId: string, text: string, replyMarkup?: any): Promise<any>;
     private getFileUrl;
@@ -62,6 +67,7 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     sendBalanceChangeNotification(chatId: string, balanceBefore: number, balanceAfter: number, delta: number, reason: string, comment?: string): Promise<void>;
     private answerCallbackQuery;
     setWebhook(webhookUrl: string): Promise<any>;
+    deleteWebhook(dropPendingUpdates?: boolean): Promise<any>;
     private sendBalance;
     private sendProfile;
     private sendWithdrawInfo;
@@ -72,6 +78,7 @@ export declare class BotService implements OnModuleInit, OnModuleDestroy {
     private cancelTask;
     private showMyTasks;
     private handleCustomButton;
+    private handleCustomCommand;
     private handleTaskVerification;
     private handleWithdrawalRequest;
     private findMatchingScenario;

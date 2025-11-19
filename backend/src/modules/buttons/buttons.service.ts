@@ -60,4 +60,90 @@ export class ButtonsService {
     
     return { success: true, message: 'Button removed' };
   }
+
+  async testButton(id: string, testData?: any) {
+    const button = await this.findOne(id);
+    
+    // Симуляция выполнения кнопки
+    const result = {
+      success: true,
+      payload: {
+        button_id: button.id,
+        label: button.label,
+        action_type: button.action_type,
+        action_payload: button.action_payload,
+        command: button.command,
+      },
+      response: {
+        message: 'Кнопка выполнена успешно',
+        timestamp: new Date().toISOString(),
+      },
+      logs: [
+        `[${new Date().toISOString()}] Button ${button.id} executed`,
+        `Action type: ${button.action_type}`,
+        `Command: ${button.command || 'N/A'}`,
+      ],
+    };
+
+    return result;
+  }
+
+  async testButtonConfig(config: any) {
+    // Валидация конфигурации
+    if (!config.label || config.label.length === 0) {
+      return {
+        success: false,
+        error: 'Label is required',
+      };
+    }
+
+    if (config.label.length > 64) {
+      return {
+        success: false,
+        error: 'Label must not exceed 64 characters',
+      };
+    }
+
+    // Симуляция выполнения
+    const result = {
+      success: true,
+      payload: {
+        config,
+        test_user_id: 'test_user',
+        test_chat_id: 'test_chat',
+      },
+      response: {
+        message: 'Configuration test successful',
+        timestamp: new Date().toISOString(),
+      },
+      logs: [
+        `[${new Date().toISOString()}] Testing button configuration`,
+        `Mode: ${config.mode || 'N/A'}`,
+        `Label: ${config.label}`,
+      ],
+    };
+
+    return result;
+  }
+
+  async exportButton(id: string) {
+    const button = await this.findOne(id);
+    
+    // Экспорт в JSON формат
+    const exportData = {
+      id: button.id,
+      label: button.label,
+      action_type: button.action_type,
+      action_payload: button.action_payload,
+      media_url: button.media_url,
+      command: button.command,
+      row: button.row,
+      col: button.col,
+      active: button.active,
+      created_at: button.created_at,
+      updated_at: button.updated_at,
+    };
+
+    return exportData;
+  }
 }

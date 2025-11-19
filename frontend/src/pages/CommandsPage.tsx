@@ -1,15 +1,18 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { commandsApi, mediaApi } from '../api/client';
-import { Terminal, Plus, Edit, Trash2, X, Upload, Video, FileImage, Trash } from 'lucide-react';
+import { commandsApi } from '../api/client';
+import { Terminal, Plus, Edit, Trash2, X, LayoutGrid, LayoutList, List } from 'lucide-react';
 import toast from 'react-hot-toast';
+import CommandModeConfigPanel, { CommandConfig, CommandMode } from '../components/commands/CommandModeConfigPanel';
 
 interface Command {
   id: string;
   name: string;
   description: string;
-  response: string;
+  response?: string;
   media_url?: string;
+  action_type?: string;
+  action_payload?: any;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -18,17 +21,17 @@ interface Command {
 export default function CommandsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingCommand, setEditingCommand] = useState<Command | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadingFile, setUploadingFile] = useState(false);
-  const photoInputRef = useRef<HTMLInputElement>(null);
-  const videoInputRef = useRef<HTMLInputElement>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'list' | 'cards'>('table');
   
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    response: '',
-    media_url: '',
     active: true,
+  });
+
+  const [commandConfig, setCommandConfig] = useState<CommandConfig>({
+    mode: 'text',
+    payload: '',
   });
 
   const queryClient = useQueryClient();
@@ -69,98 +72,185 @@ export default function CommandsPage() {
 
   const handleOpenModal = () => {
     setEditingCommand(null);
-    setSelectedFile(null);
     setFormData({
       name: '',
       description: '',
-      response: '',
-      media_url: '',
       active: true,
+    });
+    setCommandConfig({
+      mode: 'text',
+      payload: '',
     });
     setShowModal(true);
   };
 
   const handleEditCommand = (command: Command) => {
     setEditingCommand(command);
-    setSelectedFile(null);
     setFormData({
       name: command.name,
       description: command.description,
-      response: command.response,
-      media_url: command.media_url || '',
       active: command.active,
     });
+
+    // Parse command config from action_type and action_payload
+    let config: CommandConfig = {
+      mode: (command.action_type as CommandMode) || 'text',
+      payload: '',
+    };
+
+    if (command.action_type && command.action_payload) {
+      config.mode = command.action_type as CommandMode;
+      
+      if (command.action_type === 'text') {
+        config.payload = command.action_payload.text || command.response || '';
+      } else if (command.action_type === 'media') {
+        config.media = {
+          type: command.action_payload.media_type || 'photo',
+          url: command.action_payload.media_url || command.media_url || '',
+          caption: command.action_payload.caption || '',
+        };
+        config.payload = command.action_payload.text || '';
+      } else if (command.action_type === 'url') {
+        config.payload = command.action_payload.url || '';
+      } else if (command.action_type === 'function') {
+        config.function = command.action_payload;
+      } else if (command.action_type === 'command') {
+        config.payload = command.action_payload.command || '';
+      } else if (command.action_type === 'built_in') {
+        // For built-in commands, use text mode with response
+        config.mode = 'text';
+        config.payload = command.response || '';
+      }
+    } else {
+      // Legacy format: use response and media_url
+      config.mode = command.media_url ? 'media' : 'text';
+      config.payload = command.response || '';
+      if (command.media_url) {
+        config.media = {
+          type: 'photo',
+          url: command.media_url,
+        };
+      }
+    }
+
+    setCommandConfig(config);
     setShowModal(true);
   };
 
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingCommand(null);
-    setSelectedFile(null);
     setFormData({
       name: '',
       description: '',
-      response: '',
-      media_url: '',
       active: true,
     });
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'photo' | 'video') => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error('Файл слишком большой (максимум 50 МБ)');
-      return;
-    }
-
-    if (type === 'photo' && !file.type.startsWith('image/')) {
-      toast.error('Выберите файл изображения');
-      return;
-    }
-    if (type === 'video' && !file.type.startsWith('video/')) {
-      toast.error('Выберите видео файл');
-      return;
-    }
-
-    setSelectedFile(file);
-    if (e.target) {
-      e.target.value = '';
-    }
-  };
-
-  const handleRemoveFile = () => {
-    setSelectedFile(null);
-    setFormData(prev => ({ ...prev, media_url: '' }));
+    setCommandConfig({
+      mode: 'text',
+      payload: '',
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Upload file if selected
-    let mediaUrl = formData.media_url;
-    if (selectedFile) {
-      setUploadingFile(true);
-      try {
-        const result = await mediaApi.uploadFile(selectedFile);
-        mediaUrl = result.url;
-        toast.success('Файл загружен успешно!');
-      } catch (error: any) {
-        toast.error(`Ошибка загрузки файла: ${error.response?.data?.message || error.message}`);
-        setUploadingFile(false);
-        return;
-      }
-      setUploadingFile(false);
+    console.log('🔍 handleSubmit called', { formData, commandConfig });
+    
+    if (!formData.name.trim()) {
+      toast.error('Введите название команды');
+      return;
+    }
+
+    if (!formData.description.trim()) {
+      toast.error('Введите описание команды');
+      return;
+    }
+
+    // Build action_payload based on mode
+    let action_payload: any = {};
+    let response: string | undefined;
+    let media_url: string | undefined;
+
+    console.log('🔍 commandConfig.mode:', commandConfig.mode, 'commandConfig:', commandConfig);
+
+    switch (commandConfig.mode) {
+      case 'text':
+        if (!commandConfig.payload?.trim()) {
+          toast.error('Введите текст сообщения');
+          return;
+        }
+        action_payload = { text: commandConfig.payload };
+        response = commandConfig.payload; // For backward compatibility
+        break;
+
+      case 'media':
+        if (!commandConfig.media?.url) {
+          toast.error('Укажите URL медиафайла или загрузите файл');
+          return;
+        }
+        action_payload = {
+          text: commandConfig.payload || '',
+          media_url: commandConfig.media.url,
+          media_type: commandConfig.media.type,
+          caption: commandConfig.media.caption || '',
+        };
+        response = commandConfig.payload || ''; // For backward compatibility
+        media_url = commandConfig.media.url; // For backward compatibility
+        break;
+
+      case 'url':
+        if (!commandConfig.payload?.trim()) {
+          toast.error('Введите URL');
+          return;
+        }
+        action_payload = { url: commandConfig.payload };
+        break;
+
+      case 'function':
+        if (commandConfig.function?.type === 'webhook' && !commandConfig.function?.url) {
+          toast.error('Введите URL webhook');
+          return;
+        }
+        if (commandConfig.function?.type === 'script' && !commandConfig.function?.script) {
+          toast.error('Введите код скрипта');
+          return;
+        }
+        if (commandConfig.function?.type === 'internal' && !commandConfig.function?.function_name) {
+          toast.error('Введите название внутренней функции');
+          return;
+        }
+        action_payload = commandConfig.function;
+        break;
+
+      case 'command':
+        if (!commandConfig.payload?.trim()) {
+          toast.error('Введите команду');
+          return;
+        }
+        action_payload = { command: commandConfig.payload };
+        break;
     }
     
-    const submitData = {
+    const submitData: any = {
       name: formData.name.startsWith('/') ? formData.name : `/${formData.name}`,
       description: formData.description,
-      response: formData.response,
-      media_url: mediaUrl || undefined,
+      // For built-in commands, preserve the original action_type
+      action_type: (editingCommand?.action_type === 'built_in') ? 'built_in' : commandConfig.mode,
+      // For built-in commands, preserve the original action_payload (built-in function identifier)
+      action_payload: (editingCommand?.action_type === 'built_in') ? editingCommand.action_payload : action_payload,
       active: formData.active,
     };
+
+    // For built-in commands, ALWAYS save response (this is their customizable text)
+    if (editingCommand?.action_type === 'built_in') {
+      submitData.response = response || '';
+    } else if (response) {
+      submitData.response = response;
+    }
+    
+    if (media_url) submitData.media_url = media_url;
+
+    console.log('🚀 Submitting data:', JSON.stringify(submitData, null, 2));
 
     if (editingCommand) {
       updateMutation.mutate({ id: editingCommand.id, data: submitData });
@@ -198,7 +288,30 @@ export default function CommandsPage() {
           <h1 className="page-title">Команды</h1>
           <p className="page-subtitle">Управление кастомными командами бота</p>
         </div>
-        <div className="page-actions">
+        <div className="page-actions" style={{ display: 'flex', gap: '12px' }}>
+          <div className="view-toggle">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
+              title="Табличный вид"
+            >
+              <LayoutList size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'list' ? 'btn--active' : ''}`}
+              title="Списочный вид"
+            >
+              <List size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
+              title="Карточный вид"
+            >
+              <LayoutGrid size={18} />
+            </button>
+          </div>
           <button
             onClick={handleOpenModal}
             className="btn btn--primary"
@@ -231,80 +344,250 @@ export default function CommandsPage() {
         </div>
       </div>
 
-      <div className="table-container">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Команда</th>
-              <th>Описание</th>
-              <th>Ответ</th>
-              <th>Медиа</th>
-              <th>Статус</th>
-              <th>Действия</th>
-            </tr>
-          </thead>
-          <tbody>
-            {commands.length === 0 ? (
+      {viewMode === 'table' ? (
+        <div className="table-container">
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan={6} style={{ textAlign: 'center', padding: '48px', color: 'var(--text-secondary)' }}>
-                  Нет команд. Создайте первую команду!
-                </td>
+                <th>Команда</th>
+                <th>Описание</th>
+                <th>Ответ</th>
+                <th>Медиа</th>
+                <th>Статус</th>
+                <th>Действия</th>
               </tr>
-            ) : (
-              commands.map((command) => (
-                <tr key={command.id}>
-                  <td>
-                    <code style={{ 
-                      padding: '4px 8px', 
-                      borderRadius: '4px', 
-                      backgroundColor: 'var(--bg-secondary)',
-                      fontFamily: 'monospace'
-                    }}>
-                      {command.name}
-                    </code>
-                  </td>
-                  <td>{command.description}</td>
-                  <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {command.response}
-                  </td>
-                  <td>
-                    {command.media_url ? (
-                      <span className="badge badge--success">Есть</span>
-                    ) : (
-                      <span className="badge badge--default">Нет</span>
-                    )}
-                  </td>
-                  <td>
-                    {command.active ? (
-                      <span className="badge badge--success">Активна</span>
-                    ) : (
-                      <span className="badge badge--error">Неактивна</span>
-                    )}
-                  </td>
-                  <td>
-                    <div className="table-actions">
-                      <button
-                        onClick={() => handleEditCommand(command)}
-                        className="btn btn--secondary btn--icon btn--sm"
-                        title="Редактировать"
-                      >
-                        <Edit size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(command.id)}
-                        className="btn btn--danger btn--icon btn--sm"
-                        title="Удалить"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
+            </thead>
+            <tbody>
+              {commands.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '48px', color: 'var(--text-secondary)' }}>
+                    Нет команд. Создайте первую команду!
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : (
+                commands.map((command) => (
+                  <tr key={command.id}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <code style={{ 
+                          padding: '4px 8px', 
+                          borderRadius: '4px', 
+                          backgroundColor: 'var(--bg-secondary)',
+                          fontFamily: 'monospace'
+                        }}>
+                          {command.name}
+                        </code>
+                        {command.action_type === 'built_in' && (
+                          <span className="badge badge--warning" style={{ fontSize: '0.7rem' }}>
+                            Встроенная
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td>{command.description}</td>
+                    <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {command.action_type ? (
+                        <span className="badge badge--info">{command.action_type}</span>
+                      ) : (
+                        command.response || '—'
+                      )}
+                    </td>
+                    <td>
+                      {command.action_type === 'media' || command.media_url ? (
+                        <span className="badge badge--success">Есть</span>
+                      ) : (
+                        <span className="badge badge--default">Нет</span>
+                      )}
+                    </td>
+                    <td>
+                      {command.active ? (
+                        <span className="badge badge--success">Активна</span>
+                      ) : (
+                        <span className="badge badge--error">Неактивна</span>
+                      )}
+                    </td>
+                    <td>
+                      <div className="table-actions">
+                        <button
+                          onClick={() => handleEditCommand(command)}
+                          className="btn btn--secondary btn--icon btn--sm"
+                          title="Редактировать"
+                        >
+                          <Edit size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(command.id)}
+                          className="btn btn--danger btn--icon btn--sm"
+                          title={command.action_type === 'built_in' ? 'Встроенные команды нельзя удалять' : 'Удалить'}
+                          disabled={command.action_type === 'built_in'}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : viewMode === 'list' ? (
+        <div className="users-list">
+          {commands.length === 0 ? (
+            <div className="empty-state">
+              <Terminal size={48} />
+              <p>Нет команд</p>
+            </div>
+          ) : (
+            commands.map((command) => (
+              <div key={command.id} className="user-card">
+                <div className="user-card__header">
+                  <div className="user-card__avatar">
+                    <Terminal size={32} />
+                  </div>
+                  <div className="user-card__info">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <h3 className="user-card__name" style={{ margin: 0 }}>
+                        <code style={{ 
+                          padding: '4px 8px', 
+                          borderRadius: '4px', 
+                          backgroundColor: 'var(--bg-secondary)',
+                          fontFamily: 'monospace'
+                        }}>
+                          {command.name}
+                        </code>
+                      </h3>
+                      {command.action_type === 'built_in' && (
+                        <span className="badge badge--warning" style={{ fontSize: '0.65rem' }}>
+                          Встроенная
+                        </span>
+                      )}
+                    </div>
+                    <p className="user-card__username">{command.description}</p>
+                  </div>
+                  <span className={`badge ${command.active ? 'badge--success' : 'badge--error'}`}>
+                    {command.active ? 'Активна' : 'Неактивна'}
+                  </span>
+                </div>
+
+                <div className="user-card__stats">
+                  <div className="user-card__stat">
+                    <Terminal size={16} />
+                    <span className="user-card__stat-label">Тип:</span>
+                    <span className="user-card__stat-value">
+                      {command.action_type || 'text'}
+                    </span>
+                  </div>
+                  {(command.action_type === 'media' || command.media_url) && (
+                    <div className="user-card__stat">
+                      <span className="user-card__stat-label">Медиа:</span>
+                      <span className="badge badge--success">Есть</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="user-card__actions">
+                  <button
+                    onClick={() => handleEditCommand(command)}
+                    className="btn btn--secondary btn--sm"
+                    title="Редактировать"
+                  >
+                    <Edit size={16} />
+                    Редактировать
+                  </button>
+                  <button
+                    onClick={() => handleDelete(command.id)}
+                    className="btn btn--danger btn--sm"
+                    title={command.action_type === 'built_in' ? 'Встроенные команды нельзя удалять' : 'Удалить'}
+                    disabled={command.action_type === 'built_in'}
+                  >
+                    <Trash2 size={16} />
+                    Удалить
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="cards-grid">
+          {commands.length === 0 ? (
+            <div className="empty-state">
+              <Terminal size={48} />
+              <p>Нет команд</p>
+            </div>
+          ) : (
+            commands.map((command) => (
+              <div key={command.id} className="user-card">
+                <div className="user-card__header">
+                  <div className="user-card__avatar">
+                    <Terminal size={32} />
+                  </div>
+                  <div className="user-card__info">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <h3 className="user-card__name" style={{ margin: 0 }}>
+                        <code style={{ 
+                          padding: '4px 8px', 
+                          borderRadius: '4px', 
+                          backgroundColor: 'var(--bg-secondary)',
+                          fontFamily: 'monospace'
+                        }}>
+                          {command.name}
+                        </code>
+                      </h3>
+                      {command.action_type === 'built_in' && (
+                        <span className="badge badge--warning" style={{ fontSize: '0.65rem' }}>
+                          Встроенная
+                        </span>
+                      )}
+                    </div>
+                    <p className="user-card__username">{command.description}</p>
+                  </div>
+                  <span className={`badge ${command.active ? 'badge--success' : 'badge--error'}`}>
+                    {command.active ? 'Активна' : 'Неактивна'}
+                  </span>
+                </div>
+
+                <div className="user-card__stats">
+                  <div className="user-card__stat">
+                    <Terminal size={16} />
+                    <span className="user-card__stat-label">Тип:</span>
+                    <span className="user-card__stat-value">
+                      {command.action_type || 'text'}
+                    </span>
+                  </div>
+                  {(command.action_type === 'media' || command.media_url) && (
+                    <div className="user-card__stat">
+                      <span className="user-card__stat-label">Медиа:</span>
+                      <span className="badge badge--success">Есть</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="user-card__actions">
+                  <button
+                    onClick={() => handleEditCommand(command)}
+                    className="btn btn--secondary btn--sm"
+                    title="Редактировать"
+                  >
+                    <Edit size={16} />
+                    Редактировать
+                  </button>
+                  <button
+                    onClick={() => handleDelete(command.id)}
+                    className="btn btn--danger btn--sm"
+                    title={command.action_type === 'built_in' ? 'Встроенные команды нельзя удалять' : 'Удалить'}
+                    disabled={command.action_type === 'built_in'}
+                  >
+                    <Trash2 size={16} />
+                    Удалить
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={handleCloseModal}>
@@ -350,117 +633,11 @@ export default function CommandsPage() {
                   />
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Ответ бота *</label>
-                  <textarea
-                    className="form-input"
-                    rows={5}
-                    value={formData.response}
-                    onChange={(e) => setFormData(prev => ({ ...prev, response: e.target.value }))}
-                    placeholder="Текст, который отправит бот при выполнении команды"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Медиафайл (опционально)</label>
-                  
-                  <input
-                    type="file"
-                    ref={photoInputRef}
-                    style={{ display: 'none' }}
-                    accept="image/*"
-                    onChange={(e) => handleFileSelect(e, 'photo')}
-                  />
-                  <input
-                    type="file"
-                    ref={videoInputRef}
-                    style={{ display: 'none' }}
-                    accept="video/*"
-                    onChange={(e) => handleFileSelect(e, 'video')}
-                  />
-
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                    <button
-                      type="button"
-                      onClick={() => photoInputRef.current?.click()}
-                      className="btn btn--secondary"
-                      disabled={uploadingFile}
-                    >
-                      <Upload size={16} />
-                      Загрузить фото
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => videoInputRef.current?.click()}
-                      className="btn btn--secondary"
-                      disabled={uploadingFile}
-                    >
-                      <Video size={16} />
-                      Загрузить видео
-                    </button>
-                  </div>
-
-                  {selectedFile && (
-                    <div className="file-preview" style={{ 
-                      padding: '12px', 
-                      borderRadius: '8px', 
-                      backgroundColor: 'var(--bg-secondary)',
-                      marginBottom: '12px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px'
-                    }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                          <FileImage size={20} style={{ color: 'var(--primary)' }} />
-                          <strong>{selectedFile.name}</strong>
-                        </div>
-                        <small style={{ color: 'var(--text-secondary)' }}>
-                          {(selectedFile.size / 1024 / 1024).toFixed(2)} МБ
-                        </small>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleRemoveFile}
-                        className="btn btn--danger btn--icon btn--sm"
-                        title="Удалить файл"
-                      >
-                        <Trash size={16} />
-                      </button>
-                    </div>
-                  )}
-
-                  {formData.media_url && !selectedFile && (
-                    <div style={{ 
-                      padding: '8px 12px', 
-                      borderRadius: '4px', 
-                      backgroundColor: 'var(--success-bg)',
-                      color: 'var(--success)',
-                      fontSize: 'var(--font-size-sm)',
-                      marginBottom: '12px'
-                    }}>
-                      ✓ Медиафайл уже загружен
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="form-label" style={{ fontSize: 'var(--font-size-sm)', marginBottom: '8px' }}>
-                      Или введите URL вручную
-                    </label>
-                    <input
-                      type="url"
-                      className="form-input"
-                      value={selectedFile ? '' : formData.media_url}
-                      onChange={(e) => {
-                        setFormData(prev => ({ ...prev, media_url: e.target.value }));
-                        setSelectedFile(null);
-                      }}
-                      placeholder="https://example.com/image.jpg"
-                      disabled={!!selectedFile}
-                    />
-                  </div>
-                </div>
+                {/* Command Mode Configuration Panel - NEW VERSION */}
+                <CommandModeConfigPanel
+                  config={commandConfig}
+                  onChange={(updates) => setCommandConfig(prev => ({ ...prev, ...updates }))}
+                />
 
                 <div className="form-group">
                   <label className="checkbox-label">
@@ -484,9 +661,9 @@ export default function CommandsPage() {
                   <button
                     type="submit"
                     className="btn btn--primary"
-                    disabled={uploadingFile || createMutation.isPending || updateMutation.isPending}
+                    disabled={createMutation.isPending || updateMutation.isPending}
                   >
-                    {uploadingFile ? 'Загрузка...' : editingCommand ? 'Сохранить' : 'Создать'}
+                    {editingCommand ? 'Сохранить' : 'Создать'}
                   </button>
                 </div>
               </form>

@@ -20,6 +20,13 @@ export class ButtonsController {
     return await this.buttonsService.findAll(activeFilter);
   }
 
+  // Важно: специфичные маршруты должны быть ПЕРЕД параметризованными
+  @Post('test-config')
+  @ApiOperation({ summary: 'Test button configuration without saving' })
+  async testButtonConfig(@Body() config: any) {
+    return await this.buttonsService.testButtonConfig(config);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get button by ID' })
   async findOne(@Param('id') id: string) {
@@ -42,5 +49,17 @@ export class ButtonsController {
   @ApiOperation({ summary: 'Delete button' })
   async remove(@Param('id') id: string) {
     return await this.buttonsService.remove(id);
+  }
+
+  @Post(':id/test')
+  @ApiOperation({ summary: 'Test button configuration' })
+  async testButton(@Param('id') id: string, @Body() testData?: any) {
+    return await this.buttonsService.testButton(id, testData);
+  }
+
+  @Post(':id/export')
+  @ApiOperation({ summary: 'Export button configuration as JSON' })
+  async exportButton(@Param('id') id: string) {
+    return await this.buttonsService.exportButton(id);
   }
 }

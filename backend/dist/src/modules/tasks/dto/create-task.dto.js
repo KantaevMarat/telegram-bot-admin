@@ -109,4 +109,16 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], CreateTaskDto.prototype, "active", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Available for: all, platinum, ranks', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateTaskDto.prototype, "available_for", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Target ranks (JSON array) if available_for = ranks', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateTaskDto.prototype, "target_ranks", void 0);
 //# sourceMappingURL=create-task.dto.js.map

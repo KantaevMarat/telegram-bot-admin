@@ -32,10 +32,27 @@ export declare class AuthService {
             first_name: string;
             balance_usdt: number;
             tasks_completed: number;
+            status: string;
         };
     }>;
     validateAdmin(tg_id: string): Promise<Admin>;
     validateUser(tg_id: string): Promise<User>;
+    getUserStatus(initData: string): Promise<{
+        exists: boolean;
+        status: null;
+        blocked: boolean;
+        user?: undefined;
+    } | {
+        exists: boolean;
+        status: string;
+        blocked: boolean;
+        user: {
+            id: string;
+            tg_id: string;
+            username: string;
+            first_name: string;
+        };
+    }>;
     devLogin(adminId: number): Promise<{
         access_token: string;
         admin: {

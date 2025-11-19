@@ -27,13 +27,21 @@ __decorate([
     __metadata("design:type", String)
 ], Command.prototype, "description", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'text' }),
+    (0, typeorm_1.Column)({ type: 'text', nullable: true }),
     __metadata("design:type", String)
 ], Command.prototype, "response", void 0);
 __decorate([
     (0, typeorm_1.Column)({ type: 'varchar', nullable: true }),
     __metadata("design:type", String)
 ], Command.prototype, "media_url", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', default: 'text' }),
+    __metadata("design:type", String)
+], Command.prototype, "action_type", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'jsonb', nullable: true }),
+    __metadata("design:type", Object)
+], Command.prototype, "action_payload", void 0);
 __decorate([
     (0, typeorm_1.Column)({ type: 'boolean', default: true }),
     __metadata("design:type", Boolean)

@@ -13,4 +13,6 @@ export declare class CreateTaskDto {
     min_completion_time?: number;
     cooldown_hours?: number;
     active?: boolean;
+    available_for?: string;
+    target_ranks?: string;
 }

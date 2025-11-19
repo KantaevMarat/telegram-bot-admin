@@ -37,7 +37,14 @@ export default function ScenariosPage() {
   // Получение списка сценариев
   const { data: scenarios, isLoading, refetch } = useQuery({
     queryKey: ['scenarios'],
-    queryFn: () => scenariosApi.getScenarios(),
+    queryFn: async () => {
+      const data = await scenariosApi.getScenarios();
+      // Преобразуем active -> is_active для совместимости с интерфейсом
+      return data.map((scenario: any) => ({
+        ...scenario,
+        is_active: scenario.active !== undefined ? scenario.active : scenario.is_active ?? true,
+      }));
+    },
   });
 
   // 🔄 Auto-refresh on sync events
@@ -45,7 +52,23 @@ export default function ScenariosPage() {
 
   // Создание сценария
   const createMutation = useMutation({
-    mutationFn: (data: any) => scenariosApi.createScenario(data),
+    mutationFn: (data: any) => {
+      console.log('🚀 createMutation.mutationFn CALLED!', new Date().toISOString());
+      // КРИТИЧЕСКИ ВАЖНО: создаем новый объект БЕЗ is_active
+      console.log('🔧 Mutation: Original data:', JSON.stringify(data, null, 2));
+      const cleanData: any = {
+        name: data.name,
+        trigger: data.trigger,
+      };
+      if (data.response) cleanData.response = data.response;
+      if (data.media_url) cleanData.media_url = data.media_url;
+      // Преобразуем is_active в active
+      cleanData.active = data.active !== undefined ? data.active : (data.is_active !== undefined ? data.is_active : true);
+      // Явно НЕ копируем is_active
+      console.log('🔧 Mutation: Clean data:', JSON.stringify(cleanData, null, 2));
+      console.log('🔧 Mutation: Has is_active?', 'is_active' in cleanData);
+      return scenariosApi.createScenario(cleanData);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scenarios'] });
       handleCloseModal();
@@ -56,7 +79,14 @@ export default function ScenariosPage() {
 
   // Обновление сценария
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) => scenariosApi.updateScenario(id, data),
+    mutationFn: ({ id, data }: { id: string; data: any }) => {
+      // КРИТИЧЕСКИ ВАЖНО: убеждаемся, что is_active не отправляется
+      const cleanData = { ...data };
+      delete cleanData.is_active;
+      console.log('🔧 Update Mutation: Original data:', data);
+      console.log('🔧 Update Mutation: Clean data:', cleanData);
+      return scenariosApi.updateScenario(id, cleanData);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scenarios'] });
       handleCloseModal();
@@ -83,7 +113,7 @@ export default function ScenariosPage() {
         trigger: scenario.trigger || '',
         response: scenario.response || '',
         media_url: scenario.media_url || '',
-        is_active: scenario.is_active ?? true,
+        is_active: scenario.is_active ?? (scenario as any).active ?? true,
       });
     } else {
       setEditingScenario(null);
@@ -136,6 +166,16 @@ export default function ScenariosPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Валидация обязательных полей
+    if (!formData.name || !formData.name.trim()) {
+      toast.error('Пожалуйста, укажите название сценария');
+      return;
+    }
+    if (!formData.trigger || !formData.trigger.trim()) {
+      toast.error('Пожалуйста, укажите триггер (команду или ID кнопки)');
+      return;
+    }
+
     // Upload file if selected
     let mediaUrl = formData.media_url;
     if (selectedFile) {
@@ -152,15 +192,47 @@ export default function ScenariosPage() {
       setUploadingFile(false);
     }
 
-    const submitData = {
-      ...formData,
-      media_url: mediaUrl,
+    // Преобразуем is_active -> active для backend
+    // ВАЖНО: создаем новый объект ТОЛЬКО с нужными полями, без is_active
+    const submitData: {
+      name: string;
+      trigger: string;
+      response?: string;
+      media_url?: string;
+      active: boolean;
+    } = {
+      name: formData.name.trim(),
+      trigger: formData.trigger.trim(),
+      active: formData.is_active, // Преобразуем is_active в active
+    };
+    
+    // Добавляем опциональные поля только если они есть и не пустые
+    if (formData.response?.trim()) {
+      submitData.response = formData.response.trim();
+    }
+    // Не добавляем media_url если он пустой
+    if (mediaUrl && mediaUrl.trim()) {
+      submitData.media_url = mediaUrl.trim();
+    }
+
+    // КРИТИЧЕСКИ ВАЖНО: убеждаемся, что is_active НЕ попадает в объект
+    // Создаем финальный объект без is_active
+    const finalData = {
+      name: submitData.name,
+      trigger: submitData.trigger,
+      active: submitData.active,
+      ...(submitData.response && { response: submitData.response }),
+      ...(submitData.media_url && { media_url: submitData.media_url }),
     };
 
+    console.log('📤 Sending scenario data:', JSON.stringify(finalData, null, 2));
+    console.log('📤 Has is_active?', 'is_active' in finalData);
+    console.log('📤 Final data keys:', Object.keys(finalData));
+
     if (editingScenario) {
-      updateMutation.mutate({ id: editingScenario.id, data: submitData });
+      updateMutation.mutate({ id: editingScenario.id, data: finalData });
     } else {
-      createMutation.mutate(submitData);
+      createMutation.mutate(finalData);
     }
   };
 

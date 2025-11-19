@@ -43,6 +43,7 @@ let SettingsController = class SettingsController {
         const ipAddress = headers['x-forwarded-for'] || headers['x-real-ip'] || req.connection.remoteAddress;
         const userAgent = headers['user-agent'];
         const changeReason = body.settings.length > 1 ? 'Bulk update' : 'Single setting update';
+        console.log('📝 Updating settings:', JSON.stringify(body.settings, null, 2));
         return await this.settingsService.updateAll(body.settings, adminTgId, adminUsername, adminFirstName, changeReason, ipAddress, userAgent);
     }
     async remove(key) {

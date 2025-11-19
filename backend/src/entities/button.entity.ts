@@ -35,6 +35,9 @@ export class Button {
   @Column({ type: 'boolean', default: true })
   active: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  admin_only: boolean; // If true, button is only visible to admins
+
   @CreateDateColumn()
   created_at: Date;
 

@@ -16,7 +16,35 @@ export declare class TasksService {
     private ranksService;
     constructor(taskRepo: Repository<Task>, userTaskRepo: Repository<UserTask>, userRepo: Repository<User>, balanceLogRepo: Repository<BalanceLog>, syncService: SyncService, ranksService: RanksService);
     create(createTaskDto: CreateTaskDto): Promise<Task>;
-    findAll(active?: boolean): Promise<Task[]>;
+    findAll(active?: boolean): Promise<{
+        rank_stats: {
+            stone: number;
+            bronze: number;
+            silver: number;
+            gold: number;
+            platinum: number;
+        };
+        id: string;
+        title: string;
+        description: string;
+        reward_min: number;
+        reward_max: number;
+        media_url: string;
+        media_type: string;
+        max_per_user: number;
+        action_url: string;
+        channel_id: string;
+        task_type: string;
+        command: string;
+        min_completion_time: number;
+        cooldown_hours: number;
+        active: boolean;
+        available_for: string;
+        target_ranks: string;
+        user_tasks: UserTask[];
+        created_at: Date;
+        updated_at: Date;
+    }[]>;
     findOne(id: string): Promise<Task>;
     update(id: string, updateTaskDto: UpdateTaskDto): Promise<Task>;
     remove(id: string): Promise<{

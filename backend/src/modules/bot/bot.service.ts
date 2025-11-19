@@ -9,6 +9,7 @@ import { Task } from '../../entities/task.entity';
 import { UserTask } from '../../entities/user-task.entity';
 import { Scenario } from '../../entities/scenario.entity';
 import { BalanceLog } from '../../entities/balance-log.entity';
+import { Admin } from '../../entities/admin.entity';
 import { FakeStatsService } from '../stats/fake-stats.service';
 import { SettingsService } from '../settings/settings.service';
 import { MessagesService } from '../messages/messages.service';
@@ -25,6 +26,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private botToken: string = '';
   private pollingOffset: number = 0; // Start from 0 to get all messages
   private pollingInterval: NodeJS.Timeout | null = null;
+  private consecutiveErrors: number = 0; // Track consecutive 409 errors
 
   constructor(
     @InjectRepository(User)
@@ -39,6 +41,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private scenarioRepo: Repository<Scenario>,
     @InjectRepository(BalanceLog)
     private balanceLogRepo: Repository<BalanceLog>,
+    @InjectRepository(Admin)
+    private adminRepo: Repository<Admin>,
     private configService: ConfigService,
     private fakeStatsService: FakeStatsService,
     private settingsService: SettingsService,
@@ -120,6 +124,36 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       if (!useWebhook) {
         this.logger.log('🤖 Starting client bot polling (polling mode - default)');
         this.logger.log('💡 To use webhook mode, set USE_WEBHOOK=true and configure webhook via /api/bot/set-webhook');
+        
+        // Delete any existing webhook to avoid conflicts
+        try {
+          this.logger.log('🔄 Deleting any existing webhook...');
+          await this.deleteWebhook(true);
+          this.logger.log('✅ Webhook deleted to avoid conflicts with polling');
+          // Wait longer for Telegram API to fully process
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          
+          // Verify webhook is deleted
+          try {
+            const webhookInfo = await axios.get(`https://api.telegram.org/bot${this.botToken}/getWebhookInfo`);
+            if (webhookInfo.data.result?.url) {
+              this.logger.warn(`⚠️ Webhook still exists: ${webhookInfo.data.result.url}. Trying to delete again...`);
+              await this.deleteWebhook(true);
+              await new Promise(resolve => setTimeout(resolve, 3000));
+            } else {
+              this.logger.log('✅ Webhook confirmed deleted');
+            }
+          } catch (verifyError) {
+            this.logger.warn('⚠️ Could not verify webhook status:', verifyError.message);
+          }
+        } catch (error) {
+          this.logger.warn('⚠️ Could not delete webhook (may not exist):', error.message);
+        }
+        
+        // Reset polling offset to start fresh
+        this.pollingOffset = 0;
+        this.consecutiveErrors = 0;
+        
         this.startPolling();
       } else {
         this.logger.log('📡 Webhook mode: polling disabled (USE_WEBHOOK=true)');
@@ -171,11 +205,14 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private async pollUpdates() {
     try {
       const url = `https://api.telegram.org/bot${this.botToken}/getUpdates`;
-      this.logger.debug(`🔍 Polling with offset: ${this.pollingOffset + 1}`);
+      // Use offset+1 to get updates after the last processed one, or 0 to get all pending
+      // NEVER use offset -1 as it causes infinite loops - always use proper offset
+      const offset = this.pollingOffset > 0 ? this.pollingOffset + 1 : 0;
+      this.logger.debug(`🔍 Polling with offset: ${offset} (last processed: ${this.pollingOffset})`);
 
       const response = await axios.get(url, {
         params: {
-          offset: this.pollingOffset,
+          offset: offset,
           limit: 100,
           timeout: 30, // 30 second long polling timeout
         },
@@ -190,22 +227,78 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         for (const update of updates) {
           this.logger.debug(`📨 Processing update ${update.update_id}: ${update.message?.text || 'no text'}`);
           await this.handleWebhook(update);
-          this.pollingOffset = update.update_id + 1; // Set to next expected update_id
+          // Update offset to avoid processing same update again
+          this.pollingOffset = Math.max(this.pollingOffset, update.update_id);
+        }
+        
+        // After processing all updates, set offset to next expected update_id
+        if (updates.length > 0) {
+          const lastUpdateId = updates[updates.length - 1].update_id;
+          this.pollingOffset = lastUpdateId + 1;
+          this.consecutiveErrors = 0; // Reset error counter on successful processing
+          this.logger.debug(`✅ Updated polling offset to: ${this.pollingOffset} (last update_id: ${lastUpdateId})`);
         }
       } else {
         this.logger.debug('📭 No new updates');
       }
 
-      // Continue polling
+      // Continue polling with a small delay to avoid overwhelming the API and prevent stack overflow
       if (this.pollingInterval) { // Check if not destroyed
-        this.pollUpdates();
+        // Use setTimeout instead of immediate call to prevent stack overflow
+        setTimeout(() => this.pollUpdates(), 100); // Small delay between polls
       }
     } catch (error) {
-      this.logger.error('Failed to poll updates:', error.response?.status, error.response?.data || error.message);
+      const errorCode = error.response?.status;
+      const errorData = error.response?.data;
+      
+      // Handle 409 conflict - another instance is polling
+      if (errorCode === 409) {
+        this.consecutiveErrors++;
+        this.logger.warn(`⚠️ Conflict (409): Another bot instance may be running. Attempt ${this.consecutiveErrors}`);
+        
+        // After 3 consecutive 409 errors, stop polling immediately to prevent infinite loop
+        if (this.consecutiveErrors >= 3) {
+          this.logger.error('❌ Too many 409 conflicts detected (3+). Stopping polling to prevent infinite loop.');
+          this.logger.error('⚠️ Another bot instance is receiving updates. Please:');
+          this.logger.error('   1. Check if another server/process is using the same bot token');
+          this.logger.error('   2. Stop the other instance or use webhook mode instead');
+          this.logger.error('   3. Restart this service after resolving the conflict');
+          
+          // Stop polling completely
+          if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+            this.logger.error('🛑 Polling interval cleared. Bot is now stopped.');
+          }
+          
+          // Don't retry - manual intervention required
+          return;
+        }
+      } else {
+        this.consecutiveErrors = 0; // Reset on non-409 errors
+        this.logger.error('Failed to poll updates:', errorCode, errorData || error.message);
+      }
 
-      // Retry polling after error
-      if (this.pollingInterval) {
+      // Retry polling after error (if not already handled above)
+      if (!this.pollingInterval) {
+        // Polling was stopped, don't retry
+        this.logger.debug('🛑 Polling is stopped, not retrying.');
+        return;
+      }
+      
+      if (errorCode !== 409) {
         setTimeout(() => this.pollUpdates(), 5000); // Retry in 5 seconds
+      } else if (errorCode === 409 && this.consecutiveErrors < 3) {
+        // Wait longer between retries for 409 errors to reduce load
+        setTimeout(() => this.pollUpdates(), 15000); // Retry in 15 seconds for 409
+      } else if (errorCode === 409 && this.consecutiveErrors >= 3) {
+        // Don't retry - polling stopped due to too many conflicts
+        this.logger.error('🛑 Polling stopped due to persistent 409 conflicts. Manual intervention required.');
+        // Ensure polling is stopped (should already be stopped above, but double-check)
+        if (this.pollingInterval) {
+          clearInterval(this.pollingInterval);
+          this.pollingInterval = null;
+        }
       }
     }
   }
@@ -213,6 +306,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private async handleMessage(message: any) {
     const chatId = message.chat.id.toString();
     const text = message.text;
+    
+    this.logger.debug(`📨 Received message: "${text}" from ${chatId}, starts with /: ${text?.startsWith('/')}`);
 
     // Check maintenance mode
     const maintenanceMode = await this.settingsService.getValue('maintenance_mode', 'false');
@@ -240,6 +335,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       }
 
       user = await this.createUser(message.from, refBy);
+      
+      // Send welcome message (uses greeting_template from settings)
       await this.sendWelcomeMessage(chatId, user);
 
       // Notify referrer
@@ -249,9 +346,15 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Check for blocked user
-    if (user.status === 'blocked') {
-      await this.sendMessage(chatId, 'Ваш аккаунт заблокирован.');
+    // Check for blocked user - BLOCK ALL INTERACTIONS
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
       return;
     }
 
@@ -302,6 +405,37 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     // Handle commands
     if (text?.startsWith('/')) {
+      // Commands starting with / are handled directly, not as reply buttons
+      // (Reply buttons don't start with /)
+      
+      // CRITICAL: Check for blocked user BEFORE handling command
+      // This check MUST happen before calling handleCommand
+      const isBlocked = await this.checkUserBlocked(user);
+      if (isBlocked) {
+        this.logger.warn(`BLOCKED user ${user.tg_id} (ID: ${user.id}) attempted command: ${text}`);
+        await this.sendMessage(
+          chatId,
+          '🔒 *Ваш аккаунт заблокирован*\n\n' +
+          'Ваш аккаунт был заблокирован администратором.\n\n' +
+          'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+          '_Доступ к боту временно ограничен._',
+        );
+        return; // CRITICAL: Stop processing immediately - do NOT call handleCommand
+      }
+      
+      // Double-check before calling handleCommand
+      if (await this.checkUserBlocked(user)) {
+        this.logger.warn(`BLOCKED user ${user.tg_id} (ID: ${user.id}) attempted command: ${text} (double-check)`);
+        await this.sendMessage(
+          chatId,
+          '🔒 *Ваш аккаунт заблокирован*\n\n' +
+          'Ваш аккаунт был заблокирован администратором.\n\n' +
+          'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+          '_Доступ к боту временно ограничен._',
+        );
+        return; // CRITICAL: Stop processing immediately - do NOT call handleCommand
+      }
+      
       await this.handleCommand(chatId, text, user);
     } else if (text?.startsWith('wallet ')) {
       // ✅ Check mandatory channel subscriptions for withdrawal
@@ -322,10 +456,24 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       // Handle withdrawal request
       await this.handleWithdrawalRequest(chatId, user, text);
     } else {
-      // Handle ReplyKeyboard button clicks
+      // Check for blocked user BEFORE handling reply button
+      if (await this.checkUserBlocked(user)) {
+        await this.sendMessage(
+          chatId,
+          '🔒 *Ваш аккаунт заблокирован*\n\n' +
+          'Ваш аккаунт был заблокирован администратором.\n\n' +
+          'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+          '_Доступ к боту временно ограничен._',
+        );
+        return;
+      }
+      
+      // Handle ReplyKeyboard button clicks (только для текста, который НЕ начинается с /)
+      // Команды уже обработаны выше
       const handled = await this.handleReplyButton(chatId, text, user);
       if (handled) {
-        return;
+        this.logger.debug(`✅ Reply button "${text}" handled successfully, stopping message processing`);
+        return; // CRITICAL: Stop processing to avoid sending template message
       }
 
       // ✅ Check mandatory channel subscriptions for scenarios and regular messages
@@ -350,7 +498,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       } else {
         // Save user message
         await this.messagesService.createUserMessage(user.id, text);
-        await this.sendMessage(chatId, 'Спасибо за ваше сообщение! Администратор скоро ответит.', await this.getReplyKeyboard());
+        await this.sendMessage(chatId, 'Спасибо за ваше сообщение! Администратор скоро ответит.', await this.getReplyKeyboard(user.tg_id));
       }
     }
   }
@@ -432,6 +580,33 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Check if user is blocked and refresh status from DB
+   * Returns true if user is blocked, false otherwise
+   * Updates user object with fresh data from DB
+   */
+  private async checkUserBlocked(user: User): Promise<boolean> {
+    try {
+      const freshUser = await this.userRepo.findOne({ where: { id: user.id } });
+      if (freshUser) {
+        Object.assign(user, freshUser);
+        const isBlocked = freshUser.status === 'blocked';
+        if (isBlocked) {
+          this.logger.log(`User ${user.tg_id} (ID: ${user.id}) is BLOCKED`);
+        }
+        return isBlocked;
+      }
+      const isBlocked = user.status === 'blocked';
+      if (isBlocked) {
+        this.logger.log(`User ${user.tg_id} (ID: ${user.id}) is BLOCKED (no fresh data)`);
+      }
+      return isBlocked;
+    } catch (error) {
+      this.logger.error(`Error checking user blocked status:`, error);
+      return user.status === 'blocked';
+    }
+  }
+
   private async notifyReferrer(referrerTgId: string) {
     try {
       await this.sendMessage(referrerTgId, '🎉 У вас новый реферал! Вы получили бонус 5 USDT.');
@@ -441,31 +616,79 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async sendWelcomeMessage(chatId: string, user: User) {
-    const fakeStats = await this.fakeStatsService.getLatestFakeStats();
-
-    const greetingTemplate = await this.settingsService.getValue(
-      'greeting_template',
-      '👋 Добро пожаловать, {username}!\n\n💰 Ваш баланс: {balance} USDT\n📊 Всего заработано: {tasks_completed} заданий\n\n🎯 Выполняйте задания и зарабатывайте!\n👥 Приглашайте друзей по реферальной ссылке\n💸 Выводите заработанные средства\n\n📈 Сейчас онлайн: {fake.online} чел.\n✅ Активных пользователей: {fake.active}\n💵 Выплачено всего: ${fake.paid} USDT',
-    );
-
-    let text = greetingTemplate;
-    if (fakeStats) {
-      text = text
-        .replace('{fake.online}', fakeStats.online.toString())
-        .replace('{fake.active}', fakeStats.active.toString())
-        .replace('{fake.paid}', fakeStats.paid_usdt.toString())
-        .replace('{username}', user.username || user.first_name || 'Друг')
-        .replace('{balance}', user.balance_usdt.toString())
-        .replace('{tasks_completed}', user.tasks_completed.toString());
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
     }
 
-    await this.sendMessage(chatId, text, await this.getReplyKeyboard());
+    // ✅ Check if /start command exists in database
+    const startCommand = await this.commandsService.findByName('start');
+    if (startCommand) {
+      // Use command from database
+      await this.handleCustomCommand(chatId, user, startCommand);
+      return;
+    }
+
+    // ✅ No welcome message template - just return silently
+    // All functionality should be accessed via commands or buttons from database
+    return;
   }
 
   private async handleCommand(chatId: string, command: string, user: User) {
-    const cmd = command.split(' ')[0];
+    // CRITICAL: Check for blocked user FIRST - before ANY command processing
+    // This check MUST happen before any other logic
+    const isBlocked = await this.checkUserBlocked(user);
+    if (isBlocked) {
+      this.logger.warn(`BLOCKED user ${user.tg_id} (ID: ${user.id}) attempted command: ${command}`);
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return; // CRITICAL: Stop processing immediately
+    }
+
+    let cmd = command.split(' ')[0];
+    // Remove leading slash for database lookup
+    const cmdName = cmd.startsWith('/') ? cmd.substring(1) : cmd;
+    
+    // Double-check: user should not be blocked (safety check before processing command)
+    if (await this.checkUserBlocked(user)) {
+      this.logger.warn(`BLOCKED user ${user.tg_id} (ID: ${user.id}) attempted command: ${command} (double-check)`);
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return; // CRITICAL: Stop processing immediately
+    }
+
+    // Triple-check: user should not be blocked before processing command
+    if (await this.checkUserBlocked(user)) {
+      this.logger.warn(`BLOCKED user ${user.tg_id} (ID: ${user.id}) attempted command: ${command} (triple-check before switch)`);
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return; // CRITICAL: Stop processing immediately
+    }
 
     // ✅ Check mandatory channel subscriptions for ALL commands (including /start!)
+    // BUT ONLY if user is not blocked
     const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
     
     if (!allSubscribed) {
@@ -480,76 +703,54 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    switch (cmd) {
-      case '/start':
-        await this.sendWelcomeMessage(chatId, user);
-        break;
-
-      case '/balance':
-        await this.sendBalance(chatId, user);
-        break;
-
-      case '/tasks':
-        await this.sendAvailableTasks(chatId, user);
-        break;
-
-      case '/profile':
-        await this.sendProfile(chatId, user);
-        break;
-
-      case '/referral':
-        await this.sendReferralInfo(chatId, user);
-        break;
-
-      case '/menu':
-        await this.sendWelcomeMessage(chatId, user);
-        break;
-
-      case '/help':
-        await this.sendHelp(chatId);
-        break;
-
-      case '!premium_info':
-        await this.handlePremiumInfo(chatId, user);
-        break;
-
-      case '!upgrade':
-        await this.handleUpgrade(chatId, user);
-        break;
-
-      case '/rank':
-      case '/ranks':
-        await this.sendRankInfo(chatId, user);
-        break;
-
-      default:
-        // Check if command is for a task
-        const task = await this.taskRepo.findOne({ 
-          where: { 
-            command: cmd, 
-            active: true 
-          } 
-        });
-        
-        if (task) {
-          // Handle task command
-          await this.handleTaskCommand(chatId, user, task);
-        } else {
-          // Check if it's a custom command
-          const customCommand = await this.commandsService.findByName(cmd);
-          
-          if (customCommand) {
-            // Execute custom command
-            if (customCommand.media_url) {
-              await this.sendMessageWithMedia(chatId, customCommand.response, customCommand.media_url);
-            } else {
-              await this.sendMessage(chatId, customCommand.response, await this.getReplyKeyboard());
-            }
-          } else {
-            await this.sendMessage(chatId, 'Неизвестная команда. Используйте /help для списка команд.', await this.getReplyKeyboard());
-          }
-        }
+    // Final check: user should not be blocked before executing command
+    if (await this.checkUserBlocked(user)) {
+      this.logger.warn(`BLOCKED user ${user.tg_id} (ID: ${user.id}) attempted command: ${command} (final check before switch)`);
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return; // CRITICAL: Stop processing immediately
     }
+
+    // ✅ ALL commands come from database only - no built-in commands
+    const dbCommand = await this.commandsService.findByName(cmdName);
+    
+    if (dbCommand) {
+      // Execute command from database
+      await this.handleCustomCommand(chatId, user, dbCommand);
+      return;
+    }
+
+    // Check if command is for a task
+    const task = await this.taskRepo.findOne({ 
+      where: { 
+        command: cmd, 
+        active: true 
+      } 
+    });
+    
+    if (task) {
+      // Handle task command
+      await this.handleTaskCommand(chatId, user, task);
+      return;
+    }
+
+    // ✅ Special handling for /start - if not in DB, use welcome message
+    if (cmdName === 'start') {
+      await this.sendWelcomeMessage(chatId, user);
+      return;
+    }
+
+    // Command not found in database, tasks, or scenarios
+    await this.sendMessage(
+      chatId, 
+      '❓ Неизвестная команда.\n\nИспользуйте /start для просмотра доступных функций.', 
+      await this.getReplyKeyboard(user?.tg_id)
+    );
   }
 
   /**
@@ -573,7 +774,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             await this.sendMessage(
               chatId,
               `⏳ Это задание можно выполнить повторно через ${remainingHours} ${remainingHours === 1 ? 'час' : 'часов'}.`,
-              await this.getReplyKeyboard()
+              await this.getReplyKeyboard(user?.tg_id)
             );
             return;
           }
@@ -589,7 +790,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         await this.sendMessage(
           chatId,
           '✅ Вы уже выполнили это задание максимальное количество раз.',
-          await this.getReplyKeyboard()
+          await this.getReplyKeyboard(user?.tg_id)
         );
         return;
       }
@@ -605,6 +806,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         task_id: task.id,
         status: task.task_type === 'manual' ? 'pending' : 'completed',
         reward: calculatedReward,
+        reward_received: task.task_type === 'manual' ? 0 : calculatedReward, // Set reward_received based on task type
       });
       
       this.logger.log(`💰 Assigned reward for task "${task.title}": ${calculatedReward} USDT (range: ${reward_min}-${reward_max})`);
@@ -640,7 +842,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             `✨ Выполнено заданий: ${updatedUser.tasks_completed}\n` +
             `📈 Всего заработано: ${updatedUser.total_earned.toFixed(2)} USDT\n\n` +
             `Поздравляем! Средства зачислены на ваш счет. 🎉`,
-            await this.getReplyKeyboard()
+            await this.getReplyKeyboard(user?.tg_id)
           );
         }
       } else {
@@ -652,7 +854,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           `⏳ Ожидайте подтверждения администратора.\n` +
           `Мы проверим выполнение в ближайшее время и отправим вам уведомление.\n\n` +
           `📬 Вы получите сообщение о результатах проверки.`,
-          await this.getReplyKeyboard()
+          await this.getReplyKeyboard(user?.tg_id)
         );
       }
     } catch (error) {
@@ -661,8 +863,21 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async sendHelp(chatId: string) {
-    const text =
+  private async sendHelp(chatId: string, user?: User, customResponse?: string) {
+    // Double-check: user should not be blocked (safety check)
+    if (user && await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
+    // Use custom response if provided, otherwise use default
+    const text = customResponse || 
       `📖 *Справка по боту*\n\n` +
       `🎯 *Используйте кнопки меню:*\n` +
       `📋 Задания - список доступных заданий\n` +
@@ -678,7 +893,19 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     await this.sendMessage(chatId, text, await this.getReplyKeyboard());
   }
 
-  private async sendAvailableTasks(chatId: string, user: User) {
+  private async sendAvailableTasks(chatId: string, user: User, customResponse?: string) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
     const tasks = await this.taskRepo.find({ where: { active: true } });
 
     if (tasks.length === 0) {
@@ -688,12 +915,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // Get user rank for filtering
+    const userRank = await this.ranksService.getUserRank(user.id);
+    const userRankLevel = userRank.current_rank;
+    const hasPlatinum = userRank.platinum_active && userRank.platinum_expires_at && new Date() < userRank.platinum_expires_at;
+
     // Build message with statistics
     const completedTotal = await this.userTaskRepo.count({
       where: { user_id: user.id, status: 'completed' },
     });
 
-    let message = 
+    // Use custom response if provided, otherwise use default
+    let message = customResponse ||
       `📋 *Доступные задания*\n\n` +
       `✅ Выполнено: ${completedTotal} заданий\n` +
       `💰 Заработано: ${user.total_earned} USDT\n\n` +
@@ -703,6 +936,32 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const keyboard: any[] = [];
 
     for (const task of tasks) {
+      // Check if task is available for this user based on available_for setting
+      let isAvailableForUser = true;
+      
+      if (task.available_for === 'platinum') {
+        // Only available for platinum subscribers
+        isAvailableForUser = hasPlatinum;
+      } else if (task.available_for === 'ranks' && task.target_ranks) {
+        // Available only for specific ranks
+        try {
+          const targetRanks = JSON.parse(task.target_ranks);
+          if (Array.isArray(targetRanks)) {
+            // If user has platinum, they can access all rank-restricted tasks
+            isAvailableForUser = hasPlatinum || targetRanks.includes(userRankLevel);
+          }
+        } catch (e) {
+          this.logger.warn(`Failed to parse target_ranks for task ${task.id}: ${e.message}`);
+          // If parsing fails, make task available to all (fallback)
+          isAvailableForUser = true;
+        }
+      }
+      // If available_for === 'all' or null/undefined, task is available for everyone
+
+      if (!isAvailableForUser) {
+        continue; // Skip this task
+      }
+
       const completedCount = await this.userTaskRepo.count({
         where: { user_id: user.id, task_id: task.id, status: 'completed' },
       });
@@ -753,14 +1012,29 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const data = callback.data;
     const tgId = callback.from.id.toString();
 
-    // Answer callback to remove loading state
-    await this.answerCallbackQuery(callback.id, '⏳ Обработка...');
-
+    // Get user FIRST - before answering callback
     const user = await this.userRepo.findOne({ where: { tg_id: tgId } });
     if (!user) {
+      await this.answerCallbackQuery(callback.id, 'Пользователь не найден');
       await this.sendMessage(chatId, 'Пользователь не найден. Используйте /start');
       return;
     }
+
+    // Check for blocked user FIRST - before any callback processing
+    if (await this.checkUserBlocked(user)) {
+      await this.answerCallbackQuery(callback.id, 'Ваш аккаунт заблокирован');
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return; // CRITICAL: Stop processing here
+    }
+
+    // Answer callback to remove loading state (only if user is not blocked)
+    await this.answerCallbackQuery(callback.id, '⏳ Обработка...');
 
     // ✅ Check mandatory channel subscriptions (skip for check_subscription action itself)
     if (data !== 'check_subscription' && data !== 'noop' && data !== 'menu') {
@@ -784,6 +1058,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(tgId);
       
       if (!allSubscribed) {
+        await this.answerCallbackQuery(callback.id, '❌ Вы не подписаны на все каналы');
         await this.sendMessage(
           chatId,
           `❌ *Вы еще не подписались на все каналы!*\n\n` +
@@ -792,24 +1067,33 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           this.generateSubscriptionKeyboard(unsubscribedChannels, 'check_subscription'),
         );
       } else {
-        await this.sendMessage(chatId, '✅ Отлично! Все подписки подтверждены!', await this.getReplyKeyboard());
+        // Обновляем статус подписки на каналы для ранга
+        await this.ranksService.setChannelsSubscribed(user.id, true);
+        
+        // Проверяем возможность повышения ранга
+        const rankUpdate = await this.ranksService.checkAndUpdateRank(user.id);
+        
+        await this.answerCallbackQuery(callback.id, '✅ Подписка подтверждена!');
+        
+        let message = '✅ Отлично! Все подписки подтверждены!';
+        
+        // Если пользователь повысил ранг до Бронзы
+        if (rankUpdate.leveledUp && rankUpdate.newLevel === 'bronze') {
+          message = `🎉 *Поздравляем!*\n\n` +
+            `🥉 Ты достиг ранга *Бронза*!\n\n` +
+            `💰 Новый бонус: *+${rankUpdate.rank.bonus_percentage}%* ко всем наградам!\n\n` +
+            `Теперь ты можешь выполнять задания и зарабатывать больше!`;
+        }
+        
+        await this.sendMessage(chatId, message, await this.getReplyKeyboard(user?.tg_id));
       }
       return;
     }
 
     // Handle different button actions
-    if (data === 'tasks') {
-      await this.sendAvailableTasks(chatId, user);
-    } else if (data === 'my_tasks') {
+    // ✅ Handle task-related actions (system functionality)
+    else if (data === 'my_tasks') {
       await this.showMyTasks(chatId, user);
-    } else if (data === 'balance') {
-      await this.sendBalance(chatId, user);
-    } else if (data === 'profile') {
-      await this.sendProfile(chatId, user);
-    } else if (data === 'withdraw') {
-      await this.sendWithdrawInfo(chatId, user);
-    } else if (data === 'referral') {
-      await this.sendReferralInfo(chatId, user);
     } else if (data.startsWith('task_')) {
       await this.handleTaskAction(chatId, user, data);
     } else if (data.startsWith('start_task_')) {
@@ -818,15 +1102,19 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       await this.submitTask(chatId, user, data);
     } else if (data.startsWith('cancel_task_')) {
       await this.cancelTask(chatId, user, data);
-    } else if (data === 'noop') {
-      // Do nothing - just acknowledge the callback
-      return;
     } else if (data.startsWith('verify_')) {
       await this.handleTaskVerification(chatId, user, data);
+    }
+    // ✅ Handle utility callbacks
+    else if (data === 'noop') {
+      // Do nothing - just acknowledge the callback
+      return;
     } else if (data === 'menu') {
+      // Send welcome message (uses greeting_template from settings)
       await this.sendWelcomeMessage(chatId, user);
-    } else {
-      // Check if it's a custom button from DB
+    }
+    // ✅ Handle custom buttons from database (admin panel)
+    else {
       const button = await this.buttonRepo.findOne({ where: { id: data } });
       if (button) {
         await this.handleCustomButton(chatId, user, button);
@@ -867,26 +1155,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       keyboard.push(rows[rowKey]);
     }
 
-    // Add Web App button if no custom buttons
+    // ✅ No fallback buttons - all buttons must be configured in admin panel
     if (keyboard.length === 0) {
-      const webAppUrl = await this.settingsService.getValue(
-        'web_app_url',
-        'https://your-app-url.com',
-      );
-      keyboard.push([
-        { text: '📋 Задания', callback_data: 'tasks' },
-        { text: '💰 Баланс', callback_data: 'balance' },
-      ]);
-      keyboard.push([
-        { text: '👤 Профиль', callback_data: 'profile' },
-        { text: '👥 Рефералы', callback_data: 'referral' },
-      ]);
-      keyboard.push([
-        {
-          text: '🌐 Открыть приложение',
-          web_app: { url: webAppUrl },
-        },
-      ]);
+      this.logger.warn('⚠️ No inline keyboard buttons configured in database. Please add buttons via admin panel.');
     }
 
     const result = {
@@ -901,138 +1172,110 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Get Reply Keyboard (постоянные кнопки внизу экрана)
-   * Загружает кнопки из БД и объединяет с дефолтными
+   * УДАЛЕНО: Все кнопки с командами удалены по запросу пользователя
+   * @param userTgId Optional Telegram user ID to check admin status
    */
-  private async getReplyKeyboard() {
-    // Try to get from cache first
-    const cacheKey = 'buttons:reply_keyboard';
-    const cached = this.syncService.getCache(cacheKey);
-    
-    if (cached) {
-      this.logger.debug('✅ Using cached reply keyboard');
-      return cached;
+  private async getReplyKeyboard(userTgId?: string) {
+    // ✅ Return empty keyboard - no buttons with commands
+    return undefined;
+  }
+
+  /**
+   * Check if a user is an admin by Telegram ID
+   */
+  private async isUserAdmin(tgId: string): Promise<boolean> {
+    try {
+      const admin = await this.adminRepo.findOne({ where: { tg_id: tgId } });
+      return !!admin;
+    } catch (error) {
+      this.logger.error(`Error checking admin status for ${tgId}:`, error.message);
+      return false;
     }
-
-    // Fetch custom buttons from database
-    const dbButtons = await this.buttonRepo.find({
-      where: { active: true },
-      order: { row: 'ASC', col: 'ASC' },
-    });
-
-    const keyboard: any[] = [];
-    const rows: any = {};
-
-    // Add custom buttons from DB
-    for (const button of dbButtons) {
-      if (!rows[button.row]) {
-        rows[button.row] = [];
-      }
-      rows[button.row].push({
-        text: button.label,
-      });
-    }
-
-    // If no custom buttons or not enough rows, add default buttons
-    if (Object.keys(rows).length === 0) {
-      // Default keyboard
-      keyboard.push(
-        [{ text: '📋 Задания' }, { text: '💰 Баланс' }],
-        [{ text: '👤 Профиль' }, { text: '👥 Рефералы' }],
-        [{ text: '💸 Вывести' }, { text: 'ℹ️ Помощь' }],
-      );
-    } else {
-      // Convert rows object to array
-      for (const rowKey of Object.keys(rows).sort((a, b) => parseInt(a) - parseInt(b))) {
-        keyboard.push(rows[rowKey]);
-      }
-
-      // Add default "Помощь" button if not present
-      const hasHelp = dbButtons.some(b => 
-        b.label.includes('Помощь') || b.label.includes('Помощь') || b.label === 'ℹ️ Помощь'
-      );
-      if (!hasHelp && keyboard.length > 0) {
-        // Add help button to last row if there's space, otherwise new row
-        const lastRow = keyboard[keyboard.length - 1];
-        if (lastRow.length < 2) {
-          lastRow.push({ text: 'ℹ️ Помощь' });
-        } else {
-          keyboard.push([{ text: 'ℹ️ Помощь' }]);
-        }
-      }
-    }
-
-    const result = {
-      keyboard,
-      resize_keyboard: true,
-      persistent: true,
-    };
-
-    // Cache for 60 seconds (will be invalidated on button changes)
-    this.syncService.setCache(cacheKey, result, 60);
-
-    return result;
   }
 
   /**
    * Handle Reply Keyboard button clicks
-   * Поддерживает как дефолтные, так и кастомные кнопки из БД
+   * Поддерживает кастомные кнопки из БД с mapping на встроенные функции
    */
   private async handleReplyButton(chatId: string, text: string, user: User): Promise<boolean> {
-    // ✅ Check mandatory channel subscriptions for ALL actions (no exceptions)
-    const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
+    this.logger.debug(`🔘 Handling reply button: "${text}" from user ${user.tg_id}`);
     
-    if (!allSubscribed) {
+    // Check for blocked user FIRST - before any button processing
+    if (await this.checkUserBlocked(user)) {
       await this.sendMessage(
         chatId,
-        `🔔 *Обязательная подписка*\n\n` +
-        `Для использования бота необходимо подписаться на наши каналы:\n\n` +
-        unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n') +
-        `\n\n_После подписки нажмите кнопку "Я подписался"_`,
-        this.generateSubscriptionKeyboard(unsubscribedChannels, 'check_subscription'),
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
       );
+      return true; // Return true to indicate handled (blocked)
+    }
+
+    // Try to find custom button from DB
+    const button = await this.buttonRepo.findOne({ 
+      where: { label: text, active: true } 
+    });
+    
+    if (button) {
+      this.logger.debug(`✅ Found button in DB: ${button.label}, command: ${button.command || 'none'}`);
+      // Check if button has a command - all commands come from DB
+      if (button.command) {
+        // Handle command via handleCommand (checks DB)
+        this.logger.debug(`📝 Button has command, calling handleCommand: ${button.command}`);
+        await this.handleCommand(chatId, button.command, user);
+        return true;
+      }
+      
+      // Otherwise handle as custom button
+      this.logger.debug(`🎯 Button has no command, calling handleCustomButton`);
+      await this.handleCustomButton(chatId, user, button);
       return true;
     }
 
-    // Check default buttons first
-    switch (text) {
-      case '📋 Задания':
-        await this.sendAvailableTasks(chatId, user);
-        return true;
-
-      case '💰 Баланс':
-        await this.sendBalance(chatId, user);
-        return true;
-
-      case '👤 Профиль':
-        await this.sendProfile(chatId, user);
-        return true;
-
-      case '👥 Рефералы':
-        await this.sendReferralInfo(chatId, user);
-        return true;
-
-      case '💸 Вывести':
-        await this.sendWithdrawInfo(chatId, user);
-        return true;
-
-      case 'ℹ️ Помощь':
-        await this.sendHelp(chatId);
-        return true;
-
-      default:
-        // Check if it's a custom button from DB
-        const button = await this.buttonRepo.findOne({ 
-          where: { label: text, active: true } 
-        });
-        
-        if (button) {
-          await this.handleCustomButton(chatId, user, button);
-          return true;
-        }
-        
-        return false;
+    // Fallback: Handle common button labels that might not be in DB yet
+    // This is a temporary fallback until all buttons are properly configured
+    const normalizedText = text.trim().toLowerCase();
+    this.logger.debug(`🔍 Button not found in DB, checking fallback for: "${normalizedText}"`);
+    
+    // Map common button labels to commands/actions
+    // Check for "Задания" - be very permissive with matching
+    const zadaniyaVariants = ['задания', 'задани', 'заданий', 'заданиe'];
+    const matchesZadaniya = zadaniyaVariants.some(variant => 
+      normalizedText === variant || 
+      normalizedText.includes(variant) ||
+      text.toLowerCase().includes(variant)
+    );
+    
+    if (matchesZadaniya || normalizedText === 'задания' || normalizedText.includes('задания')) {
+      this.logger.log(`✅ Fallback: Handling "Задания" button (normalized: "${normalizedText}", original: "${text}")`);
+      await this.sendAvailableTasks(chatId, user);
+      return true;
     }
+    
+    if (normalizedText === 'профиль' || normalizedText.includes('профиль')) {
+      this.logger.debug(`✅ Fallback: Handling "Профиль" button`);
+      await this.handleCommand(chatId, '/profile', user);
+      return true;
+    }
+    
+    if (normalizedText === 'баланс' || normalizedText.includes('баланс')) {
+      this.logger.debug(`✅ Fallback: Handling "Баланс" button`);
+      await this.handleCommand(chatId, '/balance', user);
+      return true;
+    }
+    
+    if (normalizedText === 'рефералы' || normalizedText.includes('рефералы')) {
+      this.logger.debug(`✅ Fallback: Handling "Рефералы" button`);
+      await this.handleCommand(chatId, '/referrals', user);
+      return true;
+    }
+
+    this.logger.debug(`❌ Button not handled: "${text}"`);
+    // ✅ No hardcoded buttons - all buttons must be configured in admin panel
+    return false;
   }
+
 
   async sendMessage(chatId: string, text: string, replyMarkup?: any) {
     const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
@@ -1247,10 +1490,38 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async deleteWebhook(dropPendingUpdates: boolean = true) {
+    const url = `https://api.telegram.org/bot${this.botToken}/deleteWebhook`;
+
+    try {
+      const response = await axios.post(url, {
+        drop_pending_updates: dropPendingUpdates,
+      });
+      this.logger.log('Webhook deleted successfully');
+      return response.data;
+    } catch (error) {
+      this.logger.error('Failed to delete webhook:', error);
+      throw error;
+    }
+  }
+
   // === NEW METHODS ===
 
-  private async sendBalance(chatId: string, user: User) {
-    const text =
+  private async sendBalance(chatId: string, user: User, customResponse?: string) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
+    // Use custom response if provided, otherwise use default
+    const text = customResponse ||
       `💰 *Ваш баланс*\n\n` +
       `💵 Доступно: *${user.balance_usdt} USDT*\n` +
       `📊 Всего заработано: ${user.total_earned} USDT\n` +
@@ -1261,26 +1532,47 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     await this.sendMessage(chatId, text, await this.getReplyKeyboard());
   }
 
-  private async sendProfile(chatId: string, user: User) {
+  private async sendProfile(chatId: string, user: User, customResponse?: string) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
     const refCount = await this.userRepo.count({
       where: { referred_by: user.id },
     });
 
-    const text =
-      `👤 *Ваш профиль*\n\n` +
-      `🆔 ID: \`${user.tg_id}\`\n` +
-      `👤 Имя: ${user.first_name || 'Не указано'}\n` +
-      `📱 Username: @${user.username || 'не указан'}\n\n` +
+    // Use custom response if provided, otherwise use default
+    const text = customResponse ||
+      `*Профиль*\n\n` +
       `💰 Баланс: *${user.balance_usdt} USDT*\n` +
       `📊 Заработано: ${user.total_earned} USDT\n` +
-      `✅ Заданий выполнено: ${user.tasks_completed}\n` +
-      `👥 Приглашено рефералов: ${refCount}\n\n` +
-      `📅 В системе с: ${new Date(user.registered_at).toLocaleDateString('ru-RU')}`;
+      `✅ Заданий: ${user.tasks_completed}\n` +
+      `👥 Рефералов: ${refCount}`;
 
     await this.sendMessage(chatId, text, await this.getReplyKeyboard());
   }
 
-  private async sendWithdrawInfo(chatId: string, user: User) {
+  private async sendWithdrawInfo(chatId: string, user: User, customResponse?: string) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
     const minWithdraw = await this.settingsService.getValue('min_withdraw_usdt', '10.00');
 
     if (parseFloat(user.balance_usdt.toString()) < parseFloat(minWithdraw)) {
@@ -1290,12 +1582,13 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         `Минимальная сумма: ${minWithdraw} USDT\n` +
         `Ваш баланс: ${user.balance_usdt} USDT\n\n` +
         `📋 Выполните больше заданий чтобы заработать!`,
-        await this.getReplyKeyboard(),
+        await this.getReplyKeyboard(user?.tg_id),
       );
       return;
     }
 
-    const text =
+    // Use custom response if provided, otherwise use default
+    const text = customResponse ||
       `💸 *Вывод средств*\n\n` +
       `💰 Ваш баланс: *${user.balance_usdt} USDT*\n` +
       `📊 Минимум для вывода: ${minWithdraw} USDT\n\n` +
@@ -1309,7 +1602,19 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     await this.sendMessage(chatId, text, await this.getReplyKeyboard());
   }
 
-  private async sendReferralInfo(chatId: string, user: User) {
+  private async sendReferralInfo(chatId: string, user: User, customResponse?: string) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
     const refCount = await this.userRepo.count({
       where: { referred_by: user.id },
     });
@@ -1318,7 +1623,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const botUsername = await this.settingsService.getValue('bot_username', 'yourbot');
     const refLink = `https://t.me/${botUsername}?start=ref${user.tg_id}`;
 
-    const text =
+    // Use custom response if provided, otherwise use default
+    const text = customResponse ||
       `👥 *Реферальная программа*\n\n` +
       `💰 Получайте *${refBonusPercent} USDT* за каждого друга!\n` +
       `🎁 Ваш друг также получит бонус при регистрации\n\n` +
@@ -1334,11 +1640,50 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleTaskAction(chatId: string, user: User, data: string) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
     const taskId = data.replace('task_', '');
     const task = await this.taskRepo.findOne({ where: { id: taskId } });
 
     if (!task || !task.active) {
       await this.sendMessage(chatId, '❌ Задание недоступно', {
+        inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
+      });
+      return;
+    }
+
+    // Check if task is available for this user based on available_for setting
+    const userRank = await this.ranksService.getUserRank(user.id);
+    const userRankLevel = userRank.current_rank;
+    const hasPlatinum = userRank.platinum_active && userRank.platinum_expires_at && new Date() < userRank.platinum_expires_at;
+    
+    let isAvailableForUser = true;
+    if (task.available_for === 'platinum') {
+      isAvailableForUser = hasPlatinum;
+    } else if (task.available_for === 'ranks' && task.target_ranks) {
+      try {
+        const targetRanks = JSON.parse(task.target_ranks);
+        if (Array.isArray(targetRanks)) {
+          isAvailableForUser = hasPlatinum || targetRanks.includes(userRankLevel);
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to parse target_ranks for task ${task.id}: ${e.message}`);
+        isAvailableForUser = true;
+      }
+    }
+
+    if (!isAvailableForUser) {
+      await this.sendMessage(chatId, '❌ Задание недоступно для вашего ранга/подписки', {
         inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
       });
       return;
@@ -1413,11 +1758,80 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async startTask(chatId: string, user: User, data: string) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
     const taskId = data.replace('start_task_', '');
     const task = await this.taskRepo.findOne({ where: { id: taskId } });
 
     if (!task || !task.active) {
-      await this.sendMessage(chatId, '❌ Задание недоступно');
+      await this.sendMessage(chatId, '❌ Задание недоступно', {
+        inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
+      });
+      return;
+    }
+
+    // Check if task is available for this user based on available_for setting
+    const userRank = await this.ranksService.getUserRank(user.id);
+    const userRankLevel = userRank.current_rank;
+    const hasPlatinum = userRank.platinum_active && userRank.platinum_expires_at && new Date() < userRank.platinum_expires_at;
+    
+    let isAvailableForUser = true;
+    if (task.available_for === 'platinum') {
+      isAvailableForUser = hasPlatinum;
+    } else if (task.available_for === 'ranks' && task.target_ranks) {
+      try {
+        const targetRanks = JSON.parse(task.target_ranks);
+        if (Array.isArray(targetRanks)) {
+          isAvailableForUser = hasPlatinum || targetRanks.includes(userRankLevel);
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to parse target_ranks for task ${task.id}: ${e.message}`);
+        isAvailableForUser = true;
+      }
+    }
+
+    if (!isAvailableForUser) {
+      await this.sendMessage(chatId, '❌ Задание недоступно для вашего ранга/подписки', {
+        inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
+      });
+      return;
+    }
+
+    // Check completed count before starting
+    const completedCount = await this.userTaskRepo.count({
+      where: { user_id: user.id, task_id: task.id, status: 'completed' },
+    });
+
+    if (completedCount >= task.max_per_user) {
+      await this.sendMessage(chatId, '✅ Вы уже выполнили это задание максимальное количество раз', {
+        inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
+      });
+      return;
+    }
+
+    // Check if task is already in progress or submitted
+    const existingInProgress = await this.userTaskRepo.findOne({
+      where: { user_id: user.id, task_id: task.id, status: 'in_progress' },
+    });
+
+    const existingSubmitted = await this.userTaskRepo.findOne({
+      where: { user_id: user.id, task_id: task.id, status: 'submitted' },
+    });
+
+    if (existingInProgress || existingSubmitted) {
+      await this.sendMessage(chatId, '⏳ Это задание уже выполняется или находится на проверке', {
+        inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
+      });
       return;
     }
 
@@ -1427,6 +1841,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       task_id: task.id,
       status: 'in_progress',
       started_at: new Date(),
+      reward_received: 0, // Initialize to 0, will be updated when task is completed
     });
 
     await this.userTaskRepo.save(userTask);
@@ -1450,11 +1865,52 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async submitTask(chatId: string, user: User, data: string) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
     const taskId = data.replace('submit_task_', '');
     const task = await this.taskRepo.findOne({ where: { id: taskId } });
 
     if (!task || !task.active) {
-      await this.sendMessage(chatId, '❌ Задание недоступно');
+      await this.sendMessage(chatId, '❌ Задание недоступно', {
+        inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
+      });
+      return;
+    }
+
+    // Check if task is available for this user (double-check)
+    const userRank = await this.ranksService.getUserRank(user.id);
+    const userRankLevel = userRank.current_rank;
+    const hasPlatinum = userRank.platinum_active && userRank.platinum_expires_at && new Date() < userRank.platinum_expires_at;
+    
+    let isAvailableForUser = true;
+    if (task.available_for === 'platinum') {
+      isAvailableForUser = hasPlatinum;
+    } else if (task.available_for === 'ranks' && task.target_ranks) {
+      try {
+        const targetRanks = JSON.parse(task.target_ranks);
+        if (Array.isArray(targetRanks)) {
+          isAvailableForUser = hasPlatinum || targetRanks.includes(userRankLevel);
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to parse target_ranks for task ${task.id}: ${e.message}`);
+        isAvailableForUser = true;
+      }
+    }
+
+    if (!isAvailableForUser) {
+      await this.sendMessage(chatId, '❌ Задание недоступно для вашего ранга/подписки', {
+        inline_keyboard: [[{ text: '🔙 К заданиям', callback_data: 'tasks' }]],
+      });
       return;
     }
 
@@ -1532,8 +1988,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const reward_max = parseFloat(task.reward_max.toString());
     const baseReward = parseFloat((reward_min + Math.random() * (reward_max - reward_min)).toFixed(2));
     
-    // Apply rank bonus
-    const userRank = await this.ranksService.getUserRank(user.id);
+    // Apply rank bonus (userRank already declared above)
     const reward = this.ranksService.applyRankBonus(baseReward, parseFloat(userRank.bonus_percentage.toString()));
     
     this.logger.log(`💰 Calculated reward for task "${task.title}": ${baseReward} USDT (base) -> ${reward} USDT (with +${userRank.bonus_percentage}% rank bonus)`);
@@ -1547,6 +2002,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       // Submit for manual review
       userTask.status = 'submitted';
       userTask.reward = reward;
+      userTask.reward_received = 0; // Will be updated when task is approved
       userTask.submitted_at = new Date();
       await this.userTaskRepo.save(userTask);
 
@@ -1570,6 +2026,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       // Auto-approve
       userTask.status = 'completed';
       userTask.reward = reward;
+      userTask.reward_received = reward; // Set reward_received when task is completed
       userTask.completed_at = new Date();
       await this.userTaskRepo.save(userTask);
 
@@ -1652,6 +2109,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async cancelTask(chatId: string, user: User, data: string) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
     const taskId = data.replace('cancel_task_', '');
 
     // Find and delete in-progress task
@@ -1672,6 +2141,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async showMyTasks(chatId: string, user: User) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
     // Get all user tasks
     const inProgressTasks = await this.userTaskRepo.find({
       where: { user_id: user.id, status: 'in_progress' },
@@ -1739,8 +2220,367 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleCustomButton(chatId: string, user: User, button: Button) {
-    // If button has a command, execute it first
-    if (button.command) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
+    // Handle custom button from database based on action_type
+    let text = 'Информация';
+    let keyboard: any = { inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'menu' }]] };
+
+    // PRIORITY 1: Check for function mode FIRST (before command check)
+    // This prevents function buttons from being treated as commands
+    if (button.action_payload?.script || button.action_payload?.webhook_url || button.action_payload?.function_name) {
+      try {
+        if (button.action_payload.script) {
+          // Execute script
+          this.logger.log(`Executing script for button ${button.id}`);
+          
+          let scriptCode = button.action_payload.script;
+          if (typeof scriptCode !== 'string') {
+            scriptCode = String(scriptCode);
+          }
+          scriptCode = scriptCode.trim();
+          
+          // Remove any escape sequences that might have been added during storage
+          // If the script was stored with escaped backticks, we need to unescape them
+          // Replace \\` with ` (unescape escaped backticks)
+          scriptCode = scriptCode.replace(/\\`/g, '`');
+          // Replace \\${ with ${ (unescape escaped template literal expressions)
+          scriptCode = scriptCode.replace(/\\\$\{/g, '${');
+          
+          // Log the full script for debugging
+          this.logger.log(`Script code (length: ${scriptCode.length}):`, scriptCode);
+          
+          // Check if script looks like JavaScript code (contains function, return, const, let, var, if, etc.)
+          const isJavaScriptCode = /(function|=>|return|const|let|var|if|for|while|switch|class|async|await)/i.test(scriptCode);
+          
+          if (!isJavaScriptCode) {
+            // Treat as simple template - replace variables and use as text
+            text = scriptCode
+              .replace(/{username}/g, user.username || user.first_name || 'Друг')
+              .replace(/{balance}/g, user.balance_usdt.toString())
+              .replace(/{tasks_completed}/g, user.tasks_completed.toString())
+              .replace(/{chat_id}/g, chatId)
+              .replace(/{user_id}/g, user.tg_id);
+          } else {
+            // It's JavaScript code - execute it
+            // Create user data object for script context
+            const userData = {
+              id: user.id,
+              tg_id: user.tg_id,
+              userId: user.tg_id,
+              username: user.username,
+              firstName: user.first_name,
+              first_name: user.first_name,
+              balance: user.balance_usdt,
+              balance_usdt: user.balance_usdt,
+              tasksCompleted: user.tasks_completed,
+              tasks_completed: user.tasks_completed,
+            };
+
+            // Use Function constructor with string concatenation to avoid template literal issues
+            // Declare functionBody outside try block so it's accessible in catch
+            let functionBody: string = '';
+            try {
+              // Prepare context data as JSON strings (already escaped by JSON.stringify)
+              const userJsonStr = JSON.stringify(userData);
+              const userIdStr = JSON.stringify(user.tg_id);
+              const chatIdStr = JSON.stringify(chatId);
+              const buttonDataStr = JSON.stringify({
+                id: button.id,
+                label: button.label || '',
+                action: 'execute',
+                // Add command if available for better identification
+                command: button.command || null
+              });
+              
+              // Log buttonData for debugging
+              this.logger.log(`ButtonData being passed to script:`, {
+                id: button.id,
+                label: button.label || '',
+                action: 'execute',
+                command: button.command || null
+              });
+              
+              // Build the function body using string concatenation (not template literals)
+              // The issue: scriptCode may contain backticks (`) and ${} which break string concatenation
+              // Solution: Use Function constructor with the script code directly
+              // We need to properly escape the script for safe insertion
+              
+              // The problem: when we use JSON.stringify, we get a string in quotes
+              // and new Function(string) creates a function with body = that string, not executing it
+              // Solution: Use Function constructor with the script code directly (not as JSON string)
+              // But we need to escape backticks properly for string concatenation
+              
+              // When using string concatenation with single quotes, we don't need to escape backticks
+              // Backticks inside a string created with single quotes are treated as literal characters
+              // However, we still need to escape backslashes and newlines for proper string representation
+              // But wait - we're not putting the script in quotes, we're inserting it directly as code
+              // So we don't need to escape anything - just insert the script as-is
+              // The script will be part of the function body, not a string literal
+              
+              // Insert the script directly into the function body
+              // Template literals in the script will work correctly when executed
+              
+              // Log scriptCode before insertion to verify it's correct
+              this.logger.log(`ScriptCode before insertion (length: ${scriptCode.length}):`, scriptCode);
+              this.logger.log(`ScriptCode type: ${typeof scriptCode}, is empty: ${!scriptCode || scriptCode.length === 0}`);
+              
+              // Build functionBody step by step to debug
+              const part1 = '// Initialize context\n' +
+                'const user = ' + userJsonStr + ';\n' +
+                'const userId = ' + userIdStr + ';\n' +
+                'const chatId = ' + chatIdStr + ';\n' +
+                'const buttonData = ' + buttonDataStr + ';\n' +
+                '\n' +
+                '// Helper function to get user by ID\n' +
+                'function getUserById(id) {\n' +
+                '  if (id === userId || id === user.tg_id || String(id) === String(userId)) {\n' +
+                '    return user;\n' +
+                '  }\n' +
+                '  return null;\n' +
+                '}\n' +
+                '\n' +
+                '// User script code\n';
+              
+              this.logger.log(`Part1 length: ${part1.length}`);
+              this.logger.log(`ScriptCode length: ${scriptCode ? scriptCode.length : 0}`);
+              
+              // Ensure scriptCode ends with a newline and has proper closing braces
+              // Check if scriptCode defines a function but doesn't close it properly
+              let processedScriptCode = scriptCode.trim();
+              
+              // Count opening and closing braces for functions
+              const functionMatches = processedScriptCode.match(/function\s+\w+\s*\(/g);
+              if (functionMatches) {
+                // Count opening braces {
+                const openBraces = (processedScriptCode.match(/{/g) || []).length;
+                // Count closing braces }
+                const closeBraces = (processedScriptCode.match(/}/g) || []).length;
+                
+                // If there are more opening braces than closing, add missing closing braces
+                if (openBraces > closeBraces) {
+                  const missingBraces = openBraces - closeBraces;
+                  this.logger.log(`Warning: Script has ${openBraces} opening braces but only ${closeBraces} closing braces. Adding ${missingBraces} closing brace(s).`);
+                  processedScriptCode += '\n' + '}'.repeat(missingBraces);
+                }
+              }
+              
+              const part2 = processedScriptCode + '\n' +
+                '\n';
+              
+              this.logger.log(`Part2 length: ${part2.length}, first 200 chars:`, part2.substring(0, 200));
+              this.logger.log(`Part2 last 50 chars:`, part2.substring(Math.max(0, part2.length - 50)));
+              
+              const part3 = '// Auto-execute handleButton if defined\n' +
+                'if (typeof handleButton === "function") {\n' +
+                '  try {\n' +
+                '    const buttonResult = handleButton(userId, chatId, buttonData);\n' +
+                '    if (buttonResult) {\n' +
+                '      if (buttonResult && typeof buttonResult === "object" && buttonResult.message) {\n' +
+                '        return buttonResult.message;\n' +
+                '      }\n' +
+                '      if (typeof buttonResult === "string") {\n' +
+                '        return buttonResult;\n' +
+                '      }\n' +
+                '      if (typeof buttonResult === "object") {\n' +
+                '        return JSON.stringify(buttonResult);\n' +
+                '      }\n' +
+                '    }\n' +
+                '  } catch (e) {\n' +
+                '    return "Ошибка в handleButton: " + e.message;\n' +
+                '  }\n' +
+                '}\n' +
+                '\n' +
+                '// Auto-execute main if defined\n' +
+                'if (typeof main === "function") {\n' +
+                '  try {\n' +
+                '    const mainResult = main();\n' +
+                '    if (mainResult) {\n' +
+                '      if (typeof mainResult === "object" && mainResult.message) {\n' +
+                '        return mainResult.message;\n' +
+                '      }\n' +
+                '      return mainResult;\n' +
+                '    }\n' +
+                '  } catch (e) {\n' +
+                '    return "Ошибка в main: " + e.message;\n' +
+                '  }\n' +
+                '}\n' +
+                '\n' +
+                '// Check for message or result variables\n' +
+                'if (typeof message !== "undefined") {\n' +
+                '  return message;\n' +
+                '}\n' +
+                'if (typeof result !== "undefined") {\n' +
+                '  return result;\n' +
+                '}\n' +
+                '\n' +
+                'return "Script executed successfully";';
+              
+              // Combine all parts
+              functionBody = part1 + part2 + part3;
+              
+              this.logger.log(`FunctionBody total length: ${functionBody.length}, part1: ${part1.length}, part2: ${part2.length}, part3: ${part3.length}`);
+              
+              // Log functionBody after scriptCode insertion to verify it's correct
+              this.logger.log(`FunctionBody after scriptCode insertion (length: ${functionBody.length}):`, functionBody.substring(0, 1000));
+              // Also log the part where scriptCode should be (around position 500-800)
+              const scriptPosition = functionBody.indexOf('// User script code');
+              if (scriptPosition >= 0) {
+                this.logger.log(`FunctionBody around scriptCode (position ${scriptPosition}, 500 chars):`, functionBody.substring(scriptPosition, scriptPosition + 500));
+                // Also log what comes after scriptCode to see if it's complete
+                const afterScriptPosition = scriptPosition + 500;
+                if (afterScriptPosition < functionBody.length) {
+                  this.logger.log(`FunctionBody after scriptCode (position ${afterScriptPosition}, 200 chars):`, functionBody.substring(afterScriptPosition, afterScriptPosition + 200));
+                }
+              } else {
+                this.logger.error(`ERROR: "// User script code" not found in functionBody!`);
+              }
+              
+              // Log the full functionBody to a file-like structure for debugging
+              // Split by lines and log each line to see the exact structure
+              const functionBodyLines = functionBody.split('\n');
+              this.logger.log(`FunctionBody total lines: ${functionBodyLines.length}`);
+              // Log lines around scriptCode position
+              const scriptLineIndex = functionBodyLines.findIndex(line => line.includes('// User script code'));
+              if (scriptLineIndex >= 0) {
+                const startLine = Math.max(0, scriptLineIndex - 5);
+                const endLine = Math.min(functionBodyLines.length, scriptLineIndex + 20);
+                this.logger.log(`FunctionBody lines ${startLine}-${endLine}:`, functionBodyLines.slice(startLine, endLine).join('\n'));
+              }
+
+              // Log the function body for debugging (first 2000 chars and last 200 chars)
+              this.logger.log(`Function body (first 2000 chars, total length: ${functionBody.length}):`, functionBody.substring(0, 2000));
+              if (functionBody.length > 2000) {
+                this.logger.log(`Function body (last 200 chars):`, functionBody.substring(functionBody.length - 200));
+                // Also log the middle part around the 2000 char mark to see what's there
+                const middleStart = Math.max(0, 2000 - 100);
+                const middleEnd = Math.min(functionBody.length, 2000 + 100);
+                this.logger.log(`Function body (around 2000 chars, ${middleStart}-${middleEnd}):`, functionBody.substring(middleStart, middleEnd));
+              }
+
+              // Create and execute the function
+              // First, validate the function body syntax
+              try {
+                // Try to parse the function body to catch syntax errors early
+                new Function(functionBody);
+              } catch (parseError: any) {
+                this.logger.error(`Function body syntax error:`, parseError);
+                this.logger.error(`Function body (first 1000 chars):`, functionBody.substring(0, 1000));
+                // Log the full function body in chunks to see the exact issue
+                this.logger.error(`Function body (full, length: ${functionBody.length}):`);
+                // Log in chunks of 500 chars to avoid truncation
+                for (let i = 0; i < functionBody.length; i += 500) {
+                  const chunk = functionBody.substring(i, i + 500);
+                  this.logger.error(`Function body chunk [${i}-${i + 500}]:`, chunk);
+                }
+                throw new Error(`Синтаксическая ошибка в скрипте: ${parseError.message}`);
+              }
+              
+              const scriptFunction = new Function(functionBody);
+              const result = scriptFunction();
+            
+              // Replace variables in the result if it's a string
+              if (typeof result === 'string') {
+                text = result
+                  .replace(/{username}/g, user.username || user.first_name || 'Друг')
+                  .replace(/{balance}/g, user.balance_usdt.toString())
+                  .replace(/{tasks_completed}/g, user.tasks_completed.toString())
+                  .replace(/{chat_id}/g, chatId)
+                  .replace(/{user_id}/g, user.tg_id);
+              } else if (result && typeof result === 'object') {
+                // If result is an object with message property, use it
+                if (result.message) {
+                  text = result.message;
+                } else {
+                  text = JSON.stringify(result);
+                }
+              } else {
+                text = result ? String(result) : '✅ Скрипт выполнен';
+              }
+            } catch (scriptError: any) {
+              this.logger.error(`Script execution error for button ${button.id}:`, scriptError);
+              this.logger.error(`Script code that failed (full):`, scriptCode);
+              this.logger.error(`Script code length:`, scriptCode.length);
+              if (functionBody.length > 0) {
+                this.logger.error(`Function body (first 2000 chars):`, functionBody.substring(0, 2000));
+              }
+              this.logger.error(`Error stack:`, scriptError.stack);
+              text = `❌ Ошибка выполнения скрипта: ${scriptError.message}\n\nПроверьте синтаксис скрипта.`;
+            }
+          }
+        } else if (button.action_payload.webhook_url) {
+          // Call webhook
+          this.logger.log(`Calling webhook for button ${button.id}: ${button.action_payload.webhook_url}`);
+          
+          const axios = require('axios');
+          const timeout = button.action_payload.timeout || 5000;
+          
+          try {
+            const response = await axios.post(
+              button.action_payload.webhook_url,
+              {
+                user: {
+                  id: user.id,
+                  tg_id: user.tg_id,
+                  username: user.username,
+                  first_name: user.first_name,
+                  balance: user.balance_usdt,
+                },
+                chatId: chatId,
+                buttonId: button.id,
+              },
+              { timeout }
+            );
+            
+            text = response.data?.message || response.data?.text || '✅ Функция выполнена успешно';
+          } catch (webhookError: any) {
+            this.logger.error(`Webhook error for button ${button.id}:`, webhookError);
+            text = `❌ Ошибка вызова webhook: ${webhookError.message}`;
+          }
+        } else if (button.action_payload.function_name) {
+          // Call internal function
+          this.logger.log(`Calling internal function for button ${button.id}: ${button.action_payload.function_name}`);
+          
+          // Map function names to actual methods
+          const functionMap: { [key: string]: () => Promise<void> } = {
+            'sendProfile': () => this.sendProfile(chatId, user),
+            'sendBalance': () => this.sendBalance(chatId, user),
+            'sendTasks': () => this.sendAvailableTasks(chatId, user),
+            'sendReferralInfo': () => this.sendReferralInfo(chatId, user),
+          };
+          
+          const func = functionMap[button.action_payload.function_name];
+          if (func) {
+            await func();
+            return; // Function already sends message
+          } else {
+            text = `❌ Функция "${button.action_payload.function_name}" не найдена`;
+          }
+        }
+        
+        // Send the result
+        await this.sendMessage(chatId, text, keyboard);
+        return;
+      } catch (error: any) {
+        this.logger.error(`Error executing function for button ${button.id}:`, error);
+        await this.sendMessage(chatId, `❌ Ошибка выполнения функции: ${error.message}`, keyboard);
+        return;
+      }
+    }
+
+    // PRIORITY 2: If button has a command in action_payload.command, handle it in switch-case below
+    // If button has a direct command field, execute it first (legacy support)
+    if (button.command && !button.action_payload?.command) {
       this.logger.log(`Executing command from button ${button.id}: ${button.command}`);
       await this.handleCommand(chatId, button.command, user);
       // If button has only command and no other content, return early
@@ -1748,10 +2588,6 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         return;
       }
     }
-
-    // Handle custom button from database based on action_type
-    let text = 'Информация';
-    let keyboard: any = { inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'menu' }]] };
 
     // Check if button has inline_buttons in payload
     if (button.action_payload?.inline_buttons && Array.isArray(button.action_payload.inline_buttons)) {
@@ -1853,7 +2689,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     } else if (button.action_type === 'command' && button.action_payload?.command) {
       // Handle command buttons
       const command = button.action_payload.command;
-      switch (command) {
+      // Remove leading slash if present for comparison
+      const commandNormalized = command.startsWith('/') ? command.substring(1) : command;
+      switch (commandNormalized) {
         case 'stats':
           text =
             `📊 *Статистика*\n\n` +
@@ -1897,6 +2735,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         case 'referrals':
           await this.sendReferralInfo(chatId, user);
           return; // sendReferralInfo already sends message
+        case 'profile':
+          await this.sendProfile(chatId, user);
+          return; // sendProfile already sends message
         case 'info':
           text =
             `ℹ️ *Информация*\n\n` +
@@ -1914,8 +2755,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             `📞 Сообщения поддержки`;
           break;
         default:
-          text =
-            `ℹ️ *Информация*\n\n` + `Команда: ${command}\n` + `Эта функция находится в разработке.`;
+          // Для неизвестных команд просто не отправляем сообщение "в разработке"
+          // Вместо этого вызываем handleCommand, чтобы обработать команду стандартным способом
+          // Это позволит обработать команды, которые уже реализованы в handleCommand
+          const commandText = command.startsWith('/') ? command : `/${command}`;
+          await this.handleCommand(chatId, commandText, user);
+          return; // handleCommand already sends message
       }
     } else if (button.action_type === 'send_message' && button.action_payload?.text) {
       text = button.action_payload.text;
@@ -1992,7 +2837,241 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private async handleCustomCommand(chatId: string, user: User, command: any) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
+    const actionType = command.action_type || 'text';
+    const payload = command.action_payload || {};
+
+    // Handle different action types
+    if (actionType === 'function' && payload.type === 'script' && payload.script) {
+      // Execute script (similar to button script execution)
+      try {
+        this.logger.log(`Executing script for command ${command.id}`);
+        
+        let scriptCode = payload.script;
+        if (typeof scriptCode !== 'string') {
+          scriptCode = String(scriptCode);
+        }
+        scriptCode = scriptCode.trim();
+        
+        // Unescape template literals
+        scriptCode = scriptCode.replace(/\\`/g, '`');
+        scriptCode = scriptCode.replace(/\\\$\{/g, '${');
+        
+        const userData = {
+          id: user.id,
+          tg_id: user.tg_id,
+          userId: user.tg_id,
+          username: user.username,
+          firstName: user.first_name,
+          first_name: user.first_name,
+          balance: user.balance_usdt,
+          balance_usdt: user.balance_usdt,
+          tasksCompleted: user.tasks_completed,
+          tasks_completed: user.tasks_completed,
+        };
+
+        let functionBody: string = '';
+        try {
+          const userJsonStr = JSON.stringify(userData);
+          const userIdStr = JSON.stringify(user.tg_id);
+          const chatIdStr = JSON.stringify(chatId);
+          const commandDataStr = JSON.stringify({
+            id: command.id,
+            name: command.name,
+            description: command.description,
+          });
+          
+          let processedScriptCode = scriptCode.trim();
+          
+          // Check for missing closing braces
+          const openBraces = (processedScriptCode.match(/{/g) || []).length;
+          const closeBraces = (processedScriptCode.match(/}/g) || []).length;
+          
+          if (openBraces > closeBraces) {
+            const missingBraces = openBraces - closeBraces;
+            processedScriptCode += '\n' + '}'.repeat(missingBraces);
+          }
+          
+          functionBody = '// Initialize context\n' +
+            'const user = ' + userJsonStr + ';\n' +
+            'const userId = ' + userIdStr + ';\n' +
+            'const chatId = ' + chatIdStr + ';\n' +
+            'const commandData = ' + commandDataStr + ';\n' +
+            '\n' +
+            'function getUserById(id) {\n' +
+            '  if (id === userId || id === user.tg_id || String(id) === String(userId)) {\n' +
+            '    return user;\n' +
+            '  }\n' +
+            '  return null;\n' +
+            '}\n' +
+            '\n' +
+            '// User script code\n' +
+            processedScriptCode + '\n' +
+            '\n' +
+            '// Auto-execute handleCommand if defined\n' +
+            'if (typeof handleCommand === "function") {\n' +
+            '  try {\n' +
+            '    const commandResult = handleCommand(userId, chatId, commandData);\n' +
+            '    if (commandResult) {\n' +
+            '      if (commandResult && typeof commandResult === "object" && commandResult.message) {\n' +
+            '        return commandResult.message;\n' +
+            '      }\n' +
+            '      if (typeof commandResult === "string") {\n' +
+            '        return commandResult;\n' +
+            '      }\n' +
+            '    }\n' +
+            '  } catch (e) {\n' +
+            '    return "Ошибка в handleCommand: " + e.message;\n' +
+            '  }\n' +
+            '}\n' +
+            '\n' +
+            'return "Script executed successfully";';
+          
+          const scriptFunction = new Function(functionBody);
+          const result = scriptFunction();
+          
+          if (result && typeof result === 'string') {
+            await this.sendMessage(chatId, result, await this.getReplyKeyboard());
+          } else {
+            await this.sendMessage(chatId, 'Script executed successfully', await this.getReplyKeyboard());
+          }
+        } catch (error: any) {
+          this.logger.error(`Error executing command script: ${error.message}`, error.stack);
+          await this.sendMessage(chatId, `❌ Ошибка выполнения команды: ${error.message}`, await this.getReplyKeyboard());
+        }
+      } catch (error: any) {
+        this.logger.error(`Error in handleCustomCommand script: ${error.message}`, error.stack);
+        await this.sendMessage(chatId, `❌ Ошибка: ${error.message}`, await this.getReplyKeyboard());
+      }
+      return;
+    }
+
+    if (actionType === 'function' && payload.type === 'webhook' && payload.url) {
+      // Execute webhook
+      try {
+        const response = await fetch(payload.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.tg_id,
+            chatId,
+            command: command.name,
+            user: {
+              id: user.id,
+              tg_id: user.tg_id,
+              username: user.username,
+              first_name: user.first_name,
+              balance: user.balance_usdt,
+              tasks_completed: user.tasks_completed,
+            },
+          }),
+          signal: AbortSignal.timeout((payload.timeout || 30) * 1000),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const message = data.message || data.text || 'Webhook executed successfully';
+          await this.sendMessage(chatId, message, await this.getReplyKeyboard(user?.tg_id));
+        } else {
+          await this.sendMessage(chatId, '❌ Ошибка выполнения webhook', await this.getReplyKeyboard());
+        }
+      } catch (error: any) {
+        this.logger.error(`Error executing webhook: ${error.message}`);
+        await this.sendMessage(chatId, `❌ Ошибка webhook: ${error.message}`, await this.getReplyKeyboard());
+      }
+      return;
+    }
+
+    if (actionType === 'function' && payload.type === 'internal' && payload.function_name) {
+      // Execute internal function
+      const functionName = payload.function_name;
+      if (functionName === 'sendBalance') {
+        await this.sendBalance(chatId, user);
+      } else if (functionName === 'sendTasks') {
+        await this.sendAvailableTasks(chatId, user);
+      } else if (functionName === 'sendRankInfo') {
+        await this.sendRankInfo(chatId, user);
+      } else if (functionName === 'sendProfile') {
+        await this.sendProfile(chatId, user);
+      } else {
+        await this.sendMessage(chatId, `❌ Неизвестная внутренняя функция: ${functionName}`, await this.getReplyKeyboard());
+      }
+      return;
+    }
+
+    if (actionType === 'command' && payload.command) {
+      // Execute another command
+      const commandText = payload.command.startsWith('/') ? payload.command : `/${payload.command}`;
+      await this.handleCommand(chatId, commandText, user);
+      return;
+    }
+
+    if (actionType === 'url' && payload.url) {
+      // Send URL with inline button
+      const text = payload.text || 'Перейдите по ссылке ниже';
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '🔗 Перейти', url: payload.url }],
+          [{ text: '🔙 Назад', callback_data: 'menu' }],
+        ],
+      };
+      await this.sendMessage(chatId, text, keyboard);
+      return;
+    }
+
+    if (actionType === 'media' && payload.media_url) {
+      // Send media with optional text
+      const text = payload.text || '';
+      const mediaUrl = payload.media_url;
+      const caption = payload.caption || text;
+      await this.sendMessageWithMedia(chatId, caption, mediaUrl);
+      return;
+    }
+
+    // Default: text mode (or legacy format)
+    let text = payload.text || command.response || '';
+    if (text) {
+      text = text
+        .replace(/{username}/g, user.username || user.first_name || 'Друг')
+        .replace(/{balance}/g, user.balance_usdt.toString())
+        .replace(/{tasks_completed}/g, user.tasks_completed.toString())
+        .replace(/{chat_id}/g, chatId)
+        .replace(/{user_id}/g, user.tg_id);
+      
+      // Send with media if available (legacy support)
+      if (command.media_url) {
+        await this.sendMessageWithMedia(chatId, text, command.media_url);
+      } else {
+        await this.sendMessage(chatId, text, await this.getReplyKeyboard());
+      }
+    }
+  }
+
   private async handleTaskVerification(chatId: string, user: User, data: string) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
     // Parse: verify_taskId_reward
     const parts = data.replace('verify_', '').split('_');
     if (parts.length < 2) {
@@ -2084,6 +3163,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleWithdrawalRequest(chatId: string, user: User, text: string) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
     // Parse: wallet TXxxxxx 50
     const parts = text.split(' ');
 
@@ -2193,6 +3284,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleScenario(chatId: string, user: User, scenario: Scenario) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
     try {
       // Simple scenario with text response
       if (scenario.response) {
@@ -2377,6 +3480,41 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
    * Отправить информацию о ранге пользователя
    */
   private async sendRankInfo(chatId: string, user: User) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
+    // Проверяем статус подписки на каналы
+    const { allSubscribed } = await this.checkMandatoryChannels(user.tg_id);
+    
+    // Проверяем и обновляем ранг перед отображением (синхронизируем счетчики)
+    // Передаем статус подписки на каналы для правильной проверки
+    const rankUpdateResult = await this.ranksService.checkAndUpdateRank(user.id, allSubscribed);
+    
+    // Если ранг повысился, показываем уведомление
+    if (rankUpdateResult.leveledUp) {
+      const rankNames = { stone: 'Камень', bronze: 'Бронза', silver: 'Серебро', gold: 'Золото', platinum: 'Платина' };
+      const rankEmojis = { stone: '🪨', bronze: '🥉', silver: '🥈', gold: '🥇', platinum: '💎' };
+      
+      await this.sendMessage(
+        chatId,
+        `🎉 *Поздравляем!*\n\n` +
+        `${rankEmojis[rankUpdateResult.newLevel!]} Ты достиг ранга *${rankNames[rankUpdateResult.newLevel!]}*!\n\n` +
+        `💰 Новый бонус: *+${rankUpdateResult.rank.bonus_percentage}%* ко всем наградам!\n\n` +
+        `Продолжай выполнять задания для дальнейшего повышения!`,
+        await this.getReplyKeyboard(user?.tg_id),
+      );
+    }
+    
+    // Получаем обновленные данные ранга и прогресса
     const userRank = await this.ranksService.getUserRank(user.id);
     const progress = await this.ranksService.getRankProgress(user.id);
     const settings = await this.ranksService.getSettings();
@@ -2407,12 +3545,28 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     if (progress.nextRank) {
       text += `📊 *Прогресс до ${rankNames[progress.nextRank]}:*\n`;
-      text += `✅ Выполнено заданий: ${progress.tasksProgress.current}/${progress.tasksProgress.required}\n`;
-      text += `👥 Приглашено рефералов: ${progress.referralsProgress.current}/${progress.referralsProgress.required}\n\n`;
       
-      const overallPercent = Math.floor(progress.progress);
-      text += `Общий прогресс: ${overallPercent}%\n`;
-      text += `${'▓'.repeat(Math.floor(overallPercent / 10))}${'░'.repeat(10 - Math.floor(overallPercent / 10))}\n\n`;
+      // Для Бронзы показываем информацию о подписке на каналы
+      if (progress.nextRank === 'bronze') {
+        if (progress.channelsSubscribed) {
+          text += `✅ Подписка на каналы: *Выполнено*\n\n`;
+          text += `🎉 Ты готов к повышению до Бронзы!\n`;
+          text += `Продолжай выполнять задания для автоматического повышения.\n\n`;
+        } else {
+          text += `📢 Подписка на каналы: *Не выполнено*\n`;
+          text += `Подпишись на обязательные каналы для получения ранга Бронза.\n\n`;
+        }
+      } else {
+        // Для остальных рангов показываем задания и рефералов
+        text += `✅ Выполнено заданий: ${progress.tasksProgress.current}/${progress.tasksProgress.required}\n`;
+        text += `👥 Приглашено рефералов: ${progress.referralsProgress.current}/${progress.referralsProgress.required}\n\n`;
+        
+        const overallPercent = Math.floor(progress.progress);
+        if (!isNaN(overallPercent) && overallPercent >= 0) {
+          text += `Общий прогресс: ${overallPercent}%\n`;
+          text += `${'▓'.repeat(Math.floor(overallPercent / 10))}${'░'.repeat(10 - Math.floor(overallPercent / 10))}\n\n`;
+        }
+      }
     }
 
     text += `🎯 *Система рангов:*\n`;
@@ -2433,6 +3587,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
    * Обработчик команды !premium_info
    */
   private async handlePremiumInfo(chatId: string, user: User) {
+    // Double-check: user should not be blocked (safety check)
+    if (await this.checkUserBlocked(user)) {
+      await this.sendMessage(
+        chatId,
+        '🔒 *Ваш аккаунт заблокирован*\n\n' +
+        'Ваш аккаунт был заблокирован администратором.\n\n' +
+        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
+        '_Доступ к боту временно ограничен._',
+      );
+      return;
+    }
+
     const userRank = await this.ranksService.getUserRank(user.id);
     const settings = await this.ranksService.getSettings();
 
@@ -2441,7 +3607,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         chatId,
         '⚠️ *Платиновая подписка доступна с уровня Серебро.*\n\n' +
         'Продолжай выполнять задания и приглашать рефералов для повышения ранга!',
-        await this.getReplyKeyboard(),
+        await this.getReplyKeyboard(user?.tg_id),
       );
       return;
     }
@@ -2486,7 +3652,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         '⚠️ *Платиновая подписка доступна только с уровня Золото*\n\n' +
         'Продолжай выполнять задания для повышения ранга!\n\n' +
         'Используй /rank чтобы посмотреть свой прогресс.',
-        await this.getReplyKeyboard(),
+        await this.getReplyKeyboard(user?.tg_id),
       );
       return;
     }
@@ -2499,7 +3665,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         `💎 *У тебя уже активна Платиновая подписка!*\n\n` +
         `⏰ Действует еще ${daysLeft} дней\n\n` +
         `Продление будет доступно за 3 дня до окончания.`,
-        await this.getReplyKeyboard(),
+        await this.getReplyKeyboard(user?.tg_id),
       );
       return;
     }
@@ -2550,7 +3716,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             `• Доступ к VIP-заданиям\n` +
             `• Приоритетная поддержка\n\n` +
             `Добро пожаловать в элиту! 🎉`,
-            await this.getReplyKeyboard(),
+            await this.getReplyKeyboard(user?.tg_id),
           );
         } else {
           await this.sendMessage(
@@ -2558,7 +3724,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             `❌ ${result.message}\n\n` +
             `Пополни баланс или выбери оплату в рублях/гривнах.\n\n` +
             `Используй !upgrade чтобы попробовать снова.`,
-            await this.getReplyKeyboard(),
+            await this.getReplyKeyboard(user?.tg_id),
           );
         }
         break;
@@ -2572,7 +3738,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           `📝 Твой запрос №*${rubRequest.request_number}* принят.\n\n` +
           `👨‍💼 Менеджер свяжется с тобой в этом же чате для отправки реквизитов в рублях.\n\n` +
           `⏳ Ожидай сообщения в течение 10 минут!`,
-          await this.getReplyKeyboard(),
+          await this.getReplyKeyboard(user?.tg_id),
         );
         // TODO: Уведомить админа о новом запросе
         break;
@@ -2586,7 +3752,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           `📝 Твой запрос №*${uahRequest.request_number}* принят.\n\n` +
           `👨‍💼 Менеджер свяжется с тобой в этом же чате для отправки реквизитов в гривнах.\n\n` +
           `⏳ Ожидай сообщения в течение 10 минут!`,
-          await this.getReplyKeyboard(),
+          await this.getReplyKeyboard(user?.tg_id),
         );
         // TODO: Уведомить админа о новом запросе
         break;
@@ -2596,7 +3762,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           chatId,
           '❌ Неверный выбор. Пожалуйста, введи 1, 2 или 3.\n\n' +
           'Используй !upgrade чтобы попробовать снова.',
-          await this.getReplyKeyboard(),
+          await this.getReplyKeyboard(user?.tg_id),
         );
     }
   }

@@ -4,7 +4,35 @@ import { UpdateTaskDto } from './dto/update-task.dto';
 export declare class TasksController {
     private readonly tasksService;
     constructor(tasksService: TasksService);
-    findAll(active?: string): Promise<import("../../entities/task.entity").Task[]>;
+    findAll(active?: string): Promise<{
+        rank_stats: {
+            stone: number;
+            bronze: number;
+            silver: number;
+            gold: number;
+            platinum: number;
+        };
+        id: string;
+        title: string;
+        description: string;
+        reward_min: number;
+        reward_max: number;
+        media_url: string;
+        media_type: string;
+        max_per_user: number;
+        action_url: string;
+        channel_id: string;
+        task_type: string;
+        command: string;
+        min_completion_time: number;
+        cooldown_hours: number;
+        active: boolean;
+        available_for: string;
+        target_ranks: string;
+        user_tasks: import("../../entities/user-task.entity").UserTask[];
+        created_at: Date;
+        updated_at: Date;
+    }[]>;
     findOne(id: string): Promise<import("../../entities/task.entity").Task>;
     getStats(id: string): Promise<{
         task: import("../../entities/task.entity").Task;

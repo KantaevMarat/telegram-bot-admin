@@ -38,10 +38,50 @@ export class TasksService {
 
   async findAll(active?: boolean) {
     const where = active !== undefined ? { active } : {};
-    return await this.taskRepo.find({
+    const tasks = await this.taskRepo.find({
       where,
       order: { created_at: 'DESC' },
     });
+
+    // Добавляем статистику по рангам для каждого задания
+    const tasksWithRanks = await Promise.all(
+      tasks.map(async (task) => {
+        // Получаем все выполненные задания для этого задания
+        const completedUserTasks = await this.userTaskRepo.find({
+          where: { task_id: task.id, status: 'completed' },
+          relations: ['user'],
+        });
+
+        // Получаем ранги пользователей, которые выполнили это задание
+        const userIds = completedUserTasks.map((ut) => ut.user_id);
+        const ranks = await this.ranksService.getRanksForUsers(userIds);
+
+        // Подсчитываем количество пользователей каждого ранга
+        const rankStats = {
+          stone: 0,
+          bronze: 0,
+          silver: 0,
+          gold: 0,
+          platinum: 0,
+        };
+
+        ranks.forEach((rank) => {
+          // Проверяем, активна ли платиновая подписка
+          if (rank.platinum_active && rank.platinum_expires_at && new Date() < rank.platinum_expires_at) {
+            rankStats.platinum++;
+          } else {
+            rankStats[rank.current_rank] = (rankStats[rank.current_rank] || 0) + 1;
+          }
+        });
+
+        return {
+          ...task,
+          rank_stats: rankStats,
+        };
+      }),
+    );
+
+    return tasksWithRanks;
   }
 
   async findOne(id: string) {

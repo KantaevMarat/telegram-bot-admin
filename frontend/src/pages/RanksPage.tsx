@@ -3,10 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ranksApi, premiumApi } from '../api/client';
 import { 
   Award, Settings, DollarSign, Users, TrendingUp, CheckCircle, 
-  XCircle, Clock, Send, Search, Filter, Calendar, MessageSquare 
+  XCircle, Clock, Send, Search, Filter, Calendar, MessageSquare, LayoutGrid, LayoutList, List
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import { useSyncRefetch } from '../hooks/useSync';
 
 interface RankSettings {
   id: string;
@@ -58,23 +59,24 @@ export default function RanksPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [currencyFilter, setCurrencyFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'table' | 'list' | 'cards'>('table');
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
   // Получение настроек
-  const { data: settings, isLoading: settingsLoading } = useQuery<RankSettings>({
+  const { data: settings, isLoading: settingsLoading, refetch: refetchSettings } = useQuery<RankSettings>({
     queryKey: ['rank-settings'],
     queryFn: ranksApi.getSettings,
   });
 
   // Получение статистики
-  const { data: stats } = useQuery({
+  const { data: stats, refetch: refetchStats } = useQuery({
     queryKey: ['rank-statistics'],
     queryFn: ranksApi.getStatistics,
   });
 
   // Получение запросов на подписку
-  const { data: requests = [], isLoading: requestsLoading } = useQuery<PremiumRequest[]>({
+  const { data: requests = [], isLoading: requestsLoading, refetch: refetchRequests } = useQuery<PremiumRequest[]>({
     queryKey: ['premium-requests', statusFilter, currencyFilter],
     queryFn: () => premiumApi.getRequests({ 
       status: statusFilter || undefined, 
@@ -82,12 +84,23 @@ export default function RanksPage() {
     }),
   });
 
+  // 🔄 Auto-refresh on sync events
+  useSyncRefetch(['ranks.settings_updated'], () => {
+    refetchSettings();
+    refetchStats();
+  });
+  useSyncRefetch(['ranks.request_created', 'ranks.request_updated'], refetchRequests);
+
   // Мутация обновления настроек
   const updateSettingsMutation = useMutation({
     mutationFn: (data: Partial<RankSettings>) => ranksApi.updateSettings(data),
     onSuccess: () => {
+      // Invalidate all related queries
       queryClient.invalidateQueries({ queryKey: ['rank-settings'] });
-      toast.success('Настройки обновлены!');
+      queryClient.invalidateQueries({ queryKey: ['rank-statistics'] });
+      queryClient.invalidateQueries({ queryKey: ['user-ranks'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('Настройки обновлены! Ранги пользователей будут пересчитаны.');
     },
     onError: (err: any) => toast.error(`Ошибка: ${err.response?.data?.message || err.message}`),
   });
@@ -214,7 +227,6 @@ export default function RanksPage() {
       <header className="page-header">
         <div>
           <h1 className="page-title">
-            <Award size={28} />
             Система рангов и подписок
           </h1>
           <p className="page-subtitle">Управление рангами, платиновыми подписками и запросами на оплату</p>
@@ -222,32 +234,68 @@ export default function RanksPage() {
       </header>
 
       {/* Tabs */}
-      <div className="tabs" style={{ marginBottom: '24px' }}>
+      <div style={{ 
+        display: 'flex', 
+        gap: '8px', 
+        marginBottom: '24px',
+        borderBottom: '2px solid var(--border)',
+        paddingBottom: '0'
+      }}>
         <button
-          className={`tab ${activeTab === 'requests' ? 'tab--active' : ''}`}
+          className={`btn ${activeTab === 'requests' ? 'btn--primary' : 'btn--secondary'}`}
           onClick={() => setActiveTab('requests')}
+          style={{
+            borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
+            borderBottom: activeTab === 'requests' ? '2px solid var(--accent)' : '2px solid transparent',
+            marginBottom: '-2px',
+            padding: '10px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontWeight: activeTab === 'requests' ? 'var(--font-weight-semibold)' : 'var(--font-weight-normal)'
+          }}
         >
           <Users size={18} />
-          Запросы на подписку
+          <span>Запросы на подписку</span>
           {newRequests.length > 0 && (
-            <span className="badge badge--error" style={{ marginLeft: '8px' }}>
+            <span className="badge badge--error" style={{ marginLeft: '4px' }}>
               {newRequests.length}
             </span>
           )}
         </button>
         <button
-          className={`tab ${activeTab === 'settings' ? 'tab--active' : ''}`}
+          className={`btn ${activeTab === 'settings' ? 'btn--primary' : 'btn--secondary'}`}
           onClick={() => setActiveTab('settings')}
+          style={{
+            borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
+            borderBottom: activeTab === 'settings' ? '2px solid var(--accent)' : '2px solid transparent',
+            marginBottom: '-2px',
+            padding: '10px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontWeight: activeTab === 'settings' ? 'var(--font-weight-semibold)' : 'var(--font-weight-normal)'
+          }}
         >
           <Settings size={18} />
-          Настройки
+          <span>Настройки</span>
         </button>
         <button
-          className={`tab ${activeTab === 'stats' ? 'tab--active' : ''}`}
+          className={`btn ${activeTab === 'stats' ? 'btn--primary' : 'btn--secondary'}`}
           onClick={() => setActiveTab('stats')}
+          style={{
+            borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
+            borderBottom: activeTab === 'stats' ? '2px solid var(--accent)' : '2px solid transparent',
+            marginBottom: '-2px',
+            padding: '10px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontWeight: activeTab === 'stats' ? 'var(--font-weight-semibold)' : 'var(--font-weight-normal)'
+          }}
         >
           <TrendingUp size={18} />
-          Статистика
+          <span>Статистика</span>
         </button>
       </div>
 
@@ -300,47 +348,87 @@ export default function RanksPage() {
           </div>
 
           {/* Filters */}
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
-            <div className="search-input" style={{ flex: '1 1 300px' }}>
-              <Search size={18} className="search-input__icon" />
-              <input
-                type="text"
-                className="search-input__field"
-                placeholder="Поиск по username, ID или номеру запроса..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+          <div style={{ 
+            maxWidth: '100%',
+            width: '100%'
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              gap: '8px', 
+              marginBottom: '24px', 
+              alignItems: 'center',
+              flexWrap: 'nowrap',
+              overflowX: 'auto',
+              paddingBottom: '8px'
+            }}>
+              <div className="search-input" style={{ flex: '1 1 auto', minWidth: '200px', maxWidth: '350px' }}>
+                <Search size={18} className="search-input__icon" />
+                <input
+                  type="text"
+                  className="search-input__field"
+                  placeholder="Поиск по username, ID или номеру запроса..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+
+              <select
+                className="form-select"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                style={{ minWidth: '150px', maxWidth: '180px', flexShrink: 1 }}
+                title={statusFilter ? (statusFilter === 'new' ? 'Новые' : statusFilter === 'in_progress' ? 'В обработке' : statusFilter === 'requisites_sent' ? 'Реквизиты отправлены' : statusFilter === 'payment_confirmed' ? 'Оплата подтверждена' : statusFilter === 'completed' ? 'Завершено' : statusFilter === 'cancelled' ? 'Отменено' : '') : 'Все статусы'}
+              >
+                <option value="">Все статусы</option>
+                <option value="new">Новые</option>
+                <option value="in_progress">В обработке</option>
+                <option value="requisites_sent">Реквизиты отправлены</option>
+                <option value="payment_confirmed">Оплата подтверждена</option>
+                <option value="completed">Завершено</option>
+                <option value="cancelled">Отменено</option>
+              </select>
+
+              <select
+                className="form-select"
+                value={currencyFilter}
+                onChange={(e) => setCurrencyFilter(e.target.value)}
+                style={{ minWidth: '110px', maxWidth: '130px', flexShrink: 1 }}
+                title={currencyFilter ? currencyFilter : 'Все валюты'}
+              >
+                <option value="">Все валюты</option>
+                <option value="USD">USD</option>
+                <option value="RUB">RUB</option>
+                <option value="UAH">UAH</option>
+              </select>
+
+              <div className="view-toggle" style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                <button
+                  onClick={() => setViewMode('table')}
+                  className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
+                  title="Табличный вид"
+                >
+                  <LayoutList size={18} />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'list' ? 'btn--active' : ''}`}
+                  title="Списочный вид"
+                >
+                  <List size={18} />
+                </button>
+                <button
+                  onClick={() => setViewMode('cards')}
+                  className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
+                  title="Карточный вид"
+                >
+                  <LayoutGrid size={18} />
+                </button>
+              </div>
             </div>
-
-            <select
-              className="form-select"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              style={{ minWidth: '180px' }}
-            >
-              <option value="">Все статусы</option>
-              <option value="new">Новые</option>
-              <option value="in_progress">В обработке</option>
-              <option value="requisites_sent">Реквизиты отправлены</option>
-              <option value="payment_confirmed">Оплата подтверждена</option>
-              <option value="completed">Завершено</option>
-              <option value="cancelled">Отменено</option>
-            </select>
-
-            <select
-              className="form-select"
-              value={currencyFilter}
-              onChange={(e) => setCurrencyFilter(e.target.value)}
-              style={{ minWidth: '120px' }}
-            >
-              <option value="">Все валюты</option>
-              <option value="USD">USD</option>
-              <option value="RUB">RUB</option>
-              <option value="UAH">UAH</option>
-            </select>
           </div>
 
-          {/* Requests Table */}
+          {/* Requests Display */}
+          {viewMode === 'table' ? (
           <div className="table-responsive">
             <div className="table-container">
               <table className="table">
@@ -474,16 +562,245 @@ export default function RanksPage() {
               </table>
             </div>
           </div>
+          ) : viewMode === 'list' ? (
+            <div className="users-list">
+              {requestsLoading ? (
+                <div className="loading">Загрузка...</div>
+              ) : filteredRequests.length === 0 ? (
+                <div className="empty-state">
+                  <Award size={48} />
+                  <p>Нет запросов</p>
+                </div>
+              ) : (
+                filteredRequests.map((request) => (
+                  <div key={request.id} className="user-card">
+                    <div className="user-card__header">
+                      <div className="user-card__avatar">
+                        <Users size={32} />
+                      </div>
+                      <div className="user-card__info">
+                        <h3 className="user-card__name">{getUserDisplayName(request.user)}</h3>
+                        <p className="user-card__username">ID: {request.user.tg_id}</p>
+                      </div>
+                      {getStatusBadge(request.status)}
+                    </div>
+
+                    <div className="user-card__stats">
+                      <div className="user-card__stat">
+                        <DollarSign size={16} />
+                        <span className="user-card__stat-label">Сумма:</span>
+                        <span className="user-card__stat-value">{request.amount} {request.currency}</span>
+                      </div>
+                      <div className="user-card__stat">
+                        <Calendar size={16} />
+                        <span className="user-card__stat-label">Дата:</span>
+                        <span className="user-card__stat-value">{formatDate(request.created_at)}</span>
+                      </div>
+                      <div className="user-card__stat">
+                        <Send size={16} />
+                        <span className="user-card__stat-label">Способ:</span>
+                        <span className="user-card__stat-value">{getCurrencyBadge(request.currency)}</span>
+                      </div>
+                    </div>
+
+                    <div className="user-card__meta">
+                      <span className="user-card__meta-item">№ {request.request_number}</span>
+                      <span className="user-card__meta-item">{request.payment_method}</span>
+                    </div>
+
+                    <div className="user-card__actions">
+                      <button
+                        onClick={() => navigate(`/chats?user=${request.user_id}`)}
+                        className="btn btn--secondary btn--sm"
+                        title="Открыть чат"
+                      >
+                        <MessageSquare size={16} />
+                        Чат
+                      </button>
+                      {request.status === 'new' && request.payment_method !== 'usd_balance' && (
+                        <button
+                          onClick={() => markRequisitesSentMutation.mutate(request.id)}
+                          className="btn btn--info btn--sm"
+                          title="Отправить реквизиты"
+                          disabled={markRequisitesSentMutation.isPending}
+                        >
+                          <Send size={16} />
+                          Реквизиты
+                        </button>
+                      )}
+                      {request.status === 'requisites_sent' && (
+                        <button
+                          onClick={() => confirmPaymentMutation.mutate(request.id)}
+                          className="btn btn--warning btn--sm"
+                          title="Подтвердить оплату"
+                          disabled={confirmPaymentMutation.isPending}
+                        >
+                          <CheckCircle size={16} />
+                          Подтвердить
+                        </button>
+                      )}
+                      {request.status === 'payment_confirmed' && (
+                        <button
+                          onClick={() => activateSubscriptionMutation.mutate(request.id)}
+                          className="btn btn--success btn--sm"
+                          title="Активировать подписку"
+                          disabled={activateSubscriptionMutation.isPending}
+                        >
+                          <Award size={16} />
+                          Активировать
+                        </button>
+                      )}
+                      {(request.status === 'new' || request.status === 'in_progress') && (
+                        <button
+                          onClick={() => {
+                            const reason = prompt('Причина отмены:');
+                            if (reason !== null) {
+                              cancelRequestMutation.mutate({ id: request.id, reason });
+                            }
+                          }}
+                          className="btn btn--danger btn--sm"
+                          title="Отменить"
+                          disabled={cancelRequestMutation.isPending}
+                        >
+                          <XCircle size={16} />
+                          Отменить
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : (
+            <div className="cards-grid">
+              {requestsLoading ? (
+                <div className="loading">Загрузка...</div>
+              ) : filteredRequests.length === 0 ? (
+                <div className="empty-state">
+                  <Award size={48} />
+                  <p>Нет запросов</p>
+                </div>
+              ) : (
+                filteredRequests.map((request) => (
+                  <div key={request.id} className="user-card">
+                    <div className="user-card__header">
+                      <div className="user-card__avatar">
+                        <Users size={32} />
+                      </div>
+                      <div className="user-card__info">
+                        <h3 className="user-card__name">{getUserDisplayName(request.user)}</h3>
+                        <p className="user-card__username">ID: {request.user.tg_id}</p>
+                      </div>
+                      {getStatusBadge(request.status)}
+                    </div>
+
+                    <div className="user-card__stats">
+                      <div className="user-card__stat">
+                        <DollarSign size={16} />
+                        <span className="user-card__stat-label">Сумма:</span>
+                        <span className="user-card__stat-value">{request.amount} {request.currency}</span>
+                      </div>
+                      <div className="user-card__stat">
+                        <Calendar size={16} />
+                        <span className="user-card__stat-label">Дата:</span>
+                        <span className="user-card__stat-value">{formatDate(request.created_at)}</span>
+                      </div>
+                      <div className="user-card__stat">
+                        <Send size={16} />
+                        <span className="user-card__stat-label">Способ:</span>
+                        <span className="user-card__stat-value">{getCurrencyBadge(request.currency)}</span>
+                      </div>
+                    </div>
+
+                    <div className="user-card__meta">
+                      <span className="user-card__meta-item">№ {request.request_number}</span>
+                      <span className="user-card__meta-item">{request.payment_method}</span>
+                    </div>
+
+                    <div className="user-card__actions">
+                      <button
+                        onClick={() => navigate(`/chats?user=${request.user_id}`)}
+                        className="btn btn--secondary btn--sm"
+                        title="Открыть чат"
+                      >
+                        <MessageSquare size={16} />
+                        Чат
+                      </button>
+                      {request.status === 'new' && request.payment_method !== 'usd_balance' && (
+                        <button
+                          onClick={() => markRequisitesSentMutation.mutate(request.id)}
+                          className="btn btn--info btn--sm"
+                          title="Отправить реквизиты"
+                          disabled={markRequisitesSentMutation.isPending}
+                        >
+                          <Send size={16} />
+                          Реквизиты
+                        </button>
+                      )}
+                      {request.status === 'requisites_sent' && (
+                        <button
+                          onClick={() => confirmPaymentMutation.mutate(request.id)}
+                          className="btn btn--warning btn--sm"
+                          title="Подтвердить оплату"
+                          disabled={confirmPaymentMutation.isPending}
+                        >
+                          <CheckCircle size={16} />
+                          Подтвердить
+                        </button>
+                      )}
+                      {request.status === 'payment_confirmed' && (
+                        <button
+                          onClick={() => activateSubscriptionMutation.mutate(request.id)}
+                          className="btn btn--success btn--sm"
+                          title="Активировать подписку"
+                          disabled={activateSubscriptionMutation.isPending}
+                        >
+                          <Award size={16} />
+                          Активировать
+                        </button>
+                      )}
+                      {(request.status === 'new' || request.status === 'in_progress') && (
+                        <button
+                          onClick={() => {
+                            const reason = prompt('Причина отмены:');
+                            if (reason !== null) {
+                              cancelRequestMutation.mutate({ id: request.id, reason });
+                            }
+                          }}
+                          className="btn btn--danger btn--sm"
+                          title="Отменить"
+                          disabled={cancelRequestMutation.isPending}
+                        >
+                          <XCircle size={16} />
+                          Отменить
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </>
       )}
 
       {/* НАСТРОЙКИ */}
-      {activeTab === 'settings' && settings && (
+      {activeTab === 'settings' && (
         <div className="card" style={{ padding: '24px' }}>
           <h2 style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Settings size={24} />
             Настройки системы рангов
           </h2>
+          
+          {settingsLoading ? (
+            <div style={{ textAlign: 'center', padding: '40px' }}>
+              <div style={{ fontSize: 'var(--font-size-lg)', color: 'var(--text-secondary)' }}>Загрузка настроек...</div>
+            </div>
+          ) : !settings ? (
+            <div style={{ textAlign: 'center', padding: '40px' }}>
+              <div style={{ fontSize: 'var(--font-size-lg)', color: 'var(--text-secondary)' }}>Настройки не найдены</div>
+            </div>
+          ) : (
 
           <div style={{ display: 'grid', gap: '32px' }}>
             {/* Требования для рангов */}
@@ -698,17 +1015,24 @@ export default function RanksPage() {
               </div>
             </section>
           </div>
+          )}
         </div>
       )}
 
       {/* СТАТИСТИКА */}
-      {activeTab === 'stats' && stats && (
+      {activeTab === 'stats' && (
         <div className="card" style={{ padding: '24px' }}>
           <h2 style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <TrendingUp size={24} />
             Статистика рангов
           </h2>
 
+          {!stats ? (
+            <div style={{ textAlign: 'center', padding: '40px' }}>
+              <div style={{ fontSize: 'var(--font-size-lg)', color: 'var(--text-secondary)' }}>Загрузка статистики...</div>
+            </div>
+          ) : (
+            <>
           <div className="stats-grid">
             {stats.byRank?.map((stat: any) => (
               <div key={stat.rank} className="stat-card">
@@ -782,6 +1106,8 @@ export default function RanksPage() {
               </div>
             </div>
           </div>
+          </>
+          )}
         </div>
       )}
     </div>

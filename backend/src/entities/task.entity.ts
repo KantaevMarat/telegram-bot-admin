@@ -55,6 +55,12 @@ export class Task {
   @Column({ type: 'boolean', default: true })
   active: boolean;
 
+  @Column({ type: 'varchar', default: 'all' })
+  available_for: string; // 'all' - для всех, 'platinum' - только платиновая подписка, 'ranks' - по рангам
+
+  @Column({ type: 'text', nullable: true })
+  target_ranks: string; // JSON массив рангов: ['stone', 'bronze', 'silver', 'gold'] если available_for = 'ranks'
+
   @OneToMany(() => UserTask, (userTask) => userTask.task)
   user_tasks: UserTask[];
 

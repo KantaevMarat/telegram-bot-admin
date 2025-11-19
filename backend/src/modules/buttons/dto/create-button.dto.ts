@@ -39,4 +39,9 @@ export class CreateButtonDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiProperty({ description: 'Admin only button', required: false, default: false })
+  @IsOptional()
+  @IsBoolean()
+  admin_only?: boolean;
 }

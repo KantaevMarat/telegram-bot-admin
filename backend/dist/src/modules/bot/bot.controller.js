@@ -27,6 +27,9 @@ let BotController = class BotController {
     async setWebhook(body) {
         return await this.botService.setWebhook(body.url);
     }
+    async deleteWebhook(body) {
+        return await this.botService.deleteWebhook(body.drop_pending_updates ?? true);
+    }
 };
 exports.BotController = BotController;
 __decorate([
@@ -45,6 +48,14 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], BotController.prototype, "setWebhook", null);
+__decorate([
+    (0, common_1.Post)('delete-webhook'),
+    (0, swagger_1.ApiOperation)({ summary: 'Delete Telegram bot webhook' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], BotController.prototype, "deleteWebhook", null);
 exports.BotController = BotController = __decorate([
     (0, swagger_1.ApiTags)('bot'),
     (0, common_1.Controller)('bot'),

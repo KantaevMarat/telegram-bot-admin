@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { balanceApi } from '../api/client';
-import { DollarSign, TrendingUp, Users, ArrowUp, ArrowDown, Wallet, CreditCard, BarChart3 } from 'lucide-react';
+import { balanceApi, ranksApi } from '../api/client';
+import { DollarSign, TrendingUp, Users, ArrowUp, ArrowDown, Wallet, CreditCard, BarChart3, Award, Circle } from 'lucide-react';
 import { useSyncRefetch } from '../hooks/useSync';
 
 export default function BalancePage() {
@@ -19,6 +19,48 @@ export default function BalancePage() {
     refetchOverview();
     refetchLogs();
   });
+
+  // Get ranks for top users
+  const topUsers = overview?.top_users || [];
+  const { data: userRanksMap } = useQuery({
+    queryKey: ['top-users-ranks', topUsers.map((u: any) => u.id).join(',')],
+    queryFn: async () => {
+      const ranks: Record<string, any> = {};
+      await Promise.all(
+        topUsers.map(async (user: any) => {
+          try {
+            const response = await ranksApi.getUserRank(user.id);
+            const rankData = response.rank || response;
+            ranks[user.id] = {
+              current_rank: rankData.current_rank || 'stone',
+              bonus_percentage: rankData.bonus_percentage || 0,
+              ...rankData
+            };
+          } catch (error: any) {
+            ranks[user.id] = { current_rank: 'stone', bonus_percentage: 0 };
+          }
+        })
+      );
+      return ranks;
+    },
+    enabled: topUsers.length > 0,
+    staleTime: 30000,
+  });
+
+  // Function to get rank badge
+  const getRankIcon = (rank: string) => {
+    const normalizedRank = (rank || '').toLowerCase();
+    
+    const rankInfo: Record<string, { icon: JSX.Element; color: string }> = {
+      stone: { icon: <Circle size={14} />, color: '#6b7280' },
+      bronze: { icon: <span>🥉</span>, color: '#cd7f32' },
+      silver: { icon: <span>🥈</span>, color: '#c0c0c0' },
+      gold: { icon: <span>🥇</span>, color: '#ffd700' },
+      platinum: { icon: <span>💎</span>, color: '#e5e4e2' },
+    };
+
+    return rankInfo[normalizedRank] || rankInfo.stone;
+  };
 
   return (
     <div className="page">
@@ -122,6 +164,26 @@ export default function BalancePage() {
                         <div className="top-user-item__username">
                           @{user.username || 'без username'}
                         </div>
+                        {userRanksMap?.[user.id] && (
+                          <div style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '4px',
+                            marginTop: '4px',
+                            fontSize: 'var(--font-size-xs)',
+                            color: getRankIcon(userRanksMap[user.id].current_rank).color
+                          }}>
+                            <Award size={12} />
+                            {getRankIcon(userRanksMap[user.id].current_rank).icon}
+                            <span style={{ marginLeft: '2px' }}>
+                              {userRanksMap[user.id].current_rank === 'stone' && 'Камень'}
+                              {userRanksMap[user.id].current_rank === 'bronze' && 'Бронза'}
+                              {userRanksMap[user.id].current_rank === 'silver' && 'Серебро'}
+                              {userRanksMap[user.id].current_rank === 'gold' && 'Золото'}
+                              {userRanksMap[user.id].current_rank === 'platinum' && 'Платина'}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <div className="top-user-item__balance">
                         <span 

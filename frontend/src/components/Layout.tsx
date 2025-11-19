@@ -96,7 +96,7 @@ export default function Layout({ children }: LayoutProps) {
                 to={item.path}
                 className={`sidebar-menu__link ${isActive ? 'sidebar-menu__link--active' : ''}`}
               >
-                <Icon size={16} style={{ flexShrink: 0 }} />
+                {Icon && <Icon size={16} style={{ flexShrink: 0 }} />}
                 <span>{item.label}</span>
               </Link>
             );

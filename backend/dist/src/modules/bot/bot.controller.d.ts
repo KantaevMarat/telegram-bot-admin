@@ -8,4 +8,7 @@ export declare class BotController {
     setWebhook(body: {
         url: string;
     }): Promise<any>;
+    deleteWebhook(body: {
+        drop_pending_updates?: boolean;
+    }): Promise<any>;
 }

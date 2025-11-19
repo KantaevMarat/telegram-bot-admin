@@ -9,7 +9,8 @@ export declare class RanksService {
     private readonly logger;
     constructor(rankRepo: Repository<UserRank>, settingsRepo: Repository<RankSettings>, userRepo: Repository<User>);
     getUserRank(userId: string): Promise<UserRank>;
-    checkAndUpdateRank(userId: string): Promise<{
+    getRanksForUsers(userIds: string[]): Promise<UserRank[]>;
+    checkAndUpdateRank(userId: string, channelsSubscribed?: boolean): Promise<{
         rank: UserRank;
         leveledUp: boolean;
         newLevel?: RankLevel;
@@ -33,6 +34,7 @@ export declare class RanksService {
             current: number;
             required: number;
         };
+        channelsSubscribed?: boolean;
     }>;
     checkExpiringSubscriptions(): Promise<void>;
     getRankStatistics(): Promise<{

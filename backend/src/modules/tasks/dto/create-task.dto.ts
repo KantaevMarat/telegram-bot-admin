@@ -81,4 +81,14 @@ export class CreateTaskDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiProperty({ description: 'Available for: all, platinum, ranks', required: false })
+  @IsOptional()
+  @IsString()
+  available_for?: string;
+
+  @ApiProperty({ description: 'Target ranks (JSON array) if available_for = ranks', required: false })
+  @IsOptional()
+  @IsString()
+  target_ranks?: string;
 }

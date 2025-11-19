@@ -72,6 +72,11 @@ let SettingsService = class SettingsService {
         const updated = await this.settingsRepository.save(setting);
         if (oldValue !== value) {
             await this.recordHistory(key, oldValue, value, changeReason, adminTgId, adminUsername, adminFirstName, ipAddress, userAgent);
+            await this.syncService.emitEntityEvent('settings', 'updated', {
+                key,
+                value,
+                oldValue,
+            });
             this.settingsCache.delete(key);
         }
         return updated;
@@ -82,11 +87,22 @@ let SettingsService = class SettingsService {
             const setting = await this.findOne(dto.key);
             if (setting) {
                 const oldValue = setting.value;
-                setting.value = dto.value;
+                const newValue = dto.value !== undefined && dto.value !== null ? String(dto.value) : oldValue;
+                console.log(`🔧 Updating setting ${dto.key}:`, {
+                    oldValue: oldValue?.substring(0, 50),
+                    newValue: newValue?.substring(0, 50),
+                    newValueLength: newValue?.length,
+                });
+                setting.value = newValue;
                 setting.updated_by_admin_tg_id = adminTgId;
                 const updated = await this.settingsRepository.save(setting);
-                if (oldValue !== dto.value) {
-                    await this.recordHistory(dto.key, oldValue, dto.value, changeReason, adminTgId, adminUsername, adminFirstName, ipAddress, userAgent);
+                if (oldValue !== newValue) {
+                    await this.recordHistory(dto.key, oldValue, newValue, changeReason, adminTgId, adminUsername, adminFirstName, ipAddress, userAgent);
+                    await this.syncService.emitEntityEvent('settings', 'updated', {
+                        key: dto.key,
+                        value: newValue,
+                        oldValue,
+                    });
                     this.settingsCache.delete(dto.key);
                 }
                 updatedSettings.push(updated);
@@ -100,7 +116,7 @@ let SettingsService = class SettingsService {
             return cached.value;
         }
         const setting = await this.settingsRepository.findOne({ where: { key } });
-        const value = setting?.value || defaultValue;
+        const value = (setting?.value && setting.value.trim() !== '') ? setting.value : defaultValue;
         this.settingsCache.set(key, { value, timestamp: Date.now() });
         return value;
     }

@@ -23,6 +23,23 @@ export declare class AuthController {
             first_name: string;
             balance_usdt: number;
             tasks_completed: number;
+            status: string;
+        };
+    }>;
+    getUserStatus(loginDto: LoginDto): Promise<{
+        exists: boolean;
+        status: null;
+        blocked: boolean;
+        user?: undefined;
+    } | {
+        exists: boolean;
+        status: string;
+        blocked: boolean;
+        user: {
+            id: string;
+            tg_id: string;
+            username: string;
+            first_name: string;
         };
     }>;
     testAdmins(): Promise<{

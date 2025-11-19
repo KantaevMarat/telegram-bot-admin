@@ -4,6 +4,8 @@ import { CreateCommandDto } from './dto/create-command.dto';
 import { UpdateCommandDto } from './dto/update-command.dto';
 export declare class CommandsService {
     private commandRepo;
+    private commandCache;
+    private readonly CACHE_TTL;
     constructor(commandRepo: Repository<Command>);
     create(createCommandDto: CreateCommandDto): Promise<Command>;
     findAll(): Promise<Command[]>;

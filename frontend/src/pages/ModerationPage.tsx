@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { tasksApi } from '../api/client';
-import { CheckCircle, XCircle, Clock, Search, Filter, User, DollarSign, Calendar, MessageSquare } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Search, Filter, User, DollarSign, Calendar, MessageSquare, LayoutGrid, LayoutList, List } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSyncRefetch } from '../hooks/useSync';
 
@@ -34,6 +34,7 @@ interface UserTaskModeration {
 export default function ModerationPage() {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'table' | 'list' | 'cards'>('table');
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -46,6 +47,12 @@ export default function ModerationPage() {
           search: searchQuery || undefined 
         });
         console.log('✅ Moderation data loaded:', result);
+        console.log('📊 Tasks by status:', {
+          submitted: (result || []).filter((t: UserTaskModeration) => t.status === 'submitted').length,
+          in_progress: (result || []).filter((t: UserTaskModeration) => t.status === 'in_progress').length,
+          completed: (result || []).filter((t: UserTaskModeration) => t.status === 'completed').length,
+          rejected: (result || []).filter((t: UserTaskModeration) => t.status === 'rejected').length,
+        });
         return result || [];
       } catch (err: any) {
         console.error('❌ Error loading moderation data:', err);
@@ -177,7 +184,6 @@ export default function ModerationPage() {
       <header className="page-header">
         <div>
           <h1 className="page-title">
-            <Clock size={28} />
             Модерация заданий
           </h1>
           <p className="page-subtitle">Одобрение и отклонение выполненных заданий</p>
@@ -223,8 +229,8 @@ export default function ModerationPage() {
       </div>
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
-        <div className="search-input" style={{ flex: 1 }}>
+      <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+        <div className="search-input" style={{ flex: 1, minWidth: '200px' }}>
           <Search size={18} className="search-input__icon" />
           <input
             type="text"
@@ -250,9 +256,34 @@ export default function ModerationPage() {
             <option value="rejected">Отклонено</option>
           </select>
         </div>
+
+        <div className="view-toggle" style={{ display: 'flex', gap: '4px' }}>
+          <button
+            onClick={() => setViewMode('table')}
+            className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'table' ? 'btn--active' : ''}`}
+            title="Табличный вид"
+          >
+            <LayoutList size={18} />
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'list' ? 'btn--active' : ''}`}
+            title="Списочный вид"
+          >
+            <List size={18} />
+          </button>
+          <button
+            onClick={() => setViewMode('cards')}
+            className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'cards' ? 'btn--active' : ''}`}
+            title="Карточный вид"
+          >
+            <LayoutGrid size={18} />
+          </button>
+        </div>
       </div>
 
-      {/* Tasks Table */}
+      {/* Tasks Display */}
+      {viewMode === 'table' ? (
       <div className="table-responsive">
         <div className="table-container">
           <table className="table">
@@ -303,14 +334,29 @@ export default function ModerationPage() {
                     </td>
                     <td className="table__cell">
                       <div>
-                        <div style={{ fontWeight: 'var(--font-weight-medium)', color: 'var(--text-primary)' }}>
+                        <div style={{ fontWeight: 'var(--font-weight-medium)', color: 'var(--text-primary)', marginBottom: '4px' }}>
                           {userTask.task.title}
                         </div>
-                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                          {userTask.task.description.length > 60 
-                            ? `${userTask.task.description.slice(0, 60)}...` 
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                          {userTask.task.description.length > 80 
+                            ? `${userTask.task.description.slice(0, 80)}...` 
                             : userTask.task.description}
                         </div>
+                        {userTask.status === 'submitted' && (
+                          <div style={{ 
+                            fontSize: 'var(--font-size-xs)', 
+                            color: 'var(--warning)', 
+                            fontWeight: 'var(--font-weight-semibold)',
+                            marginTop: '4px',
+                            padding: '4px 8px',
+                            background: 'var(--warning-light)',
+                            borderRadius: '4px',
+                            display: 'inline-block',
+                            border: '1px solid var(--warning)'
+                          }}>
+                            ⏳ ТРЕБУЕТ МОДЕРАЦИИ
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="table__cell table__cell--center">
@@ -344,36 +390,79 @@ export default function ModerationPage() {
                       {getStatusBadge(userTask.status)}
                     </td>
                     <td className="table__cell table__cell--center">
-                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap', alignItems: 'center' }}>
                         {/* Кнопка перехода к чату */}
                         <button
                           onClick={() => navigate(`/chats?user=${userTask.user_id}`)}
-                          className="btn btn--secondary btn--icon btn--sm"
+                          className="btn btn--secondary btn--sm"
                           title="Открыть чат с пользователем"
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '6px',
+                            padding: '6px 12px',
+                            fontSize: 'var(--font-size-sm)'
+                          }}
                         >
-                          <MessageSquare size={14} />
+                          <MessageSquare size={16} />
+                          <span>Чат</span>
                         </button>
                         
-                        {userTask.status === 'submitted' && (
+                        {/* Кнопки одобрения/отклонения - всегда показываем для submitted, для других статусов показываем, но disabled */}
+                        {userTask.status === 'submitted' ? (
                           <>
                             <button
-                              onClick={() => handleApprove(userTask.id)}
-                              className="btn btn--success btn--icon btn--sm"
-                              title="Одобрить"
+                              onClick={() => {
+                                console.log('🔵 Approve button clicked for task:', userTask.id, userTask.status);
+                                handleApprove(userTask.id);
+                              }}
+                              className="btn btn--success btn--sm"
+                              title="Одобрить задание и начислить награду"
                               disabled={approveMutation.isPending}
+                              style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '4px', 
+                                padding: '6px 12px',
+                                fontSize: 'var(--font-size-sm)',
+                                fontWeight: 'var(--font-weight-medium)'
+                              }}
                             >
-                              <CheckCircle size={14} />
+                              <CheckCircle size={16} />
+                              <span>{approveMutation.isPending ? 'Одобрение...' : 'Одобрить'}</span>
                             </button>
                             <button
-                              onClick={() => handleReject(userTask.id)}
-                              className="btn btn--danger btn--icon btn--sm"
-                              title="Отклонить"
+                              onClick={() => {
+                                console.log('🔴 Reject button clicked for task:', userTask.id, userTask.status);
+                                handleReject(userTask.id);
+                              }}
+                              className="btn btn--danger btn--sm"
+                              title="Отклонить задание"
                               disabled={rejectMutation.isPending}
+                              style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '4px', 
+                                padding: '6px 12px',
+                                fontSize: 'var(--font-size-sm)',
+                                fontWeight: 'var(--font-weight-medium)'
+                              }}
                             >
-                              <XCircle size={14} />
+                              <XCircle size={16} />
+                              <span>{rejectMutation.isPending ? 'Отклонение...' : 'Отклонить'}</span>
                             </button>
                           </>
-                        )}
+                        ) : userTask.status === 'in_progress' ? (
+                          <div style={{ 
+                            fontSize: 'var(--font-size-xs)', 
+                            color: 'var(--text-secondary)',
+                            padding: '8px 12px',
+                            background: 'var(--background-secondary)',
+                            borderRadius: '4px'
+                          }}>
+                            ⏳ Ожидает отправки
+                          </div>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -383,6 +472,195 @@ export default function ModerationPage() {
           </table>
         </div>
       </div>
+      ) : viewMode === 'list' ? (
+        <div className="users-list">
+          {isLoading ? (
+            <div className="loading">Загрузка...</div>
+          ) : safeTasks.length === 0 ? (
+            <div className="empty-state">
+              <Clock size={48} />
+              <p>Нет заданий для модерации</p>
+            </div>
+          ) : (
+            safeTasks.map((userTask: UserTaskModeration) => (
+              <div key={userTask.id} className="user-card">
+                <div className="user-card__header">
+                  <div className="user-card__avatar">
+                    <User size={32} />
+                  </div>
+                  <div className="user-card__info">
+                    <h3 className="user-card__name">{getUserDisplayName(userTask.user)}</h3>
+                    <p className="user-card__username">ID: {userTask.user.tg_id}</p>
+                  </div>
+                  {getStatusBadge(userTask.status)}
+                </div>
+
+                <div className="user-card__stats">
+                  <div className="user-card__stat">
+                    <Clock size={16} />
+                    <span className="user-card__stat-label">Задание:</span>
+                    <span className="user-card__stat-value">{userTask.task.title}</span>
+                  </div>
+                  <div className="user-card__stat">
+                    <DollarSign size={16} />
+                    <span className="user-card__stat-label">Награда:</span>
+                    <span className="user-card__stat-value">
+                      {(() => {
+                        const reward = parseFloat(String(userTask.reward || 0));
+                        return (isNaN(reward) ? 0 : reward).toFixed(2);
+                      })()} USDT
+                    </span>
+                  </div>
+                  <div className="user-card__stat">
+                    <Calendar size={16} />
+                    <span className="user-card__stat-label">Отправлено:</span>
+                    <span className="user-card__stat-value">{formatDate(userTask.submitted_at)}</span>
+                  </div>
+                </div>
+
+                <div className="user-card__meta">
+                  <span className="user-card__meta-item">{userTask.task.description.length > 60 ? `${userTask.task.description.slice(0, 60)}...` : userTask.task.description}</span>
+                </div>
+
+                <div className="user-card__actions">
+                  <button
+                    onClick={() => navigate(`/chats?user=${userTask.user_id}`)}
+                    className="btn btn--secondary btn--sm"
+                    title="Открыть чат с пользователем"
+                  >
+                    <MessageSquare size={16} />
+                    Чат
+                  </button>
+                  {(userTask.status === 'submitted' || userTask.status === 'in_progress') && (
+                    <>
+                      <button
+                        onClick={() => handleApprove(userTask.id)}
+                        className="btn btn--success btn--sm"
+                        title="Одобрить задание"
+                        disabled={approveMutation.isPending || userTask.status !== 'submitted'}
+                        style={{
+                          opacity: userTask.status === 'submitted' ? 1 : 0.6,
+                          fontWeight: 'var(--font-weight-semibold)'
+                        }}
+                      >
+                        <CheckCircle size={16} />
+                        ✅ Одобрить
+                      </button>
+                      <button
+                        onClick={() => handleReject(userTask.id)}
+                        className="btn btn--danger btn--sm"
+                        title="Отклонить задание"
+                        disabled={rejectMutation.isPending || userTask.status !== 'submitted'}
+                        style={{
+                          opacity: userTask.status === 'submitted' ? 1 : 0.6,
+                          fontWeight: 'var(--font-weight-semibold)'
+                        }}
+                      >
+                        <XCircle size={16} />
+                        ❌ Отклонить
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="cards-grid">
+          {isLoading ? (
+            <div className="loading">Загрузка...</div>
+          ) : safeTasks.length === 0 ? (
+            <div className="empty-state">
+              <Clock size={48} />
+              <p>Нет заданий для модерации</p>
+            </div>
+          ) : (
+            safeTasks.map((userTask: UserTaskModeration) => (
+              <div key={userTask.id} className="user-card">
+                <div className="user-card__header">
+                  <div className="user-card__avatar">
+                    <User size={32} />
+                  </div>
+                  <div className="user-card__info">
+                    <h3 className="user-card__name">{getUserDisplayName(userTask.user)}</h3>
+                    <p className="user-card__username">ID: {userTask.user.tg_id}</p>
+                  </div>
+                  {getStatusBadge(userTask.status)}
+                </div>
+
+                <div className="user-card__stats">
+                  <div className="user-card__stat">
+                    <Clock size={16} />
+                    <span className="user-card__stat-label">Задание:</span>
+                    <span className="user-card__stat-value">{userTask.task.title}</span>
+                  </div>
+                  <div className="user-card__stat">
+                    <DollarSign size={16} />
+                    <span className="user-card__stat-label">Награда:</span>
+                    <span className="user-card__stat-value">
+                      {(() => {
+                        const reward = parseFloat(String(userTask.reward || 0));
+                        return (isNaN(reward) ? 0 : reward).toFixed(2);
+                      })()} USDT
+                    </span>
+                  </div>
+                  <div className="user-card__stat">
+                    <Calendar size={16} />
+                    <span className="user-card__stat-label">Отправлено:</span>
+                    <span className="user-card__stat-value">{formatDate(userTask.submitted_at)}</span>
+                  </div>
+                </div>
+
+                <div className="user-card__meta">
+                  <span className="user-card__meta-item">{userTask.task.description.length > 60 ? `${userTask.task.description.slice(0, 60)}...` : userTask.task.description}</span>
+                </div>
+
+                <div className="user-card__actions">
+                  <button
+                    onClick={() => navigate(`/chats?user=${userTask.user_id}`)}
+                    className="btn btn--secondary btn--sm"
+                    title="Открыть чат с пользователем"
+                  >
+                    <MessageSquare size={16} />
+                    Чат
+                  </button>
+                  {(userTask.status === 'submitted' || userTask.status === 'in_progress') && (
+                    <>
+                      <button
+                        onClick={() => handleApprove(userTask.id)}
+                        className="btn btn--success btn--sm"
+                        title="Одобрить задание"
+                        disabled={approveMutation.isPending || userTask.status !== 'submitted'}
+                        style={{
+                          opacity: userTask.status === 'submitted' ? 1 : 0.6,
+                          fontWeight: 'var(--font-weight-semibold)'
+                        }}
+                      >
+                        <CheckCircle size={16} />
+                        ✅ Одобрить
+                      </button>
+                      <button
+                        onClick={() => handleReject(userTask.id)}
+                        className="btn btn--danger btn--sm"
+                        title="Отклонить задание"
+                        disabled={rejectMutation.isPending || userTask.status !== 'submitted'}
+                        style={{
+                          opacity: userTask.status === 'submitted' ? 1 : 0.6,
+                          fontWeight: 'var(--font-weight-semibold)'
+                        }}
+                      >
+                        <XCircle size={16} />
+                        ❌ Отклонить
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

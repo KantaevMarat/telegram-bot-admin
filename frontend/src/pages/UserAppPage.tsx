@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { tasksApi, authApi } from '../api/client';
-import { Coins, Trophy, Users, Gift } from 'lucide-react';
+import { Coins, Trophy, Users, Gift, AlertCircle, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface Task {
@@ -25,6 +25,8 @@ interface UserStats {
 export default function UserAppPage() {
   const [user, setUser] = useState<any>(null);
   const [stats, setStats] = useState<UserStats>({ balance: 0, tasks_completed: 0, total_earned: 0, referrals: 0 });
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(true);
 
   useEffect(() => {
     // Initialize Telegram Web App
@@ -37,15 +39,49 @@ export default function UserAppPage() {
       const telegramUser = tg.initDataUnsafe?.user;
       if (telegramUser) {
         setUser(telegramUser);
+        
+        // Check user status (blocked/active)
+        checkUserStatus();
+      } else {
+        setIsCheckingStatus(false);
       }
+    } else {
+      setIsCheckingStatus(false);
     }
   }, []);
 
-  // Fetch tasks
+  const checkUserStatus = async () => {
+    try {
+      const tg = window.Telegram?.WebApp;
+      if (!tg?.initData) {
+        setIsCheckingStatus(false);
+        return;
+      }
+
+      const status = await authApi.getUserStatus(tg.initData);
+      
+      if (status.blocked) {
+        setIsBlocked(true);
+        toast.error('Ваш аккаунт заблокирован. Обратитесь к администратору.', {
+          duration: 10000,
+          icon: '🔒',
+        });
+      }
+      
+      setIsCheckingStatus(false);
+    } catch (error: any) {
+      console.error('Error checking user status:', error);
+      // If error, allow access (might be new user or network issue)
+      setIsCheckingStatus(false);
+    }
+  };
+
+  // Fetch tasks (only if not blocked)
   const { data: tasks, isLoading: tasksLoading } = useQuery({
     queryKey: ['user-tasks'],
     queryFn: () => tasksApi.getTasks().then(res => res.filter((t: Task) => t.active)),
     refetchInterval: 10000,
+    enabled: !isBlocked && !isCheckingStatus, // Don't fetch if blocked or checking status
   });
 
   // Mock user stats (in real app, fetch from API)
@@ -63,11 +99,119 @@ export default function UserAppPage() {
   }, [user]);
 
   const handleTaskClick = (task: Task) => {
+    if (isBlocked) {
+      toast.error('Ваш аккаунт заблокирован. Выполнение заданий недоступно.');
+      return;
+    }
+    
     if (task.action_url) {
       window.open(task.action_url, '_blank');
     }
     toast.success(`Откройте задание "${task.title}" и выполните его, затем вернитесь в бот для подтверждения`);
   };
+
+  // Show blocked message if user is blocked
+  if (isBlocked) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+        padding: '20px',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <div style={{
+          background: 'rgba(255, 255, 255, 0.95)',
+          borderRadius: '20px',
+          padding: '40px',
+          maxWidth: '500px',
+          textAlign: 'center',
+          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+        }}>
+          <div style={{
+            width: '80px',
+            height: '80px',
+            borderRadius: '50%',
+            background: '#ef4444',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 24px',
+          }}>
+            <Lock size={40} color="white" />
+          </div>
+          <h1 style={{
+            margin: '0 0 16px 0',
+            fontSize: '28px',
+            fontWeight: 'bold',
+            color: '#1f2937',
+          }}>
+            Аккаунт заблокирован
+          </h1>
+          <p style={{
+            margin: '0 0 24px 0',
+            fontSize: '16px',
+            color: '#6b7280',
+            lineHeight: '1.6',
+          }}>
+            Ваш аккаунт был заблокирован администратором. 
+            Для получения дополнительной информации обратитесь в поддержку.
+          </p>
+          <div style={{
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: '12px',
+            padding: '16px',
+            marginTop: '24px',
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: '#991b1b',
+              fontSize: '14px',
+            }}>
+              <AlertCircle size={20} />
+              <span>Доступ к боту временно ограничен</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading while checking status
+  if (isCheckingStatus) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        padding: '20px',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'white',
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '50px',
+            height: '50px',
+            border: '4px solid rgba(255, 255, 255, 0.3)',
+            borderTop: '4px solid white',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 16px',
+          }} />
+          <p style={{ margin: 0, fontSize: '16px', opacity: 0.9 }}>
+            Проверка доступа...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{

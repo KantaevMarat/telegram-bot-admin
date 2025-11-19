@@ -20,6 +20,8 @@ const command_entity_1 = require("../../entities/command.entity");
 let CommandsService = class CommandsService {
     constructor(commandRepo) {
         this.commandRepo = commandRepo;
+        this.commandCache = new Map();
+        this.CACHE_TTL = 60000;
     }
     async create(createCommandDto) {
         const existing = await this.commandRepo.findOne({
@@ -44,10 +46,35 @@ let CommandsService = class CommandsService {
         return command;
     }
     async findByName(name) {
-        return this.commandRepo.findOne({ where: { name, active: true } });
+        const normalizedName = name.startsWith('/') ? name.substring(1) : name;
+        const cacheKey = normalizedName;
+        const cached = this.commandCache.get(cacheKey);
+        if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+            return cached.command;
+        }
+        const command = await this.commandRepo.findOne({
+            where: [
+                { name: normalizedName, active: true },
+                { name: `/${normalizedName}`, active: true },
+            ],
+        });
+        this.commandCache.set(cacheKey, {
+            command,
+            timestamp: Date.now(),
+        });
+        return command;
     }
     async update(id, updateCommandDto) {
         const command = await this.findOne(id);
+        const oldName = command.name;
+        const normalizedOldName = oldName.startsWith('/') ? oldName.substring(1) : oldName;
+        this.commandCache.delete(normalizedOldName);
+        if (updateCommandDto.name) {
+            const normalizedNewName = updateCommandDto.name.startsWith('/')
+                ? updateCommandDto.name.substring(1)
+                : updateCommandDto.name;
+            this.commandCache.delete(normalizedNewName);
+        }
         if (updateCommandDto.name && updateCommandDto.name !== command.name) {
             const existing = await this.commandRepo.findOne({
                 where: { name: updateCommandDto.name },
@@ -61,6 +88,10 @@ let CommandsService = class CommandsService {
     }
     async remove(id) {
         const command = await this.findOne(id);
+        const normalizedName = command.name.startsWith('/')
+            ? command.name.substring(1)
+            : command.name;
+        this.commandCache.delete(normalizedName);
         await this.commandRepo.remove(command);
     }
 };

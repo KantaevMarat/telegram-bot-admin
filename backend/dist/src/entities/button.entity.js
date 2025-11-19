@@ -51,6 +51,10 @@ __decorate([
     __metadata("design:type", Boolean)
 ], Button.prototype, "active", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ type: 'boolean', default: false }),
+    __metadata("design:type", Boolean)
+], Button.prototype, "admin_only", void 0);
+__decorate([
     (0, typeorm_1.CreateDateColumn)(),
     __metadata("design:type", Date)
 ], Button.prototype, "created_at", void 0);

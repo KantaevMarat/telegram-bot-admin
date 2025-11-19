@@ -6,6 +6,7 @@ import { Settings } from '../entities/settings.entity';
 import { Task } from '../entities/task.entity';
 import { FakeStats } from '../entities/fake-stats.entity';
 import { RealStatsSnapshot } from '../entities/real-stats-snapshot.entity';
+import { Command } from '../entities/command.entity';
 import { initializeSettings } from './init-settings';
 
 async function seed() {
@@ -147,6 +148,7 @@ async function seed() {
     });
     console.log('✅ Created initial real stats snapshot');
   }
+
 
   await dataSource.destroy();
   console.log('🎉 Seeding completed!');

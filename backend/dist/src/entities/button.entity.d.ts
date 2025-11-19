@@ -8,6 +8,7 @@ export declare class Button {
     media_url: string;
     command: string;
     active: boolean;
+    admin_only: boolean;
     created_at: Date;
     updated_at: Date;
 }

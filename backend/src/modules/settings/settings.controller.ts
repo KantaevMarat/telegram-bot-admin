@@ -74,6 +74,9 @@ export class SettingsController {
     const userAgent = headers['user-agent'];
     const changeReason = body.settings.length > 1 ? 'Bulk update' : 'Single setting update';
 
+    // Log incoming data for debugging
+    console.log('📝 Updating settings:', JSON.stringify(body.settings, null, 2));
+
     return await this.settingsService.updateAll(
       body.settings,
       adminTgId,

@@ -49,7 +49,7 @@ export class UsersService {
     // Если есть фильтр по статусу, добавляем его (andWhere если уже есть where, иначе where)
     if (hasStatus) {
       if (hasSearch) {
-        queryBuilder.andWhere('user.status = :status', { status });
+      queryBuilder.andWhere('user.status = :status', { status });
       } else {
         queryBuilder.where('user.status = :status', { status });
       }

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useTelegramStore } from './telegramStore';
-import { API_URL } from '../api/client';
+import { API_URL, api } from '../api/client';
 
 interface AuthState {
   token: string | null;
@@ -39,31 +39,21 @@ export const useAuthStore = create<AuthState>()(
             // Fallback: Используем dev login если Telegram WebApp недоступен
             console.log('🔧 Telegram WebApp not available, trying dev login fallback...');
             try {
-              const response = await fetch(`${apiUrl}/api/auth/telegram/admin`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ initData: 'dev' }),
+              const response = await api.post('/auth/telegram/admin', { initData: 'dev' });
+              const data = response.data;
+              console.log('✅ Dev login fallback successful:', data);
+              set({ 
+                token: data.access_token, 
+                admin: data.admin, 
+                isAuthenticated: true,
+                isTelegramAuth: false 
               });
-
-              if (response.ok) {
-                const data = await response.json();
-                console.log('✅ Dev login fallback successful:', data);
-                set({ 
-                  token: data.access_token, 
-                  admin: data.admin, 
-                  isAuthenticated: true,
-                  isTelegramAuth: false 
-                });
-                return { success: true };
-              } else {
-                console.warn('⚠️ Dev login fallback failed with status:', response.status);
-              }
-            } catch (devError) {
+              return { success: true };
+            } catch (devError: any) {
               console.error('❌ Dev login fallback failed:', devError);
+              const errorMsg = devError.response?.data?.message || devError.message || 'Unknown error';
+              return { success: false, error: `Dev login failed: ${errorMsg}`, status: devError.response?.status };
             }
-            return { success: false, error: 'Telegram WebApp is not available. Make sure you opened the app through Telegram.' };
           }
 
           // Ждем пока WebApp готов (если еще не готов)
@@ -112,29 +102,20 @@ export const useAuthStore = create<AuthState>()(
             // Fallback: Используем dev login если initData недоступен (работает и в production)
             console.log('🔧 No valid initData available, trying dev login fallback...');
             try {
-              const response = await fetch(`${apiUrl}/api/auth/telegram/admin`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ initData: 'dev' }),
+              const response = await api.post('/auth/telegram/admin', { initData: 'dev' });
+              const data = response.data;
+              console.log('✅ Dev login fallback successful:', data);
+              set({ 
+                token: data.access_token, 
+                admin: data.admin, 
+                isAuthenticated: true,
+                isTelegramAuth: false 
               });
-
-              if (response.ok) {
-                const data = await response.json();
-                console.log('✅ Dev login fallback successful:', data);
-                set({ 
-                  token: data.access_token, 
-                  admin: data.admin, 
-                  isAuthenticated: true,
-                  isTelegramAuth: false 
-                });
-                return { success: true };
-              } else {
-                console.warn('⚠️ Dev login fallback failed with status:', response.status);
-              }
-            } catch (devError) {
+              return { success: true };
+            } catch (devError: any) {
               console.error('❌ Dev login fallback failed:', devError);
+              const errorMsg = devError.response?.data?.message || devError.message || 'Unknown error';
+              return { success: false, error: `Dev login failed: ${errorMsg}`, status: devError.response?.status };
             }
             
             return { 
@@ -146,59 +127,10 @@ export const useAuthStore = create<AuthState>()(
           console.log('🔐 Authenticating with Telegram initData...');
           console.log('📝 InitData preview:', initData.substring(0, 100) + '...');
 
-          // apiUrl уже определен выше
-          const endpoint = `${apiUrl}/api/auth/telegram/admin`;
-          console.log('🌐 Full API endpoint URL:', endpoint);
-          console.log('🌐 apiUrl base:', apiUrl);
-          console.log('🌐 API_URL original:', API_URL);
-
-          let response: Response;
           try {
-            console.log('🚀 Sending fetch request to:', endpoint);
-            console.log('🚀 Request body:', { initData: initData.substring(0, 50) + '...' });
-            
-            response = await fetch(endpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ initData }),
-              credentials: 'include', // Важно для CORS с credentials
-            });
-            
-            console.log('📡 Response received!');
-            console.log('📡 Response status:', response.status);
-            console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
-          } catch (fetchError: any) {
-            console.error('❌ Fetch error (request failed):', fetchError);
-            console.error('❌ Error type:', fetchError.name);
-            console.error('❌ Error message:', fetchError.message);
-            console.error('❌ Error stack:', fetchError.stack);
-            
-            // Проверяем тип ошибки
-            if (fetchError.name === 'TypeError' && fetchError.message.includes('Failed to fetch')) {
-              return { 
-                success: false, 
-                error: 'Network error: Failed to fetch. Check CORS, firewall, or network connection.',
-                details: fetchError.message
-              };
-            } else if (fetchError.name === 'AbortError') {
-              return { 
-                success: false, 
-                error: 'Request was aborted or cancelled.',
-                details: fetchError.message
-              };
-            } else {
-              return { 
-                success: false, 
-                error: `Network error: ${fetchError.message || 'Unknown error'}`,
-                details: fetchError.toString()
-              };
-            }
-          }
-
-          if (response.ok) {
-            const data = await response.json();
+            console.log('🚀 Sending API request to /auth/telegram/admin');
+            const response = await api.post('/auth/telegram/admin', { initData });
+            const data = response.data;
             console.log('✅ Telegram auth successful:', data);
             set({ 
               token: data.access_token, 
@@ -207,31 +139,14 @@ export const useAuthStore = create<AuthState>()(
               isTelegramAuth: true 
             });
             return { success: true };
-          } else {
-            let errorText = '';
-            let errorJson = null;
-            
-            try {
-              errorText = await response.text();
-              errorJson = JSON.parse(errorText);
-            } catch (e) {
-              // Если не JSON, используем текст
-            }
-
-            const errorMessage = errorJson?.message || errorText || `HTTP ${response.status}`;
-            
-            console.error('❌ Telegram auth failed:', {
-              status: response.status,
-              statusText: response.statusText,
-              error: errorMessage,
-              fullResponse: errorText,
-            });
-
+          } catch (error: any) {
+            console.error('❌ Telegram auth failed:', error);
+            const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
             return { 
               success: false, 
               error: errorMessage,
-              status: response.status,
-              details: errorText
+              status: error.response?.status,
+              details: error.response?.data || error.toString()
             };
           }
         } catch (error: any) {
@@ -249,41 +164,31 @@ export const useAuthStore = create<AuthState>()(
           // Try to get fresh token in development mode
           if (import.meta.env.DEV) {
             console.log('🔄 Refreshing token in development mode...');
-            // Use localhost when running locally, ignore Docker hostnames
-            let apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-            const isDockerHostname = apiUrl.includes('tg-backend') || apiUrl.includes('tg-frontend');
-            if (isDockerHostname) {
-              apiUrl = 'http://localhost:3000';
-            }
-
-            // Убираем /api из конца если есть (чтобы не дублировать)
-            apiUrl = apiUrl.replace(/\/api\/?$/, '');
-            
-            const response = await fetch(`${apiUrl}/api/auth/telegram/admin`, {
+            // Use fetch instead of api to avoid interceptor loop
+            const response = await fetch('http://localhost:3000/api/auth/telegram/admin', {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ initData: 'dev' }),
             });
-
-            console.log('🔄 Token refresh response status:', response.status);
-            console.log('🔄 Token refresh response headers:', response.headers);
-
-            if (response.ok) {
-              const data = await response.json();
-              console.log('✅ Token refreshed successfully:', data);
-              set({ token: data.access_token, admin: data.admin, isAuthenticated: true });
-              return;
-            } else {
-              const errorText = await response.text();
-              console.log('❌ Token refresh failed with status:', response.status, 'body:', errorText);
+            
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+              console.error('❌ Token refresh failed:', errorData);
+              set({ token: null, admin: null, isAuthenticated: false });
+              throw new Error(errorData.message || 'Token refresh failed');
             }
+            
+            const data = await response.json();
+            console.log('✅ Token refreshed successfully');
+            set({ token: data.access_token, admin: data.admin, isAuthenticated: true });
+            return;
           }
 
-          console.log('❌ Token refresh failed');
-        } catch (error) {
+          throw new Error('Token refresh not available in production');
+        } catch (error: any) {
           console.error('❌ Error refreshing token:', error);
+          set({ token: null, admin: null, isAuthenticated: false });
+          throw error; // Re-throw to stop retry loop
         }
       },
     }),

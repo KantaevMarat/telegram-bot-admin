@@ -56,6 +56,78 @@ let ButtonsService = class ButtonsService {
         await this.syncService.emitEntityEvent('buttons', 'deleted', { id });
         return { success: true, message: 'Button removed' };
     }
+    async testButton(id, testData) {
+        const button = await this.findOne(id);
+        const result = {
+            success: true,
+            payload: {
+                button_id: button.id,
+                label: button.label,
+                action_type: button.action_type,
+                action_payload: button.action_payload,
+                command: button.command,
+            },
+            response: {
+                message: 'Кнопка выполнена успешно',
+                timestamp: new Date().toISOString(),
+            },
+            logs: [
+                `[${new Date().toISOString()}] Button ${button.id} executed`,
+                `Action type: ${button.action_type}`,
+                `Command: ${button.command || 'N/A'}`,
+            ],
+        };
+        return result;
+    }
+    async testButtonConfig(config) {
+        if (!config.label || config.label.length === 0) {
+            return {
+                success: false,
+                error: 'Label is required',
+            };
+        }
+        if (config.label.length > 64) {
+            return {
+                success: false,
+                error: 'Label must not exceed 64 characters',
+            };
+        }
+        const result = {
+            success: true,
+            payload: {
+                config,
+                test_user_id: 'test_user',
+                test_chat_id: 'test_chat',
+            },
+            response: {
+                message: 'Configuration test successful',
+                timestamp: new Date().toISOString(),
+            },
+            logs: [
+                `[${new Date().toISOString()}] Testing button configuration`,
+                `Mode: ${config.mode || 'N/A'}`,
+                `Label: ${config.label}`,
+            ],
+        };
+        return result;
+    }
+    async exportButton(id) {
+        const button = await this.findOne(id);
+        const exportData = {
+            id: button.id,
+            label: button.label,
+            action_type: button.action_type,
+            action_payload: button.action_payload,
+            media_url: button.media_url,
+            command: button.command,
+            row: button.row,
+            col: button.col,
+            active: button.active,
+            created_at: button.created_at,
+            updated_at: button.updated_at,
+        };
+        return exportData;
+    }
 };
 exports.ButtonsService = ButtonsService;
 exports.ButtonsService = ButtonsService = __decorate([

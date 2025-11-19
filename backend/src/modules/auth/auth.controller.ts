@@ -40,6 +40,12 @@ export class AuthController {
     return await this.authService.loginUser(loginDto.initData);
   }
 
+  @Post('telegram/user/status')
+  @ApiOperation({ summary: 'Check user status (blocked/active) using Telegram Web App data' })
+  async getUserStatus(@Body() loginDto: LoginDto) {
+    return await this.authService.getUserStatus(loginDto.initData);
+  }
+
   @Get('test-admins')
   @ApiOperation({ summary: 'DEBUG: Test admin lookup' })
   async testAdmins() {

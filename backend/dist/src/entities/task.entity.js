@@ -76,6 +76,14 @@ __decorate([
     __metadata("design:type", Boolean)
 ], Task.prototype, "active", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', default: 'all' }),
+    __metadata("design:type", String)
+], Task.prototype, "available_for", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'text', nullable: true }),
+    __metadata("design:type", String)
+], Task.prototype, "target_ranks", void 0);
+__decorate([
     (0, typeorm_1.OneToMany)(() => user_task_entity_1.UserTask, (userTask) => userTask.task),
     __metadata("design:type", Array)
 ], Task.prototype, "user_tasks", void 0);

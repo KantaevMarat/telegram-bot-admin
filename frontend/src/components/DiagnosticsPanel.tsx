@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, AlertCircle, CheckCircle, RefreshCw, Copy } from 'lucide-react';
-import { API_URL } from '../api/client';
+import { API_URL, api } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 
 interface DiagnosticsPanelProps {
@@ -18,7 +18,7 @@ export function DiagnosticsPanel({ onClose }: DiagnosticsPanelProps) {
         timestamp: new Date().toISOString(),
         api: {
           url: API_URL,
-          baseURL: window.location.origin + '/api',
+          baseURL: api.defaults.baseURL || window.location.origin + '/api',
         },
         location: {
           href: window.location.href,
@@ -45,29 +45,26 @@ export function DiagnosticsPanel({ onClose }: DiagnosticsPanelProps) {
         },
       };
 
-      // Test API connection
-      fetch(`${API_URL}/admin/stats`, {
-        method: 'GET',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      })
+      // Test API connection using api client (which handles auth automatically)
+      api.get('/admin/stats')
         .then(response => {
           diag.apiTest = {
             status: response.status,
             statusText: response.statusText,
-            ok: response.ok,
-            headers: Object.fromEntries(response.headers.entries()),
+            ok: true,
+            headers: response.headers as any,
+            data: response.data,
           };
-          return response.json();
-        })
-        .then(data => {
-          diag.apiTest.data = data;
           setDiagnostics(diag);
         })
         .catch(error => {
           diag.apiTest = {
-            error: error.message,
+            error: error.response?.data?.message || error.message,
             code: error.code,
             name: error.name,
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            ok: false,
           };
           setDiagnostics(diag);
         });

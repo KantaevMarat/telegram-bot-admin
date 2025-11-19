@@ -39,10 +39,38 @@ let TasksService = class TasksService {
     }
     async findAll(active) {
         const where = active !== undefined ? { active } : {};
-        return await this.taskRepo.find({
+        const tasks = await this.taskRepo.find({
             where,
             order: { created_at: 'DESC' },
         });
+        const tasksWithRanks = await Promise.all(tasks.map(async (task) => {
+            const completedUserTasks = await this.userTaskRepo.find({
+                where: { task_id: task.id, status: 'completed' },
+                relations: ['user'],
+            });
+            const userIds = completedUserTasks.map((ut) => ut.user_id);
+            const ranks = await this.ranksService.getRanksForUsers(userIds);
+            const rankStats = {
+                stone: 0,
+                bronze: 0,
+                silver: 0,
+                gold: 0,
+                platinum: 0,
+            };
+            ranks.forEach((rank) => {
+                if (rank.platinum_active && rank.platinum_expires_at && new Date() < rank.platinum_expires_at) {
+                    rankStats.platinum++;
+                }
+                else {
+                    rankStats[rank.current_rank] = (rankStats[rank.current_rank] || 0) + 1;
+                }
+            });
+            return {
+                ...task,
+                rank_stats: rankStats,
+            };
+        }));
+        return tasksWithRanks;
     }
     async findOne(id) {
         const task = await this.taskRepo.findOne({ where: { id } });

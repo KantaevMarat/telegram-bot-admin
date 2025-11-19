@@ -102,11 +102,11 @@ export class MediaService {
       }
 
       // Для production используем публичный URL если задан
-      const publicUrl = this.configService.get('MINIO_PUBLIC_URL');
-      if (publicUrl) {
+    const publicUrl = this.configService.get('MINIO_PUBLIC_URL');
+    if (publicUrl) {
         // Заменяем internal endpoint на публичный
         const internalEndpoint = this.configService.get('MINIO_ENDPOINT', 'minio');
-        const port = this.configService.get('MINIO_PORT', '9000');
+    const port = this.configService.get('MINIO_PORT', '9000');
         return presignedUrl.replace(`${internalEndpoint}:${port}`, publicUrl.replace(/^https?:\/\//, ''));
       }
 

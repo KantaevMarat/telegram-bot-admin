@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
 import { statsApi, tasksApi } from '../api/client';
 import { 
   Users, DollarSign, TrendingUp, Clock, Activity, Zap, Sparkles, 
@@ -11,6 +12,17 @@ import {
 } from 'recharts';
 
 export default function Dashboard() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const { data: stats, isLoading, refetch } = useQuery({
     queryKey: ['stats'],
     queryFn: () => statsApi.getStats(),
@@ -174,7 +186,7 @@ export default function Dashboard() {
       {/* Page Header */}
       <header className="page-header">
         <div className="page-title-section">
-          <h1 className="page-title">📊 Дашборд</h1>
+          <h1 className="page-title">Дашборд</h1>
           <p className="page-subtitle">Обзор основных метрик системы</p>
         </div>
       </header>
@@ -215,19 +227,24 @@ export default function Dashboard() {
       </section>
 
       {/* Charts Section */}
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '24px', marginBottom: '24px' }}>
+      <section style={{ 
+        display: 'grid', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 500px), 1fr))', 
+        gap: '24px', 
+        marginBottom: '24px' 
+      }}>
         {/* Users Growth Chart */}
         <div className="card">
           <div className="card-header">
             <Users size={20} style={{ color: 'var(--primary)' }} />
             <h2 className="card-title">Рост пользователей</h2>
           </div>
-          <div style={{ padding: '16px', height: '300px' }}>
+          <div style={{ padding: '16px', height: 'clamp(250px, 40vh, 300px)' }}>
             {historyLoading ? (
               <div className="loading-skeleton" style={{ height: '100%' }}></div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
+                <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
                   <defs>
                     <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#667eea" stopOpacity={0.8}/>
@@ -238,17 +255,22 @@ export default function Dashboard() {
                   <XAxis 
                     dataKey="date" 
                     stroke="var(--text-secondary)"
-                    style={{ fontSize: '12px' }}
+                    style={{ fontSize: 'clamp(10px, 2vw, 12px)' }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={60}
                   />
                   <YAxis 
                     stroke="var(--text-secondary)"
-                    style={{ fontSize: '12px' }}
+                    style={{ fontSize: 'clamp(10px, 2vw, 12px)' }}
+                    width={50}
                   />
                   <Tooltip 
                     contentStyle={{ 
                       backgroundColor: 'var(--card-bg)', 
                       border: '1px solid var(--border)',
-                      borderRadius: '8px'
+                      borderRadius: '8px',
+                      fontSize: 'clamp(11px, 2vw, 13px)'
                     }}
                   />
                   <Area 
@@ -271,38 +293,46 @@ export default function Dashboard() {
             <DollarSign size={20} style={{ color: 'var(--success)' }} />
             <h2 className="card-title">Баланс и заработок</h2>
           </div>
-          <div style={{ padding: '16px', height: '300px' }}>
+          <div style={{ padding: '16px', height: 'clamp(250px, 40vh, 300px)' }}>
             {historyLoading ? (
               <div className="loading-skeleton" style={{ height: '100%' }}></div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
+                <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis 
                     dataKey="date" 
                     stroke="var(--text-secondary)"
-                    style={{ fontSize: '12px' }}
+                    style={{ fontSize: 'clamp(10px, 2vw, 12px)' }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={60}
                   />
                   <YAxis 
                     stroke="var(--text-secondary)"
-                    style={{ fontSize: '12px' }}
+                    style={{ fontSize: 'clamp(10px, 2vw, 12px)' }}
+                    width={50}
                   />
                   <Tooltip 
                     contentStyle={{ 
                       backgroundColor: 'var(--card-bg)', 
                       border: '1px solid var(--border)',
-                      borderRadius: '8px'
+                      borderRadius: '8px',
+                      fontSize: 'clamp(11px, 2vw, 13px)'
                     }}
                     formatter={(value: number) => `$${value.toLocaleString('ru-RU', { minimumFractionDigits: 2 })}`}
                   />
-                  <Legend />
+                  <Legend 
+                    wrapperStyle={{ fontSize: 'clamp(11px, 2vw, 13px)' }}
+                    iconSize={12}
+                  />
                   <Line 
                     type="monotone" 
                     dataKey="balance" 
                     stroke="#10b981" 
                     strokeWidth={2}
                     name="Баланс"
-                    dot={{ r: 3 }}
+                    dot={{ r: 2 }}
                   />
                   <Line 
                     type="monotone" 
@@ -310,7 +340,7 @@ export default function Dashboard() {
                     stroke="#f59e0b" 
                     strokeWidth={2}
                     name="Заработано"
-                    dot={{ r: 3 }}
+                    dot={{ r: 2 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -324,27 +354,32 @@ export default function Dashboard() {
             <Activity size={20} style={{ color: 'var(--error)' }} />
             <h2 className="card-title">Активные пользователи (24ч)</h2>
           </div>
-          <div style={{ padding: '16px', height: '300px' }}>
+          <div style={{ padding: '16px', height: 'clamp(250px, 40vh, 300px)' }}>
             {historyLoading ? (
               <div className="loading-skeleton" style={{ height: '100%' }}></div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
+                <BarChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis 
                     dataKey="date" 
                     stroke="var(--text-secondary)"
-                    style={{ fontSize: '12px' }}
+                    style={{ fontSize: 'clamp(10px, 2vw, 12px)' }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={60}
                   />
                   <YAxis 
                     stroke="var(--text-secondary)"
-                    style={{ fontSize: '12px' }}
+                    style={{ fontSize: 'clamp(10px, 2vw, 12px)' }}
+                    width={50}
                   />
                   <Tooltip 
                     contentStyle={{ 
                       backgroundColor: 'var(--card-bg)', 
                       border: '1px solid var(--border)',
-                      borderRadius: '8px'
+                      borderRadius: '8px',
+                      fontSize: 'clamp(11px, 2vw, 13px)'
                     }}
                   />
                   <Bar dataKey="active" fill="#ef4444" name="Активные" radius={[8, 8, 0, 0]} />
@@ -360,7 +395,7 @@ export default function Dashboard() {
             <Award size={20} style={{ color: 'var(--primary)' }} />
             <h2 className="card-title">Статистика заданий</h2>
           </div>
-          <div style={{ padding: '16px', height: '300px' }}>
+          <div style={{ padding: '16px', height: 'clamp(250px, 40vh, 300px)' }}>
             {tasksLoading ? (
               <div className="loading-skeleton" style={{ height: '100%' }}></div>
             ) : (
@@ -375,7 +410,7 @@ export default function Dashboard() {
                     cy="50%"
                     labelLine={false}
                     label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={80}
+                    outerRadius={isMobile ? 60 : 80}
                     fill="#8884d8"
                     dataKey="value"
                   >
@@ -386,7 +421,11 @@ export default function Dashboard() {
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip 
+                    contentStyle={{ 
+                      fontSize: 'clamp(11px, 2vw, 13px)'
+                    }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             )}
@@ -395,7 +434,12 @@ export default function Dashboard() {
       </section>
 
       {/* Top Users & Fake Stats */}
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px', marginBottom: '24px' }}>
+      <section style={{ 
+        display: 'grid', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 400px), 1fr))', 
+        gap: '24px', 
+        marginBottom: '24px' 
+      }}>
         {/* Top Users */}
         <div className="card">
           <div className="card-header">

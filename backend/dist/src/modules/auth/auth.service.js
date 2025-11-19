@@ -178,6 +178,9 @@ let AuthService = AuthService_1 = class AuthService {
             await this.userRepo.save(user);
         }
         else {
+            if (user.status === 'blocked') {
+                throw new common_1.UnauthorizedException('Ваш аккаунт заблокирован. Обратитесь к администратору.');
+            }
             user.username = userData.username || user.username;
             user.first_name = userData.first_name || user.first_name;
             user.last_name = userData.last_name || user.last_name;
@@ -197,6 +200,7 @@ let AuthService = AuthService_1 = class AuthService {
                 first_name: user.first_name,
                 balance_usdt: user.balance_usdt,
                 tasks_completed: user.tasks_completed,
+                status: user.status,
             },
         };
     }
@@ -213,6 +217,42 @@ let AuthService = AuthService_1 = class AuthService {
             throw new common_1.UnauthorizedException('User not found');
         }
         return user;
+    }
+    async getUserStatus(initData) {
+        try {
+            const telegramData = this.telegramAuthService.validateInitData(initData);
+            const userData = telegramData.user;
+            if (!userData || !userData.id) {
+                return {
+                    exists: false,
+                    status: null,
+                    blocked: false,
+                };
+            }
+            const user = await this.userRepo.findOne({ where: { tg_id: userData.id.toString() } });
+            if (!user) {
+                return {
+                    exists: false,
+                    status: null,
+                    blocked: false,
+                };
+            }
+            return {
+                exists: true,
+                status: user.status,
+                blocked: user.status === 'blocked',
+                user: {
+                    id: user.id,
+                    tg_id: user.tg_id,
+                    username: user.username,
+                    first_name: user.first_name,
+                },
+            };
+        }
+        catch (error) {
+            this.logger.error(`Error getting user status: ${error.message}`);
+            throw new common_1.UnauthorizedException('Invalid Telegram data');
+        }
     }
     async devLogin(adminId) {
         this.logger.log(`Development login attempt for admin ID: ${adminId}`);

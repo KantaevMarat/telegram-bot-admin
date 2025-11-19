@@ -1,7 +1,9 @@
 import { RanksService } from './ranks.service';
+import { SyncService } from '../sync/sync.service';
 export declare class RanksController {
     private readonly ranksService;
-    constructor(ranksService: RanksService);
+    private readonly syncService;
+    constructor(ranksService: RanksService, syncService: SyncService);
     getSettings(): Promise<import("../../entities/rank-settings.entity").RankSettings>;
     updateSettings(data: any): Promise<import("../../entities/rank-settings.entity").RankSettings>;
     getStatistics(): Promise<{
@@ -23,6 +25,7 @@ export declare class RanksController {
                 current: number;
                 required: number;
             };
+            channelsSubscribed?: boolean;
         };
     }>;
     checkUserRank(userId: string): Promise<{

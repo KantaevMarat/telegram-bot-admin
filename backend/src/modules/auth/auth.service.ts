@@ -185,6 +185,11 @@ export class AuthService {
       });
       await this.userRepo.save(user);
     } else {
+      // Check if user is blocked
+      if (user.status === 'blocked') {
+        throw new UnauthorizedException('Ваш аккаунт заблокирован. Обратитесь к администратору.');
+      }
+
       // Update user info
       user.username = userData.username || user.username;
       user.first_name = userData.first_name || user.first_name;
@@ -207,6 +212,7 @@ export class AuthService {
         first_name: user.first_name,
         balance_usdt: user.balance_usdt,
         tasks_completed: user.tasks_completed,
+        status: user.status,
       },
     };
   }
@@ -231,6 +237,51 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
     return user;
+  }
+
+  /**
+   * Get user status by Telegram initData
+   */
+  async getUserStatus(initData: string) {
+    try {
+      // Validate Telegram initData
+      const telegramData = this.telegramAuthService.validateInitData(initData);
+      const userData = telegramData.user;
+
+      if (!userData || !userData.id) {
+        return {
+          exists: false,
+          status: null,
+          blocked: false,
+        };
+      }
+
+      // Find user in database
+      const user = await this.userRepo.findOne({ where: { tg_id: userData.id.toString() } });
+      
+      if (!user) {
+        return {
+          exists: false,
+          status: null,
+          blocked: false,
+        };
+      }
+
+      return {
+        exists: true,
+        status: user.status,
+        blocked: user.status === 'blocked',
+        user: {
+          id: user.id,
+          tg_id: user.tg_id,
+          username: user.username,
+          first_name: user.first_name,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error getting user status: ${error.message}`);
+      throw new UnauthorizedException('Invalid Telegram data');
+    }
   }
 
   /**

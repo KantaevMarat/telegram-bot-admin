@@ -7,7 +7,7 @@ const getApiUrl = () => {
   console.log('🔗 Current URL:', currentUrl);
 
   // Priority 1: Check environment variable (highest priority)
-  // Always use VITE_API_URL if it's set and is a valid production URL
+  // Always use VITE_API_URL if it's set
   if (import.meta.env.VITE_API_URL) {
     // Ensure /api suffix exists
     let envApiUrl = import.meta.env.VITE_API_URL;
@@ -15,7 +15,7 @@ const getApiUrl = () => {
       envApiUrl = envApiUrl + '/api';
     }
     
-    // Check if this is a Docker-internal or localhost URL
+    // Check if this is a Docker-internal URL
     const isDockerInternal = envApiUrl.includes('tg-backend') || 
                             envApiUrl.includes('tg-frontend') ||
                             envApiUrl.includes('://backend:') ||
@@ -48,13 +48,22 @@ const getApiUrl = () => {
       return envApiUrl;
     }
     
-    // If VITE_API_URL points to localhost/Docker-internal but we're on production domain, ignore it
+    // If VITE_API_URL points to localhost:3000, ALWAYS use it (even if we're on localhost:5173)
+    if (envApiUrl.includes('localhost:3000') || envApiUrl.includes('127.0.0.1:3000')) {
+      console.log('🔧 Using VITE_API_URL from env (localhost:3000):', envApiUrl);
+      return envApiUrl;
+    }
+    
+    // If VITE_API_URL points to Docker-internal but we're on production domain, ignore it
     if (isDockerInternal && isProductionDomain) {
-      console.log('⚠️ Ignoring Docker-internal/localhost VITE_API_URL on production domain:', envApiUrl);
+      console.log('⚠️ Ignoring Docker-internal VITE_API_URL on production domain:', envApiUrl);
       console.log('⚠️ Current URL is production:', currentUrl);
+      // Fall through to next priority
     } else if (isDockerInternal && (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1'))) {
       console.log('⚠️ Ignoring Docker-internal VITE_API_URL in local browser:', envApiUrl);
+      // Fall through to next priority (will use localhost:3000)
     } else {
+      // Use VITE_API_URL for any other case
       console.log('🔧 Using VITE_API_URL from env:', envApiUrl);
       return envApiUrl;
     }
@@ -69,6 +78,13 @@ const getApiUrl = () => {
     return apiUrl;
   }
   
+  // Priority 3: Running locally (localhost or 127.0.0.1) - CHECK THIS FIRST before Telegram WebApp
+  if (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1')) {
+    const apiUrl = 'http://localhost:3000/api';
+    console.log('🏠 Local development - using localhost API:', apiUrl);
+    return apiUrl;
+  }
+
   // For Telegram Mini Apps running on production domain
   // Check if Telegram WebApp exists (even without initData)
   // BUT: Only use same-origin API if VITE_API_URL is NOT set or is not a production URL
@@ -82,13 +98,6 @@ const getApiUrl = () => {
     console.warn('⚠️ Telegram Mini App detected, but VITE_API_URL was not used. Using same origin API:', telegramApiUrl);
     console.warn('⚠️ This should not happen if VITE_API_URL is set to a production URL!');
     return telegramApiUrl;
-  }
-
-  // Priority 3: Running locally (localhost or 127.0.0.1)
-  if (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1')) {
-    const apiUrl = 'http://localhost:3000/api';
-    console.log('🏠 Local development - using localhost API:', apiUrl);
-    return apiUrl;
   }
 
   // Priority 4: Production environment - use same origin + /api
@@ -124,6 +133,14 @@ export const api = axios.create({
   },
 });
 
+// Force correct baseURL if it's wrong (safety check)
+if (api.defaults.baseURL !== API_URL) {
+  console.warn('⚠️ baseURL mismatch detected, fixing...');
+  console.warn('⚠️ Expected:', API_URL);
+  console.warn('⚠️ Got:', api.defaults.baseURL);
+  api.defaults.baseURL = API_URL;
+}
+
 // Override axios defaults to handle FormData correctly
 api.defaults.transformRequest = [(data, headers) => {
   // If data is FormData, don't set Content-Type - let axios set it automatically with boundary
@@ -140,13 +157,76 @@ api.defaults.transformRequest = [(data, headers) => {
 
 console.log('🔧 Axios instance created with baseURL:', api.defaults.baseURL);
 console.log('🔧 Full API URL will be:', API_URL);
+console.log('🔧 API_URL === baseURL?', api.defaults.baseURL === API_URL);
 
-// Add request logging
+// Add auth token to requests (MUST be first interceptor to ensure token is always added)
 api.interceptors.request.use((config) => {
+  const token = useAuthStore.getState().token;
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  // Don't set Content-Type for FormData - axios will set it automatically with boundary
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
+  return config;
+});
+
+// Add request logging (after auth token is added)
+api.interceptors.request.use((config) => {
+  // КРИТИЧЕСКИ ВАЖНО: удаляем is_active из всех запросов к scenarios
+  // Делаем это ПЕРВЫМ делом, до любого логирования
+  const url = config.url || '';
+  const fullUrl = (config.baseURL || '') + url;
+  const isScenariosRequest = url.includes('/scenarios') || fullUrl.includes('/scenarios');
+  
+  // Всегда логируем для scenarios запросов
+  if (isScenariosRequest) {
+    console.log('🔍 SCENARIOS REQUEST DETECTED:', { url, fullUrl, hasData: !!config.data, dataType: typeof config.data });
+  }
+  
+  if (config.data && typeof config.data === 'object' && isScenariosRequest) {
+    const hasIsActive = 'is_active' in config.data;
+    console.log('🔍 Checking for is_active...', { hasIsActive, dataKeys: Object.keys(config.data) });
+    
+    if (hasIsActive) {
+      console.warn('⚠️ WARNING: is_active found in request data, converting to active!');
+      const cleanData: any = {};
+      // Копируем только разрешенные поля
+      if ('name' in config.data) cleanData.name = config.data.name;
+      if ('trigger' in config.data) cleanData.trigger = config.data.trigger;
+      if ('response' in config.data && config.data.response) cleanData.response = config.data.response;
+      if ('media_url' in config.data && config.data.media_url) cleanData.media_url = config.data.media_url;
+      // Преобразуем is_active в active, если active не указан
+      if ('active' in config.data) {
+        cleanData.active = config.data.active;
+      } else if ('is_active' in config.data) {
+        cleanData.active = config.data.is_active;
+      }
+      // Явно НЕ копируем is_active
+      config.data = cleanData;
+      console.log('✅ Cleaned data (is_active -> active):', JSON.stringify(cleanData, null, 2));
+    }
+  }
+  
   console.log('🌐 API Request:', config.method?.toUpperCase(), config.url);
   console.log('📝 Full URL:', config.baseURL + config.url);
-  console.log('📦 Request data:', config.data || '(no data)');
+  if (config.data) {
+    try {
+      const dataStr = JSON.stringify(config.data, null, 2);
+      console.log('📦 Request data:', dataStr);
+      // Проверяем наличие is_active в данных после очистки
+      if (config.data && typeof config.data === 'object' && 'is_active' in config.data) {
+        console.error('❌ ERROR: is_active still in request data after cleanup!', config.data);
+      }
+    } catch (e) {
+      console.log('📦 Request data (cannot stringify):', config.data);
+    }
+  } else {
+    console.log('📦 Request data: (no data)');
+  }
   console.log('🔑 Request headers:', config.headers);
+  console.log('🔑 Has Authorization:', !!config.headers.Authorization);
   return config;
 });
 
@@ -168,46 +248,79 @@ api.interceptors.response.use(
       });
     } else {
       console.error('❌ API Error:', error.response?.status || 'Unknown', error.config?.url || 'Unknown URL');
-      console.error('❌ Error details:', error.response?.data || error.message);
+      if (error.response?.data) {
+        console.error('❌ Error details:', JSON.stringify(error.response.data, null, 2));
+        // Если это ошибка валидации, показываем детали
+        if (error.response.data.message) {
+          if (Array.isArray(error.response.data.message)) {
+            console.error('❌ Validation errors:');
+            error.response.data.message.forEach((err: any) => {
+              if (typeof err === 'object' && err.property) {
+                console.error(`  - ${err.property}: ${Object.values(err.constraints || {}).join(', ')}`);
+              } else {
+                console.error(`  - ${err}`);
+              }
+            });
+          } else {
+            console.error('❌ Error message:', error.response.data.message);
+          }
+        }
+      } else {
+        console.error('❌ Error details:', error.message);
+      }
     }
     return Promise.reject(error);
   }
 );
 
-// Add auth token to requests
-api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  // Don't set Content-Type for FormData - axios will set it automatically with boundary
-  if (config.data instanceof FormData) {
-    delete config.headers['Content-Type'];
-  }
-  return config;
-});
-
 // Handle auth errors and token refresh
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401 && import.meta.env.DEV) {
+    const originalRequest = error.config;
+    
+    // Prevent infinite loop if refresh fails
+    if (originalRequest._retry) {
+      console.error('❌ Token refresh already attempted, logging out...');
+      useAuthStore.getState().logout();
+      return Promise.reject(error);
+    }
+
+    // Don't retry refresh for auth endpoints or if already retried
+    const isAuthEndpoint = originalRequest?.url?.includes('/auth/');
+    if (error.response?.status === 401 && import.meta.env.DEV && !originalRequest._retry && !isAuthEndpoint) {
       console.log('🔄 401 error detected, attempting token refresh...');
+      originalRequest._retry = true;
 
       try {
         // Try to refresh token
         await useAuthStore.getState().refreshToken();
 
-        // Retry the original request with new token
+        // Get fresh token from store after refresh
         const newToken = useAuthStore.getState().token;
-        if (newToken && error.config) {
+        console.log('🔑 New token after refresh:', newToken ? `${newToken.substring(0, 20)}...` : 'null');
+        
+        if (newToken && originalRequest) {
           console.log('✅ Token refreshed, retrying request...');
-          error.config.headers.Authorization = `Bearer ${newToken}`;
-          return api.request(error.config);
+          // Update authorization header
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          // Retry the original request
+          return api.request(originalRequest);
+        } else {
+          console.error('❌ No token after refresh, logging out');
+          useAuthStore.getState().logout();
+          return Promise.reject(error);
         }
       } catch (refreshError) {
-        console.error('❌ Token refresh failed:', refreshError);
-        // Force logout on refresh failure
+        console.error('❌ Token refresh failed, logging out:', refreshError);
+        // Force logout on refresh failure and stop retry
+        useAuthStore.getState().logout();
+        return Promise.reject(error);
+      }
+    } else if (error.response?.status === 401) {
+      // If 401 and can't refresh, logout immediately
+      if (!originalRequest._retry && !isAuthEndpoint) {
+        console.log('🔄 401 error, logging out...');
         useAuthStore.getState().logout();
       }
     }
@@ -219,6 +332,7 @@ api.interceptors.response.use(
 export const authApi = {
   loginAdmin: (initData?: string) => api.post('/auth/telegram/admin', { initData: initData || 'dev' }).then(res => res.data),
   loginUser: (initData: string) => api.post('/auth/telegram/user', { initData }).then(res => res.data),
+  getUserStatus: (initData: string) => api.post('/auth/telegram/user/status', { initData }).then(res => res.data),
   devLogin: (adminId?: string) => api.post('/auth/telegram/admin', { initData: 'dev' }).then(res => res.data),
 };
 
@@ -307,14 +421,51 @@ export const buttonsApi = {
   createButton: (data: any) => api.post('/admin/buttons', data).then(res => res.data),
   updateButton: (id: string, data: any) => api.put(`/admin/buttons/${id}`, data).then(res => res.data),
   deleteButton: (id: string) => api.delete(`/admin/buttons/${id}`).then(res => res.data),
+  testButton: (id: string, testData?: any) => api.post(`/admin/buttons/${id}/test`, testData).then(res => res.data),
+  testButtonConfig: (config: any) => api.post('/admin/buttons/test-config', config).then(res => res.data),
+  exportButton: (id: string) => api.post(`/admin/buttons/${id}/export`).then(res => res.data),
 };
 
 // Scenarios API
 export const scenariosApi = {
   getScenarios: (params?: any) => api.get('/admin/scenarios', { params }).then(res => res.data),
   getScenario: (id: string) => api.get(`/admin/scenarios/${id}`).then(res => res.data),
-  createScenario: (data: any) => api.post('/admin/scenarios', data).then(res => res.data),
-  updateScenario: (id: string, data: any) => api.put(`/admin/scenarios/${id}`, data).then(res => res.data),
+  createScenario: (data: any) => {
+    console.log('🚀 scenariosApi.createScenario CALLED!', new Date().toISOString());
+    console.log('🚀 scenariosApi.createScenario: Input data:', JSON.stringify(data, null, 2));
+    // КРИТИЧЕСКИ ВАЖНО: удаляем is_active перед отправкой
+    const cleanData: any = {};
+    if ('name' in data) cleanData.name = data.name;
+    if ('trigger' in data) cleanData.trigger = data.trigger;
+    if ('response' in data && data.response) cleanData.response = data.response;
+    if ('media_url' in data && data.media_url) cleanData.media_url = data.media_url;
+    if ('active' in data) {
+      cleanData.active = data.active;
+    } else if ('is_active' in data) {
+      cleanData.active = data.is_active;
+    }
+    // Явно НЕ копируем is_active
+    console.log('🔧 scenariosApi.createScenario: Clean data:', JSON.stringify(cleanData, null, 2));
+    console.log('🔧 scenariosApi.createScenario: Has is_active?', 'is_active' in cleanData);
+    return api.post('/admin/scenarios', cleanData).then(res => res.data);
+  },
+  updateScenario: (id: string, data: any) => {
+    // КРИТИЧЕСКИ ВАЖНО: удаляем is_active перед отправкой
+    const cleanData: any = {};
+    if ('name' in data) cleanData.name = data.name;
+    if ('trigger' in data) cleanData.trigger = data.trigger;
+    if ('response' in data && data.response) cleanData.response = data.response;
+    if ('media_url' in data && data.media_url) cleanData.media_url = data.media_url;
+    if ('active' in data) {
+      cleanData.active = data.active;
+    } else if ('is_active' in data) {
+      cleanData.active = data.is_active;
+    }
+    // Явно НЕ копируем is_active
+    console.log('🔧 scenariosApi.updateScenario: Original data:', data);
+    console.log('🔧 scenariosApi.updateScenario: Clean data:', cleanData);
+    return api.put(`/admin/scenarios/${id}`, cleanData).then(res => res.data);
+  },
   deleteScenario: (id: string) => api.delete(`/admin/scenarios/${id}`).then(res => res.data),
 };
 

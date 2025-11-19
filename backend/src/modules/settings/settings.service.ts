@@ -116,6 +116,13 @@ export class SettingsService {
         userAgent,
       );
 
+      // Emit sync event
+      await this.syncService.emitEntityEvent('settings', 'updated', {
+        key,
+        value,
+        oldValue,
+      });
+
       // Clear cache for this key
       this.settingsCache.delete(key);
     }
@@ -137,16 +144,26 @@ export class SettingsService {
       const setting = await this.findOne(dto.key);
       if (setting) {
         const oldValue = setting.value;
-        setting.value = dto.value;
+        // Ensure value is a string and not empty/undefined
+        // Handle empty strings as valid values (user might want to clear a setting)
+        const newValue = dto.value !== undefined && dto.value !== null ? String(dto.value) : oldValue;
+        
+        console.log(`🔧 Updating setting ${dto.key}:`, {
+          oldValue: oldValue?.substring(0, 50),
+          newValue: newValue?.substring(0, 50),
+          newValueLength: newValue?.length,
+        });
+        
+        setting.value = newValue;
         setting.updated_by_admin_tg_id = adminTgId;
         const updated = await this.settingsRepository.save(setting);
 
         // Record history if value changed
-        if (oldValue !== dto.value) {
+        if (oldValue !== newValue) {
           await this.recordHistory(
             dto.key,
             oldValue,
-            dto.value,
+            newValue,
             changeReason,
             adminTgId,
             adminUsername,
@@ -154,6 +171,13 @@ export class SettingsService {
             ipAddress,
             userAgent,
           );
+
+          // Emit sync event
+          await this.syncService.emitEntityEvent('settings', 'updated', {
+            key: dto.key,
+            value: newValue,
+            oldValue,
+          });
 
           // Clear cache for this key
           this.settingsCache.delete(dto.key);
@@ -174,7 +198,8 @@ export class SettingsService {
 
     // Fetch from DB
     const setting = await this.settingsRepository.findOne({ where: { key } });
-    const value = setting?.value || defaultValue;
+    // Use setting value if it exists and is not empty, otherwise use defaultValue
+    const value = (setting?.value && setting.value.trim() !== '') ? setting.value : defaultValue;
 
     // Update cache
     this.settingsCache.set(key, { value, timestamp: Date.now() });

@@ -41,34 +41,73 @@ let RanksService = RanksService_1 = class RanksService {
         }
         return rank;
     }
-    async checkAndUpdateRank(userId) {
+    async getRanksForUsers(userIds) {
+        if (userIds.length === 0) {
+            return [];
+        }
+        const ranks = await this.rankRepo.find({
+            where: { user_id: (0, typeorm_2.In)(userIds) },
+        });
+        const existingUserIds = new Set(ranks.map((r) => r.user_id));
+        const missingUserIds = userIds.filter((id) => !existingUserIds.has(id));
+        if (missingUserIds.length > 0) {
+            const newRanks = missingUserIds.map((userId) => this.rankRepo.create({
+                user_id: userId,
+                current_rank: user_rank_entity_1.RankLevel.STONE,
+                bonus_percentage: 0,
+            }));
+            const savedRanks = await this.rankRepo.save(newRanks);
+            ranks.push(...savedRanks);
+        }
+        return ranks;
+    }
+    async checkAndUpdateRank(userId, channelsSubscribed) {
         const rank = await this.getUserRank(userId);
         const oldRank = rank.current_rank;
         const settings = await this.getSettings();
+        const user = await this.userRepo.findOne({ where: { id: userId } });
+        const actualTasksCompleted = user ? user.tasks_completed : 0;
+        if (rank.tasks_completed !== actualTasksCompleted) {
+            this.logger.log(`Syncing tasks_completed for user ${userId} in checkAndUpdateRank: ${rank.tasks_completed} -> ${actualTasksCompleted}`);
+            rank.tasks_completed = actualTasksCompleted;
+            await this.rankRepo.save(rank);
+        }
+        if (channelsSubscribed !== undefined) {
+            rank.channels_subscribed = channelsSubscribed;
+            await this.rankRepo.save(rank);
+        }
         if (rank.current_rank === user_rank_entity_1.RankLevel.STONE && rank.channels_subscribed) {
             rank.current_rank = user_rank_entity_1.RankLevel.BRONZE;
             rank.bonus_percentage = settings.bronze_bonus;
             await this.rankRepo.save(rank);
             this.logger.log(`User ${userId} promoted to BRONZE`);
+            if (actualTasksCompleted >= settings.silver_required_tasks &&
+                rank.referrals_count >= settings.silver_required_referrals) {
+                rank.current_rank = user_rank_entity_1.RankLevel.SILVER;
+                rank.bonus_percentage = settings.silver_bonus;
+                await this.rankRepo.save(rank);
+                this.logger.log(`User ${userId} immediately promoted to SILVER after BRONZE (tasks: ${actualTasksCompleted}/${settings.silver_required_tasks}, referrals: ${rank.referrals_count}/${settings.silver_required_referrals})`);
+                return { rank, leveledUp: true, newLevel: user_rank_entity_1.RankLevel.SILVER };
+            }
             return { rank, leveledUp: true, newLevel: user_rank_entity_1.RankLevel.BRONZE };
         }
         if (rank.current_rank === user_rank_entity_1.RankLevel.BRONZE &&
-            rank.tasks_completed >= settings.silver_required_tasks &&
+            actualTasksCompleted >= settings.silver_required_tasks &&
             rank.referrals_count >= settings.silver_required_referrals) {
             rank.current_rank = user_rank_entity_1.RankLevel.SILVER;
             rank.bonus_percentage = settings.silver_bonus;
             await this.rankRepo.save(rank);
-            this.logger.log(`User ${userId} promoted to SILVER`);
+            this.logger.log(`User ${userId} promoted to SILVER (tasks: ${actualTasksCompleted}/${settings.silver_required_tasks}, referrals: ${rank.referrals_count}/${settings.silver_required_referrals})`);
             return { rank, leveledUp: true, newLevel: user_rank_entity_1.RankLevel.SILVER };
         }
         if (rank.current_rank === user_rank_entity_1.RankLevel.SILVER &&
-            rank.tasks_completed >= settings.gold_required_tasks &&
+            actualTasksCompleted >= settings.gold_required_tasks &&
             rank.referrals_count >= settings.gold_required_referrals) {
             rank.current_rank = user_rank_entity_1.RankLevel.GOLD;
             rank.bonus_percentage = settings.gold_bonus;
             rank.notified_gold_achieved = false;
             await this.rankRepo.save(rank);
-            this.logger.log(`User ${userId} promoted to GOLD`);
+            this.logger.log(`User ${userId} promoted to GOLD (tasks: ${actualTasksCompleted}/${settings.gold_required_tasks}, referrals: ${rank.referrals_count}/${settings.gold_required_referrals})`);
             return { rank, leveledUp: true, newLevel: user_rank_entity_1.RankLevel.GOLD };
         }
         if (rank.platinum_active && rank.platinum_expires_at) {
@@ -132,43 +171,59 @@ let RanksService = RanksService_1 = class RanksService {
     async getRankProgress(userId) {
         const rank = await this.getUserRank(userId);
         const settings = await this.getSettings();
+        const user = await this.userRepo.findOne({ where: { id: userId } });
+        const actualTasksCompleted = user ? user.tasks_completed : 0;
+        this.logger.log(`getRankProgress for user ${userId}: rank.tasks_completed=${rank.tasks_completed}, user.tasks_completed=${actualTasksCompleted}, current_rank=${rank.current_rank}`);
+        if (rank.tasks_completed !== actualTasksCompleted) {
+            this.logger.log(`Syncing tasks_completed for user ${userId}: ${rank.tasks_completed} -> ${actualTasksCompleted}`);
+            rank.tasks_completed = actualTasksCompleted;
+            await this.rankRepo.save(rank);
+        }
         let nextRank = null;
         let tasksRequired = 0;
         let referralsRequired = 0;
+        let overallProgress = 0;
         switch (rank.current_rank) {
             case user_rank_entity_1.RankLevel.STONE:
                 nextRank = user_rank_entity_1.RankLevel.BRONZE;
                 tasksRequired = 0;
                 referralsRequired = 0;
+                overallProgress = rank.channels_subscribed ? 100 : 0;
                 break;
             case user_rank_entity_1.RankLevel.BRONZE:
                 nextRank = user_rank_entity_1.RankLevel.SILVER;
                 tasksRequired = settings.silver_required_tasks;
                 referralsRequired = settings.silver_required_referrals;
+                const tasksProgress = tasksRequired > 0 ? Math.min(100, (actualTasksCompleted / tasksRequired) * 100) : 0;
+                const referralsProgress = referralsRequired > 0 ? Math.min(100, (rank.referrals_count / referralsRequired) * 100) : 0;
+                overallProgress = (tasksProgress + referralsProgress) / 2;
+                this.logger.log(`BRONZE progress: tasks=${actualTasksCompleted}/${tasksRequired} (${tasksProgress}%), referrals=${rank.referrals_count}/${referralsRequired} (${referralsProgress}%), overall=${overallProgress}%`);
                 break;
             case user_rank_entity_1.RankLevel.SILVER:
                 nextRank = user_rank_entity_1.RankLevel.GOLD;
                 tasksRequired = settings.gold_required_tasks;
                 referralsRequired = settings.gold_required_referrals;
+                const tasksProgressSilver = tasksRequired > 0 ? Math.min(100, (actualTasksCompleted / tasksRequired) * 100) : 0;
+                const referralsProgressSilver = referralsRequired > 0 ? Math.min(100, (rank.referrals_count / referralsRequired) * 100) : 0;
+                overallProgress = (tasksProgressSilver + referralsProgressSilver) / 2;
                 break;
             case user_rank_entity_1.RankLevel.GOLD:
                 nextRank = user_rank_entity_1.RankLevel.PLATINUM;
-                tasksRequired = settings.gold_required_tasks;
-                referralsRequired = settings.gold_required_referrals;
+                tasksRequired = 0;
+                referralsRequired = 0;
+                overallProgress = 0;
                 break;
             case user_rank_entity_1.RankLevel.PLATINUM:
                 nextRank = null;
                 break;
         }
-        const tasksProgress = Math.min(100, (rank.tasks_completed / tasksRequired) * 100);
-        const referralsProgress = Math.min(100, (rank.referrals_count / referralsRequired) * 100);
-        const overallProgress = (tasksProgress + referralsProgress) / 2;
         return {
             currentRank: rank.current_rank,
             nextRank,
             progress: overallProgress,
-            tasksProgress: { current: rank.tasks_completed, required: tasksRequired },
+            tasksProgress: { current: actualTasksCompleted, required: tasksRequired },
             referralsProgress: { current: rank.referrals_count, required: referralsRequired },
+            channelsSubscribed: rank.channels_subscribed,
         };
     }
     async checkExpiringSubscriptions() {
