@@ -31,7 +31,7 @@ export class TelegramAuthService {
 
   constructor(private configService: ConfigService) {
     this.adminBotToken = this.configService.get('ADMIN_TG_BOT_TOKEN') || this.configService.get('ADMIN_BOT_TOKEN') || '';
-    this.userBotToken = this.configService.get('CLIENT_TG_BOT_TOKEN') || this.configService.get('TELEGRAM_BOT_TOKEN') || '';
+    this.userBotToken = this.configService.get('CLIENT_TG_BOT_TOKEN') || this.configService.get('CLIENT_BOT_TOKEN') || '';
     
     if (!this.adminBotToken) {
       this.logger.warn('⚠️ ADMIN_TG_BOT_TOKEN is not configured!');

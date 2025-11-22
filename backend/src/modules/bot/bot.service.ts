@@ -58,10 +58,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private premiumService: PremiumService,
   ) {
     this.logger.log('BotService constructor called');
-    // Use CLIENT_TG_BOT_TOKEN for client bot (user-facing), fallback to TELEGRAM_BOT_TOKEN
+    // Use CLIENT_TG_BOT_TOKEN for client bot (user-facing)
     const clientToken = this.configService.get('CLIENT_TG_BOT_TOKEN') || this.configService.get('CLIENT_BOT_TOKEN');
-    const telegramToken = this.configService.get('TELEGRAM_BOT_TOKEN');
-    this.botToken = clientToken || telegramToken || '';
+    this.botToken = clientToken || '';
     this.logger.log(`Bot token loaded: ${this.botToken ? 'YES' : 'NO'}`);
     this.logger.log(
       `Bot token preview: ${this.botToken ? this.botToken.substring(0, 10) + '...' : 'EMPTY'}`,
@@ -70,8 +69,6 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     // Log which env var was used
     if (clientToken) {
       this.logger.log(`✅ Using CLIENT_TG_BOT_TOKEN for client bot (${clientToken.substring(0, 10)}...)`);
-    } else if (telegramToken) {
-      this.logger.log(`⚠️ Using TELEGRAM_BOT_TOKEN as fallback (${telegramToken.substring(0, 10)}...)`);
     }
 
     if (!this.botToken) {

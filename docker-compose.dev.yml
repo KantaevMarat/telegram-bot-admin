@@ -99,7 +99,6 @@ services:
       CLIENT_TG_BOT_USERNAME: ${CLIENT_TG_BOT_USERNAME:-thtgmoneybot}
       ADMIN_TG_BOT_TOKEN: ${ADMIN_TG_BOT_TOKEN}
       ADMIN_TG_BOT_USERNAME: ${ADMIN_TG_BOT_USERNAME}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
     volumes:
       - ./backend:/app
       - /app/node_modules

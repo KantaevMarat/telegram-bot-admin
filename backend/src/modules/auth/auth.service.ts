@@ -28,7 +28,7 @@ export class AuthService {
   validateTelegramWebAppData(initData: string): any {
     this.logger.debug('Validating Telegram Web App data');
 
-    const botToken = this.configService.get('CLIENT_TG_BOT_TOKEN') || this.configService.get('TELEGRAM_BOT_TOKEN');
+    const botToken = this.configService.get('CLIENT_TG_BOT_TOKEN') || this.configService.get('CLIENT_BOT_TOKEN');
 
     if (!botToken) {
       this.logger.error('Bot token not configured');
@@ -91,7 +91,7 @@ export class AuthService {
   }
 
   /**
-   * Login as admin (using ADMIN_TG_BOT_TOKEN or CLIENT_TG_BOT_TOKEN)
+   * Login as admin (using ADMIN_TG_BOT_TOKEN or CLIENT_TG_BOT_TOKEN for validation)
    */
   async loginAdmin(initData: string) {
     this.logger.log('🔐 Admin login attempt');
