@@ -245,14 +245,15 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             this.logger.error(`Failed to process update ${update.update_id}:`, error.message);
             // Continue processing other updates even if one fails
           }
-          // Update offset to avoid processing same update again (even if there was an error)
-          this.pollingOffset = Math.max(this.pollingOffset, update.update_id);
+          // Update offset to the highest processed update_id + 1 to avoid gaps
+          this.pollingOffset = Math.max(this.pollingOffset, update.update_id + 1);
         }
 
-        // After processing all updates, set offset to next expected update_id
+        // After processing all updates, ensure offset is set correctly
         if (updates.length > 0) {
           const lastUpdateId = updates[updates.length - 1].update_id;
-          this.pollingOffset = lastUpdateId + 1;
+          // Ensure offset is at least lastUpdateId + 1 (already set in loop, but double-check)
+          this.pollingOffset = Math.max(this.pollingOffset, lastUpdateId + 1);
           this.consecutiveErrors = 0; // Reset error counter on successful processing
           this.logger.debug(`✅ Updated polling offset to: ${this.pollingOffset} (last update_id: ${lastUpdateId})`);
         }
