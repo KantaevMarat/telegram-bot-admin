@@ -14,8 +14,9 @@ CMD ["npm", "run", "dev", "--", "--host"]
 
 FROM nginx:alpine AS production
 
-# Use pre-built dist files from Git instead of building
-COPY dist /usr/share/nginx/html
+# Don't copy dist - use volume mount from docker-compose.yml instead
+# This allows updating frontend without rebuilding the image
+# COPY dist /usr/share/nginx/html
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 

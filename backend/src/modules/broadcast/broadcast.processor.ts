@@ -57,55 +57,97 @@ export class BroadcastProcessor extends WorkerHost {
   }
 
   private async sendMessage(chatId: string, text: string, mediaUrls?: string[]) {
-    // If there's media, send text as caption to the first media
-    if (mediaUrls && mediaUrls.length > 0) {
-      // Send first media with text as caption
-      await this.sendMedia(chatId, mediaUrls[0], text);
+    try {
+      this.logger.debug(`📨 Sending message to ${chatId}, hasMedia: ${!!mediaUrls}, mediaCount: ${mediaUrls?.length || 0}`);
       
-      // Send remaining media without caption
-      for (let i = 1; i < mediaUrls.length; i++) {
-        await this.sendMedia(chatId, mediaUrls[i]);
+      // If there's media, send text as caption to the first media
+      if (mediaUrls && mediaUrls.length > 0) {
+        this.logger.debug(`📤 Sending ${mediaUrls.length} media file(s) to ${chatId}`);
+        
+        // Send first media with text as caption
+        await this.sendMedia(chatId, mediaUrls[0], text);
+        
+        // Send remaining media without caption
+        for (let i = 1; i < mediaUrls.length; i++) {
+          await this.sendMedia(chatId, mediaUrls[i]);
+        }
+      } else {
+        // If no media, send text as regular message
+        if (text) {
+          const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
+          this.logger.debug(`📤 Sending text message to ${chatId}`);
+          
+          const response = await axios.post(url, {
+            chat_id: chatId,
+            text,
+            parse_mode: 'HTML',
+          });
+          
+          this.logger.debug(`✅ Text message sent to ${chatId}`);
+          return response.data;
+        }
       }
-    } else {
-      // If no media, send text as regular message
-      if (text) {
-        const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
-        await axios.post(url, {
-          chat_id: chatId,
-          text,
-          parse_mode: 'HTML',
-        });
-      }
+    } catch (error: any) {
+      this.logger.error(`❌ Failed to send message to ${chatId}:`, {
+        error: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        hasMedia: !!mediaUrls,
+        mediaCount: mediaUrls?.length || 0,
+      });
+      throw error;
     }
   }
 
   private async sendMedia(chatId: string, mediaUrl: string, caption?: string) {
-    // Determine media type from URL
-    const ext = mediaUrl.split('.').pop()?.toLowerCase() || '';
-    let method = 'sendPhoto';
-    let mediaField = 'photo';
+    try {
+      this.logger.debug(`📤 Sending media to ${chatId}: ${mediaUrl}`);
+      
+      // Determine media type from URL
+      const ext = mediaUrl.split('.').pop()?.toLowerCase() || '';
+      let method = 'sendPhoto';
+      let mediaField = 'photo';
 
-    if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
-      method = 'sendVideo';
-      mediaField = 'video';
-    } else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
-      method = 'sendDocument';
-      mediaField = 'document';
+      if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
+        method = 'sendVideo';
+        mediaField = 'video';
+      } else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
+        method = 'sendDocument';
+        mediaField = 'document';
+      }
+
+      this.logger.debug(`📤 Using method: ${method}, field: ${mediaField}`);
+
+      const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
+
+      const payload: any = {
+        chat_id: chatId,
+        [mediaField]: mediaUrl,
+      };
+
+      // Add caption if provided (and not empty)
+      if (caption && caption.trim()) {
+        payload.caption = caption;
+        payload.parse_mode = 'HTML';
+      }
+
+      this.logger.debug(`📤 Sending to Telegram API: ${url}, payload: ${JSON.stringify({ ...payload, [mediaField]: mediaUrl.substring(0, 50) + '...' })}`);
+
+      const response = await axios.post(url, payload);
+      
+      this.logger.log(`✅ Media sent successfully to ${chatId}: ${method}`);
+      this.logger.debug(`📤 Response: ${JSON.stringify(response.data)}`);
+      
+      return response.data;
+    } catch (error: any) {
+      this.logger.error(`❌ Failed to send media to ${chatId}:`, {
+        error: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        mediaUrl: mediaUrl.substring(0, 100),
+        stack: error.stack,
+      });
+      throw error;
     }
-
-    const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
-
-    const payload: any = {
-      chat_id: chatId,
-      [mediaField]: mediaUrl,
-    };
-
-    // Add caption if provided (and not empty)
-    if (caption && caption.trim()) {
-      payload.caption = caption;
-      payload.parse_mode = 'HTML';
-    }
-
-    await axios.post(url, payload);
   }
 }

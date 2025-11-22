@@ -221,10 +221,13 @@ export class AuthService {
    * Validate JWT token and get admin
    */
   async validateAdmin(tg_id: string) {
+    this.logger.debug(`🔍 Validating admin with tg_id: ${tg_id}`);
     const admin = await this.adminRepo.findOne({ where: { tg_id } });
     if (!admin) {
+      this.logger.error(`❌ Admin not found with tg_id: ${tg_id}`);
       throw new UnauthorizedException('Admin not found');
     }
+    this.logger.debug(`✅ Admin found: ${admin.tg_id}, id: ${admin.id}`);
     return admin;
   }
 

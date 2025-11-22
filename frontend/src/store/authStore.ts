@@ -161,9 +161,24 @@ export const useAuthStore = create<AuthState>()(
 
       refreshToken: async () => {
         try {
-          // Try to get fresh token in development mode
+          console.log('🔄 Attempting to refresh token...');
+          
+          // Try to get fresh token using Telegram WebApp initData
+          const telegramWebApp = typeof window !== 'undefined' ? window.Telegram?.WebApp : null;
+          const initData = telegramWebApp?.initData;
+          
+          if (initData) {
+            console.log('✅ Using Telegram initData for token refresh');
+            const response = await api.post('/auth/telegram/admin', { initData });
+            const data = response.data;
+            console.log('✅ Token refreshed successfully with Telegram initData');
+            set({ token: data.access_token, admin: data.admin, isAuthenticated: true, isTelegramAuth: true });
+            return;
+          }
+          
+          // Fallback: Try dev login in development mode
           if (import.meta.env.DEV) {
-            console.log('🔄 Refreshing token in development mode...');
+            console.log('🔄 Refreshing token in development mode (dev fallback)...');
             // Use fetch instead of api to avoid interceptor loop
             const response = await fetch('http://localhost:3000/api/auth/telegram/admin', {
               method: 'POST',
@@ -179,12 +194,20 @@ export const useAuthStore = create<AuthState>()(
             }
             
             const data = await response.json();
-            console.log('✅ Token refreshed successfully');
+            console.log('✅ Token refreshed successfully (dev mode)');
             set({ token: data.access_token, admin: data.admin, isAuthenticated: true });
             return;
           }
 
-          throw new Error('Token refresh not available in production');
+          // In production without initData, try to re-login
+          console.log('⚠️ No initData available, attempting re-login...');
+          const loginResult = await get().loginWithTelegram();
+          if (loginResult.success) {
+            console.log('✅ Re-login successful');
+            return;
+          }
+          
+          throw new Error('Token refresh failed: no initData and re-login failed');
         } catch (error: any) {
           console.error('❌ Error refreshing token:', error);
           set({ token: null, admin: null, isAuthenticated: false });

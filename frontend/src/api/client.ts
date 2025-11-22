@@ -4,67 +4,47 @@ import { useAuthStore } from '../store/authStore';
 // Detect API URL based on current location
 const getApiUrl = () => {
   const currentUrl = window.location.href;
-  console.log('🔗 Current URL:', currentUrl);
 
-  // Priority 1: Check environment variable (highest priority)
-  // Always use VITE_API_URL if it's set
+  // Priority 1: Check if we're on production domain
+  // If on production domain (app.marranasuete.ru), ALWAYS use same-origin API
+  const isProductionDomain = !currentUrl.includes('localhost') &&
+    !currentUrl.includes('127.0.0.1') &&
+    !currentUrl.includes('serveo.net') &&
+    !currentUrl.includes('ngrok.io') &&
+    !currentUrl.includes('trycloudflare.com') &&
+    !currentUrl.includes('loca.lt');
+
+  if (isProductionDomain) {
+    const currentOrigin = window.location.origin;
+    const productionApiUrl = `${currentOrigin}/api`;
+    return productionApiUrl;
+  }
+
+  // Priority 2: Check environment variable (for local development)
+  // Only use VITE_API_URL if we're NOT on production domain
   if (import.meta.env.VITE_API_URL) {
     // Ensure /api suffix exists
     let envApiUrl = import.meta.env.VITE_API_URL;
     if (!envApiUrl.endsWith('/api')) {
       envApiUrl = envApiUrl + '/api';
     }
-    
+
     // Check if this is a Docker-internal URL
-    const isDockerInternal = envApiUrl.includes('tg-backend') || 
-                            envApiUrl.includes('tg-frontend') ||
-                            envApiUrl.includes('://backend:') ||
-                            envApiUrl.includes('://frontend:');
-    
-    // Check if current URL is production domain (not localhost)
-    const isProductionDomain = !currentUrl.includes('localhost') && 
-                              !currentUrl.includes('127.0.0.1') &&
-                              !currentUrl.includes('serveo.net') &&
-                              !currentUrl.includes('ngrok.io') &&
-                              !currentUrl.includes('trycloudflare.com') &&
-                              !currentUrl.includes('loca.lt');
-    
-    // If VITE_API_URL is a production URL (starts with https://)
-    // BUT: If we're on app.marranasuete.ru, ALWAYS use same-origin API to avoid CORS/network issues
-    if (envApiUrl.startsWith('https://')) {
-      const currentOrigin = window.location.origin;
-      const isOnAppDomain = currentOrigin.includes('app.marranasuete.ru');
-      
-      // ALWAYS use same-origin API when on app.marranasuete.ru (regardless of VITE_API_URL)
-      if (isOnAppDomain) {
-        const sameOriginApi = `${currentOrigin}/api`;
-        console.log('🔧 On app.marranasuete.ru, FORCING same-origin API:', sameOriginApi);
-        console.log('⚠️ Ignoring VITE_API_URL to avoid network/CORS issues');
-        console.log('⚠️ VITE_API_URL was:', envApiUrl);
-        return sameOriginApi;
-      }
-      
-      console.log('🔧 Using VITE_API_URL from env (production URL):', envApiUrl);
-      return envApiUrl;
-    }
-    
-    // If VITE_API_URL points to localhost:3000, ALWAYS use it (even if we're on localhost:5173)
+    const isDockerInternal = envApiUrl.includes('tg-backend') ||
+      envApiUrl.includes('tg-frontend') ||
+      envApiUrl.includes('://backend:') ||
+      envApiUrl.includes('://frontend:');
+
+    // If VITE_API_URL points to localhost:3000, use it for local development
     if (envApiUrl.includes('localhost:3000') || envApiUrl.includes('127.0.0.1:3000')) {
-      console.log('🔧 Using VITE_API_URL from env (localhost:3000):', envApiUrl);
       return envApiUrl;
     }
-    
-    // If VITE_API_URL points to Docker-internal but we're on production domain, ignore it
-    if (isDockerInternal && isProductionDomain) {
-      console.log('⚠️ Ignoring Docker-internal VITE_API_URL on production domain:', envApiUrl);
-      console.log('⚠️ Current URL is production:', currentUrl);
-      // Fall through to next priority
-    } else if (isDockerInternal && (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1'))) {
-      console.log('⚠️ Ignoring Docker-internal VITE_API_URL in local browser:', envApiUrl);
+
+    // If VITE_API_URL points to Docker-internal, ignore it in local browser
+    if (isDockerInternal && (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1'))) {
       // Fall through to next priority (will use localhost:3000)
-    } else {
-      // Use VITE_API_URL for any other case
-      console.log('🔧 Using VITE_API_URL from env:', envApiUrl);
+    } else if (!isDockerInternal) {
+      // Use VITE_API_URL for any other case (non-Docker, non-localhost)
       return envApiUrl;
     }
   }
@@ -74,14 +54,12 @@ const getApiUrl = () => {
   const isTelegramWebApp = window.Telegram?.WebApp?.initData;
   if (!isTelegramWebApp && (currentUrl.includes('serveo.net') || currentUrl.includes('ngrok.io') || currentUrl.includes('trycloudflare.com') || currentUrl.includes('loca.lt'))) {
     const apiUrl = 'http://localhost:3000/api';
-    console.log('📱 Telegram Web App with tunnel detected - using localhost API:', apiUrl);
     return apiUrl;
   }
-  
+
   // Priority 3: Running locally (localhost or 127.0.0.1) - CHECK THIS FIRST before Telegram WebApp
   if (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1')) {
     const apiUrl = 'http://localhost:3000/api';
-    console.log('🏠 Local development - using localhost API:', apiUrl);
     return apiUrl;
   }
 
@@ -95,36 +73,16 @@ const getApiUrl = () => {
     // This is a fallback ONLY if VITE_API_URL was not set or was ignored
     const origin = window.location.origin;
     const telegramApiUrl = `${origin}/api`;
-    console.warn('⚠️ Telegram Mini App detected, but VITE_API_URL was not used. Using same origin API:', telegramApiUrl);
-    console.warn('⚠️ This should not happen if VITE_API_URL is set to a production URL!');
     return telegramApiUrl;
   }
 
   // Priority 4: Production environment - use same origin + /api
   const origin = window.location.origin;
   const productionUrl = `${origin}/api`;
-  console.log('🚀 Production environment - using same origin API:', productionUrl);
   return productionUrl;
 };
 
 export const API_URL = getApiUrl();
-console.log('✅ Using API URL:', API_URL);
-console.log('📦 Environment variables:', {
-  VITE_API_URL: import.meta.env.VITE_API_URL,
-  MODE: import.meta.env.MODE,
-  PROD: import.meta.env.PROD,
-  DEV: import.meta.env.DEV,
-});
-console.log('🌐 Window location:', {
-  href: window.location.href,
-  origin: window.location.origin,
-  hostname: window.location.hostname,
-});
-console.log('📱 Telegram WebApp:', {
-  exists: typeof window !== 'undefined' && !!window.Telegram,
-  hasWebApp: typeof window !== 'undefined' && !!window.Telegram?.WebApp,
-  hasInitData: typeof window !== 'undefined' && !!window.Telegram?.WebApp?.initData,
-});
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -135,9 +93,6 @@ export const api = axios.create({
 
 // Force correct baseURL if it's wrong (safety check)
 if (api.defaults.baseURL !== API_URL) {
-  console.warn('⚠️ baseURL mismatch detected, fixing...');
-  console.warn('⚠️ Expected:', API_URL);
-  console.warn('⚠️ Got:', api.defaults.baseURL);
   api.defaults.baseURL = API_URL;
 }
 
@@ -154,10 +109,6 @@ api.defaults.transformRequest = [(data, headers) => {
   }
   return data;
 }];
-
-console.log('🔧 Axios instance created with baseURL:', api.defaults.baseURL);
-console.log('🔧 Full API URL will be:', API_URL);
-console.log('🔧 API_URL === baseURL?', api.defaults.baseURL === API_URL);
 
 // Add auth token to requests (MUST be first interceptor to ensure token is always added)
 api.interceptors.request.use((config) => {
@@ -179,18 +130,11 @@ api.interceptors.request.use((config) => {
   const url = config.url || '';
   const fullUrl = (config.baseURL || '') + url;
   const isScenariosRequest = url.includes('/scenarios') || fullUrl.includes('/scenarios');
-  
-  // Всегда логируем для scenarios запросов
-  if (isScenariosRequest) {
-    console.log('🔍 SCENARIOS REQUEST DETECTED:', { url, fullUrl, hasData: !!config.data, dataType: typeof config.data });
-  }
-  
+
   if (config.data && typeof config.data === 'object' && isScenariosRequest) {
     const hasIsActive = 'is_active' in config.data;
-    console.log('🔍 Checking for is_active...', { hasIsActive, dataKeys: Object.keys(config.data) });
-    
+
     if (hasIsActive) {
-      console.warn('⚠️ WARNING: is_active found in request data, converting to active!');
       const cleanData: any = {};
       // Копируем только разрешенные поля
       if ('name' in config.data) cleanData.name = config.data.name;
@@ -205,70 +149,18 @@ api.interceptors.request.use((config) => {
       }
       // Явно НЕ копируем is_active
       config.data = cleanData;
-      console.log('✅ Cleaned data (is_active -> active):', JSON.stringify(cleanData, null, 2));
     }
   }
-  
-  console.log('🌐 API Request:', config.method?.toUpperCase(), config.url);
-  console.log('📝 Full URL:', config.baseURL + config.url);
-  if (config.data) {
-    try {
-      const dataStr = JSON.stringify(config.data, null, 2);
-      console.log('📦 Request data:', dataStr);
-      // Проверяем наличие is_active в данных после очистки
-      if (config.data && typeof config.data === 'object' && 'is_active' in config.data) {
-        console.error('❌ ERROR: is_active still in request data after cleanup!', config.data);
-      }
-    } catch (e) {
-      console.log('📦 Request data (cannot stringify):', config.data);
-    }
-  } else {
-    console.log('📦 Request data: (no data)');
-  }
-  console.log('🔑 Request headers:', config.headers);
-  console.log('🔑 Has Authorization:', !!config.headers.Authorization);
+
   return config;
 });
 
 // Add response logging
 api.interceptors.response.use(
   (response) => {
-    console.log('✅ API Response:', response.status, response.config.url);
     return response;
   },
   (error) => {
-    if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
-      console.error('❌ Network Error - API недоступен:', error.config?.baseURL + error.config?.url);
-      console.error('❌ Проверьте:', {
-        baseURL: error.config?.baseURL,
-        url: error.config?.url,
-        fullURL: error.config?.baseURL + error.config?.url,
-        message: error.message,
-        code: error.code
-      });
-    } else {
-      console.error('❌ API Error:', error.response?.status || 'Unknown', error.config?.url || 'Unknown URL');
-      if (error.response?.data) {
-        console.error('❌ Error details:', JSON.stringify(error.response.data, null, 2));
-        // Если это ошибка валидации, показываем детали
-        if (error.response.data.message) {
-          if (Array.isArray(error.response.data.message)) {
-            console.error('❌ Validation errors:');
-            error.response.data.message.forEach((err: any) => {
-              if (typeof err === 'object' && err.property) {
-                console.error(`  - ${err.property}: ${Object.values(err.constraints || {}).join(', ')}`);
-              } else {
-                console.error(`  - ${err}`);
-              }
-            });
-          } else {
-            console.error('❌ Error message:', error.response.data.message);
-          }
-        }
-      } else {
-        console.error('❌ Error details:', error.message);
-      }
-    }
     return Promise.reject(error);
   }
 );
@@ -278,41 +170,35 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    
+
     // Prevent infinite loop if refresh fails
     if (originalRequest._retry) {
-      console.error('❌ Token refresh already attempted, logging out...');
       useAuthStore.getState().logout();
       return Promise.reject(error);
     }
 
     // Don't retry refresh for auth endpoints or if already retried
     const isAuthEndpoint = originalRequest?.url?.includes('/auth/');
-    if (error.response?.status === 401 && import.meta.env.DEV && !originalRequest._retry && !isAuthEndpoint) {
-      console.log('🔄 401 error detected, attempting token refresh...');
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       originalRequest._retry = true;
 
       try {
-        // Try to refresh token
+        // Try to refresh token (works in both DEV and PROD now)
         await useAuthStore.getState().refreshToken();
 
         // Get fresh token from store after refresh
         const newToken = useAuthStore.getState().token;
-        console.log('🔑 New token after refresh:', newToken ? `${newToken.substring(0, 20)}...` : 'null');
-        
+
         if (newToken && originalRequest) {
-          console.log('✅ Token refreshed, retrying request...');
           // Update authorization header
           originalRequest.headers.Authorization = `Bearer ${newToken}`;
           // Retry the original request
           return api.request(originalRequest);
         } else {
-          console.error('❌ No token after refresh, logging out');
           useAuthStore.getState().logout();
           return Promise.reject(error);
         }
       } catch (refreshError) {
-        console.error('❌ Token refresh failed, logging out:', refreshError);
         // Force logout on refresh failure and stop retry
         useAuthStore.getState().logout();
         return Promise.reject(error);
@@ -320,7 +206,6 @@ api.interceptors.response.use(
     } else if (error.response?.status === 401) {
       // If 401 and can't refresh, logout immediately
       if (!originalRequest._retry && !isAuthEndpoint) {
-        console.log('🔄 401 error, logging out...');
         useAuthStore.getState().logout();
       }
     }
@@ -375,9 +260,6 @@ export const balanceApi = {
 // Settings API
 export const settingsApi = {
   getSettings: () => api.get('/admin/settings').then(res => {
-    console.log('🔧 Settings API response:', res);
-    console.log('🔧 Settings API data:', res.data);
-    console.log('🔧 Settings API data length:', res.data?.length);
     return res.data;
   }),
   getSetting: (key: string) => api.get(`/admin/settings/${key}`).then(res => res.data),
@@ -431,8 +313,6 @@ export const scenariosApi = {
   getScenarios: (params?: any) => api.get('/admin/scenarios', { params }).then(res => res.data),
   getScenario: (id: string) => api.get(`/admin/scenarios/${id}`).then(res => res.data),
   createScenario: (data: any) => {
-    console.log('🚀 scenariosApi.createScenario CALLED!', new Date().toISOString());
-    console.log('🚀 scenariosApi.createScenario: Input data:', JSON.stringify(data, null, 2));
     // КРИТИЧЕСКИ ВАЖНО: удаляем is_active перед отправкой
     const cleanData: any = {};
     if ('name' in data) cleanData.name = data.name;
@@ -445,8 +325,6 @@ export const scenariosApi = {
       cleanData.active = data.is_active;
     }
     // Явно НЕ копируем is_active
-    console.log('🔧 scenariosApi.createScenario: Clean data:', JSON.stringify(cleanData, null, 2));
-    console.log('🔧 scenariosApi.createScenario: Has is_active?', 'is_active' in cleanData);
     return api.post('/admin/scenarios', cleanData).then(res => res.data);
   },
   updateScenario: (id: string, data: any) => {
@@ -462,8 +340,6 @@ export const scenariosApi = {
       cleanData.active = data.is_active;
     }
     // Явно НЕ копируем is_active
-    console.log('🔧 scenariosApi.updateScenario: Original data:', data);
-    console.log('🔧 scenariosApi.updateScenario: Clean data:', cleanData);
     return api.put(`/admin/scenarios/${id}`, cleanData).then(res => res.data);
   },
   deleteScenario: (id: string) => api.delete(`/admin/scenarios/${id}`).then(res => res.data),
@@ -477,13 +353,13 @@ export const tasksApi = {
   createTask: (data: any) => api.post('/admin/tasks', data).then(res => res.data),
   updateTask: (id: string, data: any) => api.put(`/admin/tasks/${id}`, data).then(res => res.data),
   deleteTask: (id: string) => api.delete(`/admin/tasks/${id}`).then(res => res.data),
-  
+
   // Moderation
-  getPendingReview: (params?: { status?: string; search?: string }) => 
+  getPendingReview: (params?: { status?: string; search?: string }) =>
     api.get('/admin/tasks/moderation/pending', { params }).then(res => res.data),
-  approveTask: (userTaskId: string) => 
+  approveTask: (userTaskId: string) =>
     api.post(`/admin/tasks/moderation/${userTaskId}/approve`).then(res => res.data),
-  rejectTask: (userTaskId: string, reason?: string) => 
+  rejectTask: (userTaskId: string, reason?: string) =>
     api.post(`/admin/tasks/moderation/${userTaskId}/reject`, { reason }).then(res => res.data),
 };
 
@@ -535,12 +411,12 @@ export const ranksApi = {
 
 // Premium API
 export const premiumApi = {
-  getRequests: (params?: { status?: string; currency?: string }) => 
+  getRequests: (params?: { status?: string; currency?: string }) =>
     api.get('/admin/premium/requests', { params }).then(res => res.data),
   markRequisitesSent: (id: string) => api.post(`/admin/premium/requests/${id}/requisites-sent`).then(res => res.data),
   confirmPayment: (id: string) => api.post(`/admin/premium/requests/${id}/confirm-payment`).then(res => res.data),
   activateSubscription: (id: string) => api.post(`/admin/premium/requests/${id}/activate`).then(res => res.data),
-  cancelRequest: (id: string, reason?: string) => 
+  cancelRequest: (id: string, reason?: string) =>
     api.post(`/admin/premium/requests/${id}/cancel`, { reason }).then(res => res.data),
 };
 

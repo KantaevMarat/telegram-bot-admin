@@ -8,7 +8,6 @@ import './index.css';
 import { useTelegramStore } from './store/telegramStore';
 
 // Initialize Telegram Web App
-console.log('🚀 Initializing Telegram Web App...');
 const telegramStore = useTelegramStore.getState();
 telegramStore.initialize();
 

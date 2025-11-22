@@ -66,7 +66,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `Bot token preview: ${this.botToken ? this.botToken.substring(0, 10) + '...' : 'EMPTY'}`,
     );
-    
+
     // Log which env var was used
     if (clientToken) {
       this.logger.log(`✅ Using CLIENT_TG_BOT_TOKEN/CLIENT_BOT_TOKEN for client bot (${clientToken.substring(0, 10)}...)`);
@@ -102,29 +102,29 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       this.syncService.invalidateCache('buttons:main_keyboard');
       this.logger.debug('🔄 Invalidated button caches due to button.deleted');
     });
-    
+
     this.syncService.on('scenarios.created', () => this.syncService.invalidateCache('scenarios'));
     this.syncService.on('scenarios.updated', () => this.syncService.invalidateCache('scenarios'));
     this.syncService.on('scenarios.deleted', () => this.syncService.invalidateCache('scenarios'));
-    
+
     this.syncService.on('tasks.created', () => this.syncService.invalidateCache('tasks'));
     this.syncService.on('tasks.updated', () => this.syncService.invalidateCache('tasks'));
     this.syncService.on('tasks.deleted', () => this.syncService.invalidateCache('tasks'));
 
-        this.logger.log('✅ BotService subscribed to sync events');
+    this.logger.log('✅ BotService subscribed to sync events');
 
     // Start polling if bot token is set
     // For client bot, always use polling by default (webhook requires manual setup via Telegram API)
     if (this.botToken) {
       const useWebhook = this.configService.get('USE_WEBHOOK', 'false') === 'true';
       const webhookUrl = this.configService.get('TELEGRAM_WEBHOOK_URL');
-      
+
       // Always use polling unless explicitly disabled via USE_WEBHOOK=true
       // Webhook requires manual setup: DELETE webhook first, then set it via /api/bot/set-webhook
       if (!useWebhook) {
         this.logger.log('🤖 Starting client bot polling (polling mode - default)');
         this.logger.log('💡 To use webhook mode, set USE_WEBHOOK=true and configure webhook via /api/bot/set-webhook');
-        
+
         // Delete any existing webhook to avoid conflicts
         try {
           this.logger.log('🔄 Deleting any existing webhook...');
@@ -132,7 +132,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           this.logger.log('✅ Webhook deleted to avoid conflicts with polling');
           // Wait longer for Telegram API to fully process
           await new Promise(resolve => setTimeout(resolve, 5000));
-          
+
           // Verify webhook is deleted
           try {
             const webhookInfo = await axios.get(`https://api.telegram.org/bot${this.botToken}/getWebhookInfo`);
@@ -149,11 +149,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         } catch (error) {
           this.logger.warn('⚠️ Could not delete webhook (may not exist):', error.message);
         }
-        
+
         // Reset polling offset to start fresh
         this.pollingOffset = 0;
         this.consecutiveErrors = 0;
-        
+
         this.startPolling();
       } else {
         this.logger.log('📡 Webhook mode: polling disabled (USE_WEBHOOK=true)');
@@ -184,8 +184,24 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       } else if (update.callback_query) {
         await this.handleCallbackQuery(update.callback_query);
       }
-    } catch (error) {
-      this.logger.error('Error handling webhook:', error);
+    } catch (error: any) {
+      this.logger.error('Error handling webhook:', {
+        error: error.message,
+        stack: error.stack,
+        updateId: update.update_id,
+        message: update.message?.text || 'no text',
+        chatId: update.message?.chat?.id || update.callback_query?.message?.chat?.id,
+      });
+
+      // Try to send error message to user if possible
+      try {
+        const chatId = update.message?.chat?.id || update.callback_query?.message?.chat?.id;
+        if (chatId) {
+          await this.sendMessage(chatId.toString(), '⚠️ Произошла ошибка при обработке вашего сообщения. Попробуйте позже.');
+        }
+      } catch (sendError) {
+        this.logger.error('Failed to send error message to user:', sendError);
+      }
     }
   }
 
@@ -195,7 +211,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private startPolling() {
     this.logger.log('🤖 Starting bot polling...');
     // Set interval to non-null to enable continuous polling
-    this.pollingInterval = setInterval(() => {}, 1000000) as NodeJS.Timeout; // Dummy interval, actual polling is recursive
+    this.pollingInterval = setInterval(() => { }, 1000000) as NodeJS.Timeout; // Dummy interval, actual polling is recursive
     this.pollUpdates(); // Start polling once
   }
 
@@ -226,11 +242,16 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
         for (const update of updates) {
           this.logger.debug(`📨 Processing update ${update.update_id}: ${update.message?.text || 'no text'}`);
-          await this.handleWebhook(update);
-          // Update offset to avoid processing same update again
+          try {
+            await this.handleWebhook(update);
+          } catch (error: any) {
+            this.logger.error(`Failed to process update ${update.update_id}:`, error.message);
+            // Continue processing other updates even if one fails
+          }
+          // Update offset to avoid processing same update again (even if there was an error)
           this.pollingOffset = Math.max(this.pollingOffset, update.update_id);
         }
-        
+
         // After processing all updates, set offset to next expected update_id
         if (updates.length > 0) {
           const lastUpdateId = updates[updates.length - 1].update_id;
@@ -250,28 +271,30 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       const errorCode = error.response?.status;
       const errorData = error.response?.data;
-      
+
       // Handle 409 conflict - another instance is polling
       if (errorCode === 409) {
         this.consecutiveErrors++;
         this.logger.warn(`⚠️ Conflict (409): Another bot instance may be running. Attempt ${this.consecutiveErrors}`);
-        
-        // After 3 consecutive 409 errors, stop polling immediately to prevent infinite loop
+
+        // After 3 consecutive 409 errors, wait longer before retrying (but don't stop completely)
         if (this.consecutiveErrors >= 3) {
-          this.logger.error('❌ Too many 409 conflicts detected (3+). Stopping polling to prevent infinite loop.');
+          this.logger.error('❌ Too many 409 conflicts detected (3+). Waiting 5 minutes before retry...');
           this.logger.error('⚠️ Another bot instance is receiving updates. Please:');
           this.logger.error('   1. Check if another server/process is using the same bot token');
           this.logger.error('   2. Stop the other instance or use webhook mode instead');
-          this.logger.error('   3. Restart this service after resolving the conflict');
-          
-          // Stop polling completely
+          this.logger.error('   3. This bot will automatically retry in 5 minutes');
+
+          // Wait 5 minutes before retrying (instead of stopping completely)
+          // This allows the bot to automatically recover if the other instance is stopped
           if (this.pollingInterval) {
-            clearInterval(this.pollingInterval);
-            this.pollingInterval = null;
-            this.logger.error('🛑 Polling interval cleared. Bot is now stopped.');
+            setTimeout(() => {
+              // Reset error counter and retry
+              this.consecutiveErrors = 0;
+              this.logger.log('🔄 Retrying polling after 5 minute wait...');
+              this.pollUpdates();
+            }, 5 * 60 * 1000); // 5 minutes
           }
-          
-          // Don't retry - manual intervention required
           return;
         }
       } else {
@@ -285,7 +308,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         this.logger.debug('🛑 Polling is stopped, not retrying.');
         return;
       }
-      
+
       if (errorCode !== 409) {
         setTimeout(() => this.pollUpdates(), 5000); // Retry in 5 seconds
       } else if (errorCode === 409 && this.consecutiveErrors < 3) {
@@ -306,24 +329,40 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private async handleMessage(message: any) {
     const chatId = message.chat.id.toString();
     const text = message.text;
-    
+    const messageId = message.message_id;
+
+    // ===== DETAILED LOGGING START =====
+    this.logger.log(`🔵 ════════════════════════════════════════`);
+    this.logger.log(`🔵 [START] handleMessage`);
+    this.logger.log(`🔵   chatId: ${chatId}`);
+    this.logger.log(`🔵   text: "${text}"`);
+    this.logger.log(`🔵   messageId: ${messageId}`);
+    this.logger.log(`🔵   from: ${message.from?.username || message.from?.first_name || 'unknown'}`);
+    this.logger.log(`🔵 ════════════════════════════════════════`);
+
     this.logger.debug(`📨 Received message: "${text}" from ${chatId}, starts with /: ${text?.startsWith('/')}`);
 
     // Check maintenance mode
+    this.logger.debug(`🔍 [STEP 1/8] Checking maintenance mode...`);
     const maintenanceMode = await this.settingsService.getValue('maintenance_mode', 'false');
     if (maintenanceMode === 'true') {
+      this.logger.warn(`⚠️ [EXIT] Maintenance mode active, rejecting message`);
       await this.sendMessage(chatId, '🛠 Бот находится на техническом обслуживании. Попробуйте позже.');
       return;
     }
+    this.logger.debug(`✅ [STEP 1/8] Maintenance check passed`);
 
     // Get or create user
+    this.logger.debug(`🔍 [STEP 2/8] Getting/creating user...`);
     let user = await this.userRepo.findOne({ where: { tg_id: chatId } });
     const isNewUser = !user;
 
     if (!user) {
+      this.logger.log(`➕ [STEP 2/8] New user ${chatId}, creating...`);
       // Check if registration is enabled
       const registrationEnabled = await this.settingsService.getValue('registration_enabled', 'true');
       if (registrationEnabled === 'false') {
+        this.logger.warn(`⚠️ [EXIT] Registration disabled, new user ${chatId} cannot register.`);
         await this.sendMessage(chatId, '🚫 Регистрация новых пользователей временно приостановлена.');
         return;
       }
@@ -335,7 +374,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       }
 
       user = await this.createUser(message.from, refBy);
-      
+
       // Send welcome message (uses greeting_template from settings)
       await this.sendWelcomeMessage(chatId, user);
 
@@ -389,11 +428,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
         // Get file path from Telegram
         const fileUrl = await this.getFileUrl(fileId);
-        
+
         // Save media message without responding
         await this.messagesService.createUserMessage(user.id, caption, fileUrl, mediaType);
         this.logger.log(`Saved ${mediaType} from user ${chatId} (file: ${fileUrl})`);
-        
+
         // Don't send any response - just save the media
         return;
       } catch (error) {
@@ -404,15 +443,34 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
 
     // Handle commands
+    this.logger.debug(`🔍 [STEP 3/7] Checking if message is command...`);
     if (text?.startsWith('/')) {
-      // Commands starting with / are handled directly, not as reply buttons
-      // (Reply buttons don't start with /)
-      
+      this.logger.log(`📋 [STEP 3/7] Command detected: ${text}`);
+
+      // ✅ Check mandatory channel subscriptions for commands
+      this.logger.debug(`🔍 [STEP 4/7] Checking mandatory channels...`);
+      const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
+
+      if (!allSubscribed) {
+        this.logger.warn(`⚠️ [EXIT] User not subscribed to ${unsubscribedChannels.length} mandatory channels`);
+        await this.sendMessage(
+          chatId,
+          `🔔 *Обязательная подписка*\n\n` +
+          `Для использования бота необходимо подписаться на наши каналы:\n\n` +
+          unsubscribedChannels.map((ch, i) => `${i + 1}️⃣ ${ch.title}`).join('\n') +
+          `\n\n_После подписки нажмите кнопку "Я подписался"_`,
+          this.generateSubscriptionKeyboard(unsubscribedChannels, 'check_subscription'),
+        );
+        return;
+      }
+      this.logger.debug(`✅ [STEP 4/7] Mandatory channels check passed`);
+
       // CRITICAL: Check for blocked user BEFORE handling command
       // This check MUST happen before calling handleCommand
+      this.logger.debug(`🔍 [STEP 5/7] Checking if user is blocked...`);
       const isBlocked = await this.checkUserBlocked(user);
       if (isBlocked) {
-        this.logger.warn(`BLOCKED user ${user.tg_id} (ID: ${user.id}) attempted command: ${text}`);
+        this.logger.warn(`🔴 [EXIT] BLOCKED user ${user.tg_id} (ID: ${user.id}) attempted command: ${text}`);
         await this.sendMessage(
           chatId,
           '🔒 *Ваш аккаунт заблокирован*\n\n' +
@@ -422,10 +480,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         );
         return; // CRITICAL: Stop processing immediately - do NOT call handleCommand
       }
-      
+      this.logger.debug(`✅ [STEP 5/7] User block check passed`);
+
       // Double-check before calling handleCommand
+      this.logger.debug(`🔍 [STEP 6/7] Double-checking block status...`);
       if (await this.checkUserBlocked(user)) {
-        this.logger.warn(`BLOCKED user ${user.tg_id} (ID: ${user.id}) attempted command: ${text} (double-check)`);
+        this.logger.warn(`🔴 [EXIT] BLOCKED user ${user.tg_id} (ID: ${user.id}) attempted command: ${text} (double-check)`);
         await this.sendMessage(
           chatId,
           '🔒 *Ваш аккаунт заблокирован*\n\n' +
@@ -435,12 +495,16 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         );
         return; // CRITICAL: Stop processing immediately - do NOT call handleCommand
       }
-      
+      this.logger.debug(`✅ [STEP 6/7] Double-check passed`);
+
+      this.logger.log(`🎯 [STEP 7/7] Executing handleCommand for: ${text}`);
       await this.handleCommand(chatId, text, user);
+      this.logger.log(`✅ [END] handleMessage completed for command: ${text}`);
+
     } else if (text?.startsWith('wallet ')) {
       // ✅ Check mandatory channel subscriptions for withdrawal
       const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
-      
+
       if (!allSubscribed) {
         await this.sendMessage(
           chatId,
@@ -452,7 +516,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         );
         return;
       }
-      
+
       // Handle withdrawal request
       await this.handleWithdrawalRequest(chatId, user, text);
     } else {
@@ -467,7 +531,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         );
         return;
       }
-      
+
       // Handle ReplyKeyboard button clicks (только для текста, который НЕ начинается с /)
       // Команды уже обработаны выше
       const handled = await this.handleReplyButton(chatId, text, user);
@@ -478,7 +542,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
       // ✅ Check mandatory channel subscriptions for scenarios and regular messages
       const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
-      
+
       if (!allSubscribed) {
         await this.sendMessage(
           chatId,
@@ -542,7 +606,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
         const balanceBefore = parseFloat(referrer.balance_usdt.toString());
         const balanceAfter = balanceBefore + bonusAmount;
-        
+
         referrer.balance_usdt = balanceAfter;
         await this.userRepo.save(referrer);
 
@@ -660,37 +724,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     let cmd = command.split(' ')[0];
     // Remove leading slash for database lookup
     const cmdName = cmd.startsWith('/') ? cmd.substring(1) : cmd;
-    
-    // Double-check: user should not be blocked (safety check before processing command)
-    if (await this.checkUserBlocked(user)) {
-      this.logger.warn(`BLOCKED user ${user.tg_id} (ID: ${user.id}) attempted command: ${command} (double-check)`);
-      await this.sendMessage(
-        chatId,
-        '🔒 *Ваш аккаунт заблокирован*\n\n' +
-        'Ваш аккаунт был заблокирован администратором.\n\n' +
-        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
-        '_Доступ к боту временно ограничен._',
-      );
-      return; // CRITICAL: Stop processing immediately
-    }
-
-    // Triple-check: user should not be blocked before processing command
-    if (await this.checkUserBlocked(user)) {
-      this.logger.warn(`BLOCKED user ${user.tg_id} (ID: ${user.id}) attempted command: ${command} (triple-check before switch)`);
-      await this.sendMessage(
-        chatId,
-        '🔒 *Ваш аккаунт заблокирован*\n\n' +
-        'Ваш аккаунт был заблокирован администратором.\n\n' +
-        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
-        '_Доступ к боту временно ограничен._',
-      );
-      return; // CRITICAL: Stop processing immediately
-    }
 
     // ✅ Check mandatory channel subscriptions for ALL commands (including /start!)
     // BUT ONLY if user is not blocked
     const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(user.tg_id);
-    
+
     if (!allSubscribed) {
       await this.sendMessage(
         chatId,
@@ -703,22 +741,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Final check: user should not be blocked before executing command
-    if (await this.checkUserBlocked(user)) {
-      this.logger.warn(`BLOCKED user ${user.tg_id} (ID: ${user.id}) attempted command: ${command} (final check before switch)`);
-      await this.sendMessage(
-        chatId,
-        '🔒 *Ваш аккаунт заблокирован*\n\n' +
-        'Ваш аккаунт был заблокирован администратором.\n\n' +
-        'Для получения дополнительной информации обратитесь в поддержку.\n\n' +
-        '_Доступ к боту временно ограничен._',
-      );
-      return; // CRITICAL: Stop processing immediately
-    }
-
     // ✅ ALL commands come from database only - no built-in commands
     const dbCommand = await this.commandsService.findByName(cmdName);
-    
+
     if (dbCommand) {
       // Execute command from database
       await this.handleCustomCommand(chatId, user, dbCommand);
@@ -726,13 +751,13 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
 
     // Check if command is for a task
-    const task = await this.taskRepo.findOne({ 
-      where: { 
-        command: cmd, 
-        active: true 
-      } 
+    const task = await this.taskRepo.findOne({
+      where: {
+        command: cmd,
+        active: true
+      }
     });
-    
+
     if (task) {
       // Handle task command
       await this.handleTaskCommand(chatId, user, task);
@@ -747,8 +772,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     // Command not found in database, tasks, or scenarios
     await this.sendMessage(
-      chatId, 
-      '❓ Неизвестная команда.\n\nИспользуйте /start для просмотра доступных функций.', 
+      chatId,
+      '❓ Неизвестная команда.\n\nИспользуйте /start для просмотра доступных функций.',
       await this.getReplyKeyboard(user?.tg_id)
     );
   }
@@ -766,9 +791,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         });
 
         if (lastCompletion) {
-          const hoursSinceCompletion = 
+          const hoursSinceCompletion =
             (Date.now() - new Date(lastCompletion.created_at).getTime()) / (1000 * 60 * 60);
-          
+
           if (hoursSinceCompletion < task.cooldown_hours) {
             const remainingHours = Math.ceil(task.cooldown_hours - hoursSinceCompletion);
             await this.sendMessage(
@@ -800,7 +825,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       const reward_min = parseFloat(task.reward_min.toString());
       const reward_max = parseFloat(task.reward_max.toString());
       const calculatedReward = parseFloat((reward_min + Math.random() * (reward_max - reward_min)).toFixed(2));
-      
+
       const userTask = this.userTaskRepo.create({
         user_id: user.id,
         task_id: task.id,
@@ -808,7 +833,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         reward: calculatedReward,
         reward_received: task.task_type === 'manual' ? 0 : calculatedReward, // Set reward_received based on task type
       });
-      
+
       this.logger.log(`💰 Assigned reward for task "${task.title}": ${calculatedReward} USDT (range: ${reward_min}-${reward_max})`);
 
       await this.userTaskRepo.save(userTask);
@@ -830,7 +855,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
         // Get updated user balance
         const updatedUser = await this.userRepo.findOne({ where: { id: user.id } });
-        
+
         if (updatedUser) {
           await this.sendMessage(
             chatId,
@@ -877,7 +902,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
 
     // Use custom response if provided, otherwise use default
-    const text = customResponse || 
+    const text = customResponse ||
       `📖 *Справка по боту*\n\n` +
       `🎯 *Используйте кнопки меню:*\n` +
       `📋 Задания - список доступных заданий\n` +
@@ -938,7 +963,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     for (const task of tasks) {
       // Check if task is available for this user based on available_for setting
       let isAvailableForUser = true;
-      
+
       if (task.available_for === 'platinum') {
         // Only available for platinum subscribers
         isAvailableForUser = hasPlatinum;
@@ -1039,7 +1064,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     // ✅ Check mandatory channel subscriptions (skip for check_subscription action itself)
     if (data !== 'check_subscription' && data !== 'noop' && data !== 'menu') {
       const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(tgId);
-      
+
       if (!allSubscribed) {
         await this.sendMessage(
           chatId,
@@ -1056,7 +1081,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     // Handle subscription check
     if (data === 'check_subscription') {
       const { allSubscribed, unsubscribedChannels } = await this.checkMandatoryChannels(tgId);
-      
+
       if (!allSubscribed) {
         await this.answerCallbackQuery(callback.id, '❌ Вы не подписаны на все каналы');
         await this.sendMessage(
@@ -1069,14 +1094,14 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       } else {
         // Обновляем статус подписки на каналы для ранга
         await this.ranksService.setChannelsSubscribed(user.id, true);
-        
+
         // Проверяем возможность повышения ранга
         const rankUpdate = await this.ranksService.checkAndUpdateRank(user.id);
-        
+
         await this.answerCallbackQuery(callback.id, '✅ Подписка подтверждена!');
-        
+
         let message = '✅ Отлично! Все подписки подтверждены!';
-        
+
         // Если пользователь повысил ранг до Бронзы
         if (rankUpdate.leveledUp && rankUpdate.newLevel === 'bronze') {
           message = `🎉 *Поздравляем!*\n\n` +
@@ -1084,7 +1109,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             `💰 Новый бонус: *+${rankUpdate.rank.bonus_percentage}%* ко всем наградам!\n\n` +
             `Теперь ты можешь выполнять задания и зарабатывать больше!`;
         }
-        
+
         await this.sendMessage(chatId, message, await this.getReplyKeyboard(user?.tg_id));
       }
       return;
@@ -1126,7 +1151,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     // Try to get from cache first
     const cacheKey = 'buttons:main_keyboard';
     const cached = this.syncService.getCache(cacheKey);
-    
+
     if (cached) {
       this.logger.debug('✅ Using cached main keyboard');
       return cached;
@@ -1199,7 +1224,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
    */
   private async handleReplyButton(chatId: string, text: string, user: User): Promise<boolean> {
     this.logger.debug(`🔘 Handling reply button: "${text}" from user ${user.tg_id}`);
-    
+
     // Check for blocked user FIRST - before any button processing
     if (await this.checkUserBlocked(user)) {
       await this.sendMessage(
@@ -1213,10 +1238,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
 
     // Try to find custom button from DB
-    const button = await this.buttonRepo.findOne({ 
-      where: { label: text, active: true } 
+    const button = await this.buttonRepo.findOne({
+      where: { label: text, active: true }
     });
-    
+
     if (button) {
       this.logger.debug(`✅ Found button in DB: ${button.label}, command: ${button.command || 'none'}`);
       // Check if button has a command - all commands come from DB
@@ -1226,7 +1251,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         await this.handleCommand(chatId, button.command, user);
         return true;
       }
-      
+
       // Otherwise handle as custom button
       this.logger.debug(`🎯 Button has no command, calling handleCustomButton`);
       await this.handleCustomButton(chatId, user, button);
@@ -1237,34 +1262,34 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     // This is a temporary fallback until all buttons are properly configured
     const normalizedText = text.trim().toLowerCase();
     this.logger.debug(`🔍 Button not found in DB, checking fallback for: "${normalizedText}"`);
-    
+
     // Map common button labels to commands/actions
     // Check for "Задания" - be very permissive with matching
     const zadaniyaVariants = ['задания', 'задани', 'заданий', 'заданиe'];
-    const matchesZadaniya = zadaniyaVariants.some(variant => 
-      normalizedText === variant || 
+    const matchesZadaniya = zadaniyaVariants.some(variant =>
+      normalizedText === variant ||
       normalizedText.includes(variant) ||
       text.toLowerCase().includes(variant)
     );
-    
+
     if (matchesZadaniya || normalizedText === 'задания' || normalizedText.includes('задания')) {
       this.logger.log(`✅ Fallback: Handling "Задания" button (normalized: "${normalizedText}", original: "${text}")`);
       await this.sendAvailableTasks(chatId, user);
       return true;
     }
-    
+
     if (normalizedText === 'профиль' || normalizedText.includes('профиль')) {
       this.logger.debug(`✅ Fallback: Handling "Профиль" button`);
       await this.handleCommand(chatId, '/profile', user);
       return true;
     }
-    
+
     if (normalizedText === 'баланс' || normalizedText.includes('баланс')) {
       this.logger.debug(`✅ Fallback: Handling "Баланс" button`);
       await this.handleCommand(chatId, '/balance', user);
       return true;
     }
-    
+
     if (normalizedText === 'рефералы' || normalizedText.includes('рефералы')) {
       this.logger.debug(`✅ Fallback: Handling "Рефералы" button`);
       await this.handleCommand(chatId, '/referrals', user);
@@ -1311,10 +1336,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       });
 
       const filePath = response.data.result.file_path;
-      
+
       // Build full URL
       const fileUrl = `https://api.telegram.org/file/bot${this.botToken}/${filePath}`;
-      
+
       return fileUrl;
     } catch (error) {
       this.logger.error(`Failed to get file URL for file_id ${fileId}:`, error);
@@ -1408,7 +1433,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
       // Format reason for display
       let reasonText = comment || 'Причина не указана';
-      
+
       // Translate common reason codes to Russian
       const reasonTranslations: Record<string, string> = {
         'manual_adjustment': 'Ручная корректировка администратором',
@@ -1444,7 +1469,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         `📅 Дата: ${currentDate}`;
 
       await this.sendMessage(chatId, message);
-      
+
       this.logger.log(`✅ Balance notification sent successfully to ${chatId}`);
     } catch (error) {
       // Handle common Telegram errors
@@ -1666,7 +1691,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const userRank = await this.ranksService.getUserRank(user.id);
     const userRankLevel = userRank.current_rank;
     const hasPlatinum = userRank.platinum_active && userRank.platinum_expires_at && new Date() < userRank.platinum_expires_at;
-    
+
     let isAvailableForUser = true;
     if (task.available_for === 'platinum') {
       isAvailableForUser = hasPlatinum;
@@ -1784,7 +1809,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const userRank = await this.ranksService.getUserRank(user.id);
     const userRankLevel = userRank.current_rank;
     const hasPlatinum = userRank.platinum_active && userRank.platinum_expires_at && new Date() < userRank.platinum_expires_at;
-    
+
     let isAvailableForUser = true;
     if (task.available_for === 'platinum') {
       isAvailableForUser = hasPlatinum;
@@ -1891,7 +1916,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const userRank = await this.ranksService.getUserRank(user.id);
     const userRankLevel = userRank.current_rank;
     const hasPlatinum = userRank.platinum_active && userRank.platinum_expires_at && new Date() < userRank.platinum_expires_at;
-    
+
     let isAvailableForUser = true;
     if (task.available_for === 'platinum') {
       isAvailableForUser = hasPlatinum;
@@ -1935,7 +1960,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         const hours = Math.floor(remainingMinutes / 60);
         const minutes = remainingMinutes % 60;
         let timeText = '';
-        
+
         if (hours > 0) {
           timeText = `${hours} ч ${minutes} мин`;
         } else {
@@ -1987,10 +2012,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const reward_min = parseFloat(task.reward_min.toString());
     const reward_max = parseFloat(task.reward_max.toString());
     const baseReward = parseFloat((reward_min + Math.random() * (reward_max - reward_min)).toFixed(2));
-    
+
     // Apply rank bonus (userRank already declared above)
     const reward = this.ranksService.applyRankBonus(baseReward, parseFloat(userRank.bonus_percentage.toString()));
-    
+
     this.logger.log(`💰 Calculated reward for task "${task.title}": ${baseReward} USDT (base) -> ${reward} USDT (with +${userRank.bonus_percentage}% rank bonus)`);
 
     // Check if task requires manual review
@@ -2033,7 +2058,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       // Update user balance and stats (convert to number to avoid string concatenation)
       const balanceBefore = parseFloat(user.balance_usdt.toString());
       const balanceAfter = balanceBefore + reward;
-      
+
       user.balance_usdt = balanceAfter;
       user.total_earned = parseFloat(user.total_earned.toString()) + reward;
       user.tasks_completed = user.tasks_completed + 1;
@@ -2042,12 +2067,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       // Update rank tasks counter and check for rank up
       await this.ranksService.incrementTasksCompleted(user.id);
       const rankUpdate = await this.ranksService.checkAndUpdateRank(user.id);
-      
+
       // Если пользователь повысил ранг
       if (rankUpdate.leveledUp) {
         const rankNames = { stone: 'Камень', bronze: 'Бронза', silver: 'Серебро', gold: 'Золото', platinum: 'Платина' };
         const rankEmojis = { stone: '🪨', bronze: '🥉', silver: '🥈', gold: '🥇', platinum: '💎' };
-        
+
         setTimeout(() => {
           this.sendMessage(
             chatId,
@@ -2243,26 +2268,26 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         if (button.action_payload.script) {
           // Execute script
           this.logger.log(`Executing script for button ${button.id}`);
-          
+
           let scriptCode = button.action_payload.script;
           if (typeof scriptCode !== 'string') {
             scriptCode = String(scriptCode);
           }
           scriptCode = scriptCode.trim();
-          
+
           // Remove any escape sequences that might have been added during storage
           // If the script was stored with escaped backticks, we need to unescape them
           // Replace \\` with ` (unescape escaped backticks)
           scriptCode = scriptCode.replace(/\\`/g, '`');
           // Replace \\${ with ${ (unescape escaped template literal expressions)
           scriptCode = scriptCode.replace(/\\\$\{/g, '${');
-          
+
           // Log the full script for debugging
           this.logger.log(`Script code (length: ${scriptCode.length}):`, scriptCode);
-          
+
           // Check if script looks like JavaScript code (contains function, return, const, let, var, if, etc.)
           const isJavaScriptCode = /(function|=>|return|const|let|var|if|for|while|switch|class|async|await)/i.test(scriptCode);
-          
+
           if (!isJavaScriptCode) {
             // Treat as simple template - replace variables and use as text
             text = scriptCode
@@ -2302,7 +2327,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
                 // Add command if available for better identification
                 command: button.command || null
               });
-              
+
               // Log buttonData for debugging
               this.logger.log(`ButtonData being passed to script:`, {
                 id: button.id,
@@ -2310,31 +2335,31 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
                 action: 'execute',
                 command: button.command || null
               });
-              
+
               // Build the function body using string concatenation (not template literals)
               // The issue: scriptCode may contain backticks (`) and ${} which break string concatenation
               // Solution: Use Function constructor with the script code directly
               // We need to properly escape the script for safe insertion
-              
+
               // The problem: when we use JSON.stringify, we get a string in quotes
               // and new Function(string) creates a function with body = that string, not executing it
               // Solution: Use Function constructor with the script code directly (not as JSON string)
               // But we need to escape backticks properly for string concatenation
-              
+
               // When using string concatenation with single quotes, we don't need to escape backticks
               // Backticks inside a string created with single quotes are treated as literal characters
               // However, we still need to escape backslashes and newlines for proper string representation
               // But wait - we're not putting the script in quotes, we're inserting it directly as code
               // So we don't need to escape anything - just insert the script as-is
               // The script will be part of the function body, not a string literal
-              
+
               // Insert the script directly into the function body
               // Template literals in the script will work correctly when executed
-              
+
               // Log scriptCode before insertion to verify it's correct
               this.logger.log(`ScriptCode before insertion (length: ${scriptCode.length}):`, scriptCode);
               this.logger.log(`ScriptCode type: ${typeof scriptCode}, is empty: ${!scriptCode || scriptCode.length === 0}`);
-              
+
               // Build functionBody step by step to debug
               const part1 = '// Initialize context\n' +
                 'const user = ' + userJsonStr + ';\n' +
@@ -2351,14 +2376,14 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
                 '}\n' +
                 '\n' +
                 '// User script code\n';
-              
+
               this.logger.log(`Part1 length: ${part1.length}`);
               this.logger.log(`ScriptCode length: ${scriptCode ? scriptCode.length : 0}`);
-              
+
               // Ensure scriptCode ends with a newline and has proper closing braces
               // Check if scriptCode defines a function but doesn't close it properly
               let processedScriptCode = scriptCode.trim();
-              
+
               // Count opening and closing braces for functions
               const functionMatches = processedScriptCode.match(/function\s+\w+\s*\(/g);
               if (functionMatches) {
@@ -2366,7 +2391,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
                 const openBraces = (processedScriptCode.match(/{/g) || []).length;
                 // Count closing braces }
                 const closeBraces = (processedScriptCode.match(/}/g) || []).length;
-                
+
                 // If there are more opening braces than closing, add missing closing braces
                 if (openBraces > closeBraces) {
                   const missingBraces = openBraces - closeBraces;
@@ -2374,13 +2399,13 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
                   processedScriptCode += '\n' + '}'.repeat(missingBraces);
                 }
               }
-              
+
               const part2 = processedScriptCode + '\n' +
                 '\n';
-              
+
               this.logger.log(`Part2 length: ${part2.length}, first 200 chars:`, part2.substring(0, 200));
               this.logger.log(`Part2 last 50 chars:`, part2.substring(Math.max(0, part2.length - 50)));
-              
+
               const part3 = '// Auto-execute handleButton if defined\n' +
                 'if (typeof handleButton === "function") {\n' +
                 '  try {\n' +
@@ -2425,12 +2450,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
                 '}\n' +
                 '\n' +
                 'return "Script executed successfully";';
-              
+
               // Combine all parts
               functionBody = part1 + part2 + part3;
-              
+
               this.logger.log(`FunctionBody total length: ${functionBody.length}, part1: ${part1.length}, part2: ${part2.length}, part3: ${part3.length}`);
-              
+
               // Log functionBody after scriptCode insertion to verify it's correct
               this.logger.log(`FunctionBody after scriptCode insertion (length: ${functionBody.length}):`, functionBody.substring(0, 1000));
               // Also log the part where scriptCode should be (around position 500-800)
@@ -2445,7 +2470,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
               } else {
                 this.logger.error(`ERROR: "// User script code" not found in functionBody!`);
               }
-              
+
               // Log the full functionBody to a file-like structure for debugging
               // Split by lines and log each line to see the exact structure
               const functionBodyLines = functionBody.split('\n');
@@ -2485,10 +2510,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
                 }
                 throw new Error(`Синтаксическая ошибка в скрипте: ${parseError.message}`);
               }
-              
+
               const scriptFunction = new Function(functionBody);
               const result = scriptFunction();
-            
+
               // Replace variables in the result if it's a string
               if (typeof result === 'string') {
                 text = result
@@ -2521,10 +2546,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         } else if (button.action_payload.webhook_url) {
           // Call webhook
           this.logger.log(`Calling webhook for button ${button.id}: ${button.action_payload.webhook_url}`);
-          
+
           const axios = require('axios');
           const timeout = button.action_payload.timeout || 5000;
-          
+
           try {
             const response = await axios.post(
               button.action_payload.webhook_url,
@@ -2541,7 +2566,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
               },
               { timeout }
             );
-            
+
             text = response.data?.message || response.data?.text || '✅ Функция выполнена успешно';
           } catch (webhookError: any) {
             this.logger.error(`Webhook error for button ${button.id}:`, webhookError);
@@ -2550,7 +2575,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         } else if (button.action_payload.function_name) {
           // Call internal function
           this.logger.log(`Calling internal function for button ${button.id}: ${button.action_payload.function_name}`);
-          
+
           // Map function names to actual methods
           const functionMap: { [key: string]: () => Promise<void> } = {
             'sendProfile': () => this.sendProfile(chatId, user),
@@ -2558,7 +2583,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             'sendTasks': () => this.sendAvailableTasks(chatId, user),
             'sendReferralInfo': () => this.sendReferralInfo(chatId, user),
           };
-          
+
           const func = functionMap[button.action_payload.function_name];
           if (func) {
             await func();
@@ -2567,7 +2592,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             text = `❌ Функция "${button.action_payload.function_name}" не найдена`;
           }
         }
-        
+
         // Send the result
         await this.sendMessage(chatId, text, keyboard);
         return;
@@ -2593,7 +2618,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     if (button.action_payload?.inline_buttons && Array.isArray(button.action_payload.inline_buttons)) {
       // Build inline keyboard from payload
       const inlineKeyboard: any[] = [];
-      
+
       // Group buttons into rows (default: one button per row, or you can implement row logic)
       button.action_payload.inline_buttons.forEach((btn: any) => {
         if (btn.url) {
@@ -2604,14 +2629,14 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           inlineKeyboard.push([{ text: btn.text, callback_data: btn.callback_data }]);
         }
       });
-      
+
       // Add back button if not present
       if (inlineKeyboard.length > 0) {
         inlineKeyboard.push([{ text: '🔙 Назад', callback_data: 'menu' }]);
       }
-      
+
       keyboard = { inline_keyboard: inlineKeyboard };
-      
+
       // Extract text from payload
       if (button.action_payload.text) {
         text = button.action_payload.text;
@@ -2620,13 +2645,13 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       } else {
         text = button.label || 'Информация';
       }
-      
+
       // Replace variables in text
       text = text
         .replace(/{username}/g, user.username || user.first_name || 'Друг')
         .replace(/{balance}/g, user.balance_usdt.toString())
         .replace(/{tasks_completed}/g, user.tasks_completed.toString());
-      
+
       // Send message with media if available
       if (button.media_url) {
         try {
@@ -2635,7 +2660,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           const urlWithoutQuery = mediaUrl.split('?')[0];
           const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
           let mediaType = 'photo';
-          
+
           if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
             mediaType = 'video';
           } else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
@@ -2644,11 +2669,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             // If extension is not recognized as image, default to photo
             mediaType = 'photo';
           }
-          
+
           this.logger.log(`Sending media for button ${button.id}: ${mediaType} from ${mediaUrl}`);
-          
+
           await this.sendMessageWithMedia(chatId, text, mediaUrl, mediaType);
-          
+
           // Send inline buttons separately if they exist
           if (keyboard && keyboard.inline_keyboard && keyboard.inline_keyboard.length > 0) {
             await this.sendMessage(chatId, '👇 Выберите действие:', keyboard);
@@ -2666,7 +2691,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     // Handle text buttons - extract text from action_payload
     if (button.action_type === 'text' || button.action_type === 'send_message') {
       let payloadText = '';
-      
+
       // Try to extract text from various payload structures
       if (typeof button.action_payload === 'string') {
         payloadText = button.action_payload;
@@ -2677,7 +2702,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           payloadText = button.action_payload.text.text;
         }
       }
-      
+
       if (payloadText) {
         text = payloadText
           .replace(/{username}/g, user.username || user.first_name || 'Друг')
@@ -2770,12 +2795,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         .replace('{tasks_completed}', user.tasks_completed.toString());
     } else if (button.action_type === 'open_url' || (button.action_type === 'url' && button.action_payload?.url)) {
       text = button.action_payload?.text || 'Перейдите по ссылке ниже';
-      
+
       // Check if there are additional inline buttons
       if (button.action_payload?.inline_buttons && Array.isArray(button.action_payload.inline_buttons)) {
         const inlineKeyboard: any[] = [];
         inlineKeyboard.push([{ text: '🔗 Перейти', url: button.action_payload.url }]);
-        
+
         button.action_payload.inline_buttons.forEach((btn: any) => {
           if (btn.url) {
             inlineKeyboard.push([{ text: btn.text, url: btn.url }]);
@@ -2785,7 +2810,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             inlineKeyboard.push([{ text: btn.text, callback_data: btn.callback_data }]);
           }
         });
-        
+
         inlineKeyboard.push([{ text: '🔙 Назад', callback_data: 'menu' }]);
         keyboard = { inline_keyboard: inlineKeyboard };
       } else {
@@ -2807,7 +2832,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         const urlWithoutQuery = mediaUrl.split('?')[0];
         const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
         let mediaType = 'photo';
-        
+
         if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
           mediaType = 'video';
         } else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
@@ -2816,12 +2841,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           // If extension is not recognized as image, try to determine from content-type or default to photo
           mediaType = 'photo';
         }
-        
+
         this.logger.log(`Sending media for button ${button.id}: ${mediaType} from ${mediaUrl}`);
-        
+
         // Send media with text as caption
         await this.sendMessageWithMedia(chatId, text, mediaUrl, mediaType);
-        
+
         // If there are inline buttons, send them separately
         if (keyboard && keyboard.inline_keyboard && keyboard.inline_keyboard.length > 0) {
           await this.sendMessage(chatId, '👇 Выберите действие:', keyboard);
@@ -2858,17 +2883,17 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       // Execute script (similar to button script execution)
       try {
         this.logger.log(`Executing script for command ${command.id}`);
-        
+
         let scriptCode = payload.script;
         if (typeof scriptCode !== 'string') {
           scriptCode = String(scriptCode);
         }
         scriptCode = scriptCode.trim();
-        
+
         // Unescape template literals
         scriptCode = scriptCode.replace(/\\`/g, '`');
         scriptCode = scriptCode.replace(/\\\$\{/g, '${');
-        
+
         const userData = {
           id: user.id,
           tg_id: user.tg_id,
@@ -2892,18 +2917,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             name: command.name,
             description: command.description,
           });
-          
+
           let processedScriptCode = scriptCode.trim();
-          
+
           // Check for missing closing braces
           const openBraces = (processedScriptCode.match(/{/g) || []).length;
           const closeBraces = (processedScriptCode.match(/}/g) || []).length;
-          
+
           if (openBraces > closeBraces) {
             const missingBraces = openBraces - closeBraces;
             processedScriptCode += '\n' + '}'.repeat(missingBraces);
           }
-          
+
           functionBody = '// Initialize context\n' +
             'const user = ' + userJsonStr + ';\n' +
             'const userId = ' + userIdStr + ';\n' +
@@ -2938,10 +2963,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             '}\n' +
             '\n' +
             'return "Script executed successfully";';
-          
+
           const scriptFunction = new Function(functionBody);
           const result = scriptFunction();
-          
+
           if (result && typeof result === 'string') {
             await this.sendMessage(chatId, result, await this.getReplyKeyboard());
           } else {
@@ -3049,7 +3074,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         .replace(/{tasks_completed}/g, user.tasks_completed.toString())
         .replace(/{chat_id}/g, chatId)
         .replace(/{user_id}/g, user.tg_id);
-      
+
       // Send with media if available (legacy support)
       if (command.media_url) {
         await this.sendMessageWithMedia(chatId, text, command.media_url);
@@ -3111,7 +3136,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     // Update user balance
     const balanceBefore = parseFloat(user.balance_usdt.toString());
     const balanceAfter = balanceBefore + reward;
-    
+
     user.balance_usdt = balanceAfter;
     user.total_earned = parseFloat(user.total_earned.toString()) + reward;
     user.tasks_completed = user.tasks_completed + 1;
@@ -3231,10 +3256,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       await this.sendMessage(
         chatId,
         `✅ *Заявка на вывод создана!*\n\n` +
-          `💰 Сумма: ${amount} USDT\n` +
-          `💳 Кошелёк: ${walletAddress}\n\n` +
-          `⏳ Ваша заявка будет обработана в течение 24 часов.\n` +
-          `Вы получите уведомление после обработки.`,
+        `💰 Сумма: ${amount} USDT\n` +
+        `💳 Кошелёк: ${walletAddress}\n\n` +
+        `⏳ Ваша заявка будет обработана в течение 24 часов.\n` +
+        `Вы получите уведомление после обработки.`,
       );
 
       this.logger.log(
@@ -3258,7 +3283,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       scenarios = await this.scenarioRepo.find({
         where: { active: true },
       });
-      
+
       // Cache for 60 seconds (will be invalidated on scenario changes)
       this.syncService.setCache(cacheKey, scenarios, 60);
     }
@@ -3317,7 +3342,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             const urlWithoutQuery = mediaUrl.split('?')[0];
             const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
             let mediaType = 'photo';
-            
+
             if (['mp4', 'mov', 'avi', 'webm', 'ogg'].includes(ext)) {
               mediaType = 'video';
             } else if (['pdf', 'doc', 'docx', 'txt', 'zip', 'rar'].includes(ext)) {
@@ -3326,7 +3351,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
               // If extension is not recognized as image, default to photo
               mediaType = 'photo';
             }
-            
+
             this.logger.log(`Sending media for scenario ${scenario.id}: ${mediaType} from ${mediaUrl}`);
             await this.sendMessageWithMedia(chatId, text, mediaUrl, mediaType);
           } catch (error) {
@@ -3374,13 +3399,13 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
    * @param userId Telegram user ID
    * @returns Object with subscribed status and list of unsubscribed channels
    */
-  async checkMandatoryChannels(userId: string): Promise<{ 
-    allSubscribed: boolean; 
+  async checkMandatoryChannels(userId: string): Promise<{
+    allSubscribed: boolean;
     unsubscribedChannels: any[];
   }> {
     try {
       const activeChannels = await this.channelsService.findActive();
-      
+
       if (activeChannels.length === 0) {
         return { allSubscribed: true, unsubscribedChannels: [] };
       }
@@ -3413,7 +3438,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
    */
   generateSubscriptionKeyboard(channels: any[], callbackAction: string = 'check_subscription') {
     const buttons: any[][] = [];
-    
+
     // Add channel buttons (with URL)
     channels.forEach(channel => {
       const url = channel.url || `https://t.me/${channel.username || channel.channel_id.replace('@', '')}`;
@@ -3435,7 +3460,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private async checkChannelSubscription(userId: string, channelId: string): Promise<boolean> {
     try {
       this.logger.debug(`🔍 Checking subscription: user=${userId}, channel=${channelId}`);
-      
+
       const response = await axios.get(
         `https://api.telegram.org/bot${this.botToken}/getChatMember`,
         {
@@ -3452,11 +3477,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         const status = response.data.result.status;
         // User is subscribed if status is: creator, administrator, or member
         const isSubscribed = ['creator', 'administrator', 'member'].includes(status);
-        
+
         this.logger.log(
           `✅ Subscription check: user ${userId}, channel ${channelId}, status=${status}, subscribed=${isSubscribed}`,
         );
-        
+
         return isSubscribed;
       }
 
@@ -3494,16 +3519,16 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     // Проверяем статус подписки на каналы
     const { allSubscribed } = await this.checkMandatoryChannels(user.tg_id);
-    
+
     // Проверяем и обновляем ранг перед отображением (синхронизируем счетчики)
     // Передаем статус подписки на каналы для правильной проверки
     const rankUpdateResult = await this.ranksService.checkAndUpdateRank(user.id, allSubscribed);
-    
+
     // Если ранг повысился, показываем уведомление
     if (rankUpdateResult.leveledUp) {
       const rankNames = { stone: 'Камень', bronze: 'Бронза', silver: 'Серебро', gold: 'Золото', platinum: 'Платина' };
       const rankEmojis = { stone: '🪨', bronze: '🥉', silver: '🥈', gold: '🥇', platinum: '💎' };
-      
+
       await this.sendMessage(
         chatId,
         `🎉 *Поздравляем!*\n\n` +
@@ -3513,7 +3538,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         await this.getReplyKeyboard(user?.tg_id),
       );
     }
-    
+
     // Получаем обновленные данные ранга и прогресса
     const userRank = await this.ranksService.getUserRank(user.id);
     const progress = await this.ranksService.getRankProgress(user.id);
@@ -3545,7 +3570,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     if (progress.nextRank) {
       text += `📊 *Прогресс до ${rankNames[progress.nextRank]}:*\n`;
-      
+
       // Для Бронзы показываем информацию о подписке на каналы
       if (progress.nextRank === 'bronze') {
         if (progress.channelsSubscribed) {
@@ -3560,7 +3585,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         // Для остальных рангов показываем задания и рефералов
         text += `✅ Выполнено заданий: ${progress.tasksProgress.current}/${progress.tasksProgress.required}\n`;
         text += `👥 Приглашено рефералов: ${progress.referralsProgress.current}/${progress.referralsProgress.required}\n\n`;
-        
+
         const overallPercent = Math.floor(progress.progress);
         if (!isNaN(overallPercent) && overallPercent >= 0) {
           text += `Общий прогресс: ${overallPercent}%\n`;
@@ -3672,7 +3697,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     // Проверка статистики
     const progress = await this.ranksService.getRankProgress(user.id);
-    
+
     let text = '🔍 *Проверяем твою статистику...*\n\n';
     text += `✅ Уровень: *${userRank.current_rank === 'gold' ? 'Золото' : 'Платина'}*\n`;
     text += `✅ Выполнено заданий: *${userRank.tasks_completed}*\n`;
@@ -3704,7 +3729,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       case '1':
         // Оплата с баланса
         const result = await this.premiumService.processBalancePayment(user.id);
-        
+
         if (result.success) {
           await this.sendMessage(
             chatId,

@@ -29,17 +29,14 @@ function App() {
   useEffect(() => {
     // Auto-login in development mode (only once on mount)
     if (import.meta.env.DEV && !isAuthenticated) {
-      console.log('🚀 Auto-login in development mode...');
       refreshToken().then(() => {
         // Проверяем после обновления токена
         const authState = useAuthStore.getState();
         if (authState.isAuthenticated) {
-          console.log('✅ Auto-login successful, should redirect now');
-        } else {
-          console.warn('⚠️ Auto-login failed, user needs to login manually');
+          // Auto-login successful
         }
-      }).catch((error) => {
-        console.error('❌ Auto-login error:', error);
+      }).catch(() => {
+        // Auto-login error
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -49,7 +46,7 @@ function App() {
     <Routes>
       {/* Public route for Telegram Web App */}
       <Route path="/app" element={<UserAppPage />} />
-      
+
       {/* Admin routes (require authentication) */}
       {!isAuthenticated ? (
         <Route path="*" element={<LoginPage />} />

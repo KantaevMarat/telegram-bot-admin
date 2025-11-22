@@ -94,22 +94,41 @@ export class MediaService {
         7 * 24 * 60 * 60, // 7 дней в секундах
       );
 
+      this.logger.debug(`🔗 Generated presigned URL: ${presignedUrl.substring(0, 100)}...`);
+
       // Для локальной разработки заменяем внутренний Docker endpoint на localhost
       const nodeEnv = this.configService.get('NODE_ENV', 'development');
       if (nodeEnv === 'development') {
         // Заменяем minio:9000 на localhost:9002 (внешний порт из docker-compose.dev.yml)
-        return presignedUrl.replace('minio:9000', 'localhost:9002');
+        const devUrl = presignedUrl.replace('minio:9000', 'localhost:9002');
+        this.logger.debug(`🔗 Development URL: ${devUrl.substring(0, 100)}...`);
+        return devUrl;
       }
 
-      // Для production используем публичный URL если задан
-    const publicUrl = this.configService.get('MINIO_PUBLIC_URL');
-    if (publicUrl) {
+      // Для production ОБЯЗАТЕЛЬНО используем публичный URL
+      // Telegram API не может скачать файлы по внутренним Docker адресам
+      const publicUrl = this.configService.get('MINIO_PUBLIC_URL');
+      if (publicUrl) {
         // Заменяем internal endpoint на публичный
         const internalEndpoint = this.configService.get('MINIO_ENDPOINT', 'minio');
-    const port = this.configService.get('MINIO_PORT', '9000');
-        return presignedUrl.replace(`${internalEndpoint}:${port}`, publicUrl.replace(/^https?:\/\//, ''));
+        const port = this.configService.get('MINIO_PORT', '9000');
+        const internalPattern = `${internalEndpoint}:${port}`;
+        const publicHost = publicUrl.replace(/^https?:\/\//, '');
+        
+        // Заменяем внутренний адрес на публичный
+        let finalUrl = presignedUrl.replace(internalPattern, publicHost);
+        
+        // Если presigned URL использует HTTP, но publicUrl - HTTPS, заменяем протокол
+        if (publicUrl.startsWith('https://') && finalUrl.startsWith('http://')) {
+          finalUrl = finalUrl.replace('http://', 'https://');
+        }
+        
+        this.logger.debug(`🔗 Production public URL: ${finalUrl.substring(0, 100)}...`);
+        return finalUrl;
       }
 
+      // Если MINIO_PUBLIC_URL не задан в production - это ошибка конфигурации
+      this.logger.warn(`⚠️ MINIO_PUBLIC_URL not set in production! URL may not be accessible to Telegram API: ${presignedUrl.substring(0, 100)}...`);
       return presignedUrl;
     } catch (error) {
       this.logger.error(`❌ Failed to generate presigned URL for ${fileName}: ${error.message}`);

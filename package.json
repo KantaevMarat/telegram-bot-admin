@@ -16,8 +16,16 @@
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces"
   },
-  "keywords": ["telegram", "bot", "admin-panel", "nestjs", "react"],
+  "keywords": [
+    "telegram",
+    "bot",
+    "admin-panel",
+    "nestjs",
+    "react"
+  ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "ssh2": "^1.17.0"
+  }
 }
-
