@@ -94,7 +94,6 @@ services:
       - app-network
     volumes:
       - ./backend/uploads:/app/uploads
-      - ./backend/dist:/app/dist:ro
     healthcheck:
       test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/docs" ]
       interval: 30s
