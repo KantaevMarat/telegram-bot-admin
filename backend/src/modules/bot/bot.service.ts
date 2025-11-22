@@ -218,10 +218,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private async pollUpdates() {
     try {
       const url = `https://api.telegram.org/bot${this.botToken}/getUpdates`;
-      // Use offset+1 to get updates after the last processed one, or 0 to get all pending
-      // NEVER use offset -1 as it causes infinite loops - always use proper offset
-      const offset = this.pollingOffset > 0 ? this.pollingOffset + 1 : 0;
-      this.logger.debug(`🔍 Polling with offset: ${offset} (last processed: ${this.pollingOffset})`);
+      // pollingOffset already contains the next expected update_id (last processed + 1)
+      // So we use it directly, not offset + 1
+      const offset = this.pollingOffset;
+      this.logger.debug(`🔍 Polling with offset: ${offset} (next expected update_id)`);
 
       const response = await axios.get(url, {
         params: {
