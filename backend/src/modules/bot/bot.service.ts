@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import FormData from 'form-data';
 import { User } from '../../entities/user.entity';
 import { Button } from '../../entities/button.entity';
 import { Task } from '../../entities/task.entity';
@@ -1393,7 +1394,6 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
 
       // Create form data
-      const FormData = require('form-data');
       const formData = new FormData();
       formData.append('chat_id', chatId);
       formData.append(mediaField, fileResponse.data, {
