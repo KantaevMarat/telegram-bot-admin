@@ -178,10 +178,18 @@ export default function SettingsPage() {
       setIsSaving(true);
       setSaveMessage('');
 
-      const changes = Object.entries(localValues).map(([key, value]) => ({
-        key,
-        value
-      }));
+      // Filter out empty values that were not intentionally changed to empty
+      // Only include values that are different from initial settings
+      const changes = Object.entries(localValues)
+        .filter(([key, value]) => {
+          const initialSetting = settings.find(s => s.key === key);
+          // Include if value is different from initial, or if it's explicitly set (even if empty)
+          return initialSetting && initialSetting.value !== value;
+        })
+        .map(([key, value]) => ({
+          key,
+          value: value !== undefined && value !== null ? String(value) : ''
+        }));
       
       await settingsApi.updateSettings(changes);
       
@@ -364,13 +372,24 @@ export default function SettingsPage() {
                           {setting.description}
                         </p>
                       )}
-                      <input
-                        type="text"
-                        className="setting-row__input"
-                        value={localValues[setting.key] !== undefined ? localValues[setting.key] : setting.value}
-                        onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                        placeholder={`Введите значение для ${setting.key}`}
-                      />
+                      {setting.key === 'greeting_template' || setting.key.includes('message') || setting.key.includes('template') ? (
+                        <textarea
+                          className="setting-row__input"
+                          rows={6}
+                          value={localValues[setting.key] !== undefined ? localValues[setting.key] : setting.value || ''}
+                          onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                          placeholder={`Введите значение для ${setting.key}`}
+                          style={{ minHeight: '120px', resize: 'vertical' }}
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          className="setting-row__input"
+                          value={localValues[setting.key] !== undefined ? localValues[setting.key] : setting.value || ''}
+                          onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                          placeholder={`Введите значение для ${setting.key}`}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>

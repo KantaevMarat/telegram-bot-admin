@@ -19,4 +19,10 @@ export class BotController {
   async setWebhook(@Body() body: { url: string }) {
     return await this.botService.setWebhook(body.url);
   }
+
+  @Post('delete-webhook')
+  @ApiOperation({ summary: 'Delete Telegram bot webhook' })
+  async deleteWebhook(@Body() body: { drop_pending_updates?: boolean }) {
+    return await this.botService.deleteWebhook(body.drop_pending_updates ?? true);
+  }
 }

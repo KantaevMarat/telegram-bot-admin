@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { usersApi, balanceApi } from '../api/client';
-import { Search, Filter, Eye, DollarSign, TrendingUp, Users, X, Plus, Minus, ChevronLeft, ChevronRight, User, LayoutGrid, LayoutList, List, Lock, Unlock, ShieldOff, Shield, Download, Check, XCircle } from 'lucide-react';
+import { usersApi, balanceApi, ranksApi } from '../api/client';
+import { Search, Filter, Eye, DollarSign, TrendingUp, Users, X, Plus, Minus, ChevronLeft, ChevronRight, User, LayoutGrid, LayoutList, List, Lock, Unlock, ShieldOff, Shield, Download, Check, XCircle, Award, Circle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSyncRefetch } from '../hooks/useSync';
 
@@ -17,7 +17,7 @@ export default function UsersPage() {
   const [showBalanceHistory, setShowBalanceHistory] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
-  const [sortBy, setSortBy] = useState<'registered_at' | 'balance_usdt' | 'tasks_completed' | 'total_earned' | 'first_name'>('registered_at');
+  const [sortBy, setSortBy] = useState<'registered_at' | 'balance_usdt' | 'tasks_completed' | 'total_earned' | 'first_name' | 'rank'>('registered_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [viewMode, setViewMode] = useState<'table' | 'list' | 'cards'>('table');
 
@@ -47,6 +47,26 @@ export default function UsersPage() {
     queryKey: ['balance-logs', selectedUser?.id],
     queryFn: () => selectedUser ? usersApi.getBalanceLogs(selectedUser.id, 20) : [],
     enabled: !!selectedUser?.id && showBalanceHistory,
+  });
+
+  // Load rank for selected user in modal
+  const { data: selectedUserRank } = useQuery({
+    queryKey: ['user-rank-detail', selectedUser?.id],
+    queryFn: async () => {
+      if (!selectedUser?.id) return null;
+      try {
+        const response = await ranksApi.getUserRank(selectedUser.id);
+        const rankData = response.rank || response;
+        return {
+          current_rank: rankData.current_rank || 'stone',
+          bonus_percentage: rankData.bonus_percentage || 0,
+          ...rankData
+        };
+      } catch (error) {
+        return { current_rank: 'stone', bonus_percentage: 0 };
+      }
+    },
+    enabled: !!selectedUser?.id && showModal,
   });
 
   const balanceMutation = useMutation({
@@ -181,12 +201,94 @@ export default function UsersPage() {
   const totalPages = data?.totalPages || 1;
   const users = Array.isArray(data) ? data : (data?.data || []);
 
+  // Get ranks for all users
+  const { data: userRanksMap, isLoading: ranksLoading } = useQuery({
+    queryKey: ['user-ranks', users.map((u: any) => u.id).join(',')],
+    queryFn: async () => {
+      const ranks: Record<string, any> = {};
+      console.log(`📊 Loading ranks for ${users.length} users...`);
+      await Promise.all(
+        users.map(async (user: any) => {
+          try {
+            const response = await ranksApi.getUserRank(user.id);
+            console.log(`✅ Rank response for user ${user.id} (${user.username || user.tg_id}):`, response);
+            // API returns { rank: {...}, progress: {...} }
+            const rankData = response.rank || response;
+            const currentRank = rankData.current_rank || 'stone';
+            ranks[user.id] = {
+              current_rank: currentRank, // Keep original case from API
+              bonus_percentage: rankData.bonus_percentage || 0,
+              ...rankData
+            };
+            console.log(`✅ Processed rank for user ${user.id}: current_rank="${currentRank}", full data:`, ranks[user.id]);
+          } catch (error: any) {
+            console.warn(`⚠️ Failed to load rank for user ${user.id} (${user.username || user.tg_id}):`, error?.response?.data || error?.message);
+            // If rank not found, set default
+            ranks[user.id] = { current_rank: 'stone', bonus_percentage: 0 };
+          }
+        })
+      );
+      console.log('📊 All ranks loaded:', ranks);
+      return ranks;
+    },
+    enabled: users.length > 0,
+    staleTime: 30000, // Cache for 30 seconds
+  });
+
+  // Function to get rank badge
+  const getRankBadge = (rank: string) => {
+    // Normalize rank to uppercase for comparison
+    const normalizedRank = (rank || '').toUpperCase();
+    
+    const rankInfo: Record<string, { icon: JSX.Element; name: string; color: string }> = {
+      STONE: { icon: <Circle size={14} />, name: 'Камень', color: 'var(--text-secondary)' },
+      BRONZE: { icon: <span>🥉</span>, name: 'Бронза', color: '#cd7f32' },
+      SILVER: { icon: <span>🥈</span>, name: 'Серебро', color: '#c0c0c0' },
+      GOLD: { icon: <span>🥇</span>, name: 'Золото', color: '#ffd700' },
+      PLATINUM: { icon: <span>💎</span>, name: 'Платина', color: '#e5e4e2' },
+    };
+
+    const info = rankInfo[normalizedRank] || rankInfo.STONE;
+    
+    return (
+      <span style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        padding: '4px 8px',
+        borderRadius: 'var(--radius-sm)',
+        fontSize: 'var(--font-size-xs)',
+        fontWeight: 'var(--font-weight-medium)',
+        backgroundColor: 'var(--bg-secondary)',
+        color: info.color,
+        border: `1px solid ${info.color}40`,
+      }}>
+        {info.icon}
+        <span>{info.name}</span>
+      </span>
+    );
+  };
+
   // Sort users
   const sortedUsers = [...users].sort((a: any, b: any) => {
     let aValue = a[sortBy];
     let bValue = b[sortBy];
 
-    if (sortBy === 'registered_at') {
+    if (sortBy === 'rank') {
+      // Sort by rank: stone < bronze < silver < gold < platinum
+      const rankOrder: Record<string, number> = {
+        stone: 0,
+        bronze: 1,
+        silver: 2,
+        gold: 3,
+        platinum: 4,
+      };
+      const aRank = (userRanksMap?.[a.id]?.current_rank || 'stone').toLowerCase();
+      const bRank = (userRanksMap?.[b.id]?.current_rank || 'stone').toLowerCase();
+      aValue = rankOrder[aRank] || 0;
+      bValue = rankOrder[bRank] || 0;
+      return sortOrder === 'asc' ? aValue - bValue : bValue - aValue;
+    } else if (sortBy === 'registered_at') {
       aValue = new Date(aValue).getTime();
       bValue = new Date(bValue).getTime();
     } else if (sortBy === 'first_name') {
@@ -456,6 +558,19 @@ export default function UsersPage() {
                 </th>
                 <th className="users-table__cell users-table__cell--tg-id">Telegram ID</th>
                 <th 
+                  className="users-table__cell users-table__cell--sortable"
+                  onClick={() => {
+                    if (sortBy === 'rank') {
+                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    } else {
+                      setSortBy('rank');
+                      setSortOrder('desc');
+                    }
+                  }}
+                >
+                  Ранг {sortBy === 'rank' && (sortOrder === 'asc' ? '↑' : '↓')}
+                </th>
+                <th 
                   className="users-table__cell users-table__cell--sortable users-table__cell--balance"
                   onClick={() => {
                     if (sortBy === 'balance_usdt') {
@@ -502,14 +617,14 @@ export default function UsersPage() {
               {isLoading && users.length === 0 ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i} className="users-table__row">
-                    <td colSpan={8} className="users-table__cell users-table__cell--loading">
+                    <td colSpan={9} className="users-table__cell users-table__cell--loading">
                        <div className="loading-skeleton"></div>
                     </td>
                   </tr>
                 ))
               ) : users.length === 0 ? (
                 <tr className="users-table__row">
-                  <td colSpan={8} className="users-table__cell users-table__cell--empty">
+                  <td colSpan={9} className="users-table__cell users-table__cell--empty">
                     Пользователи не найдены
                   </td>
                 </tr>
@@ -536,6 +651,15 @@ export default function UsersPage() {
                     </td>
                     <td className="users-table__cell users-table__cell--tg-id">
                       <span className="tg-id">{user.tg_id}</span>
+                    </td>
+                    <td className="users-table__cell">
+                      {ranksLoading ? (
+                        <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-xs)' }}>Загрузка...</span>
+                      ) : userRanksMap?.[user.id] ? (
+                        getRankBadge(userRanksMap[user.id].current_rank || 'stone')
+                      ) : (
+                        <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-xs)' }}>—</span>
+                      )}
                     </td>
                     <td className="users-table__cell users-table__cell--balance">
                       <span className="balance-value">
@@ -612,9 +736,12 @@ export default function UsersPage() {
                       <h3 className="user-card__name">{user.first_name || 'Без имени'}</h3>
                       <p className="user-card__username">@{user.username || 'нет username'}</p>
                     </div>
-                    <span className={`badge ${user.status === 'active' ? 'badge--success' : 'badge--error'}`}>
-                      {user.status === 'active' ? 'Активен' : 'Заблокирован'}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
+                      {userRanksMap?.[user.id] && getRankBadge(userRanksMap[user.id].current_rank)}
+                      <span className={`badge ${user.status === 'active' ? 'badge--success' : 'badge--error'}`}>
+                        {user.status === 'active' ? 'Активен' : 'Заблокирован'}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="user-card__stats">
@@ -633,6 +760,19 @@ export default function UsersPage() {
                       <span className="user-card__stat-label">Заданий:</span>
                       <span className="user-card__stat-value">{user.tasks_completed || 0}</span>
                     </div>
+                    {userRanksMap?.[user.id] && (
+                      <div className="user-card__stat">
+                        <Award size={16} />
+                        <span className="user-card__stat-label">Ранг:</span>
+                        <span className="user-card__stat-value" style={{ fontSize: 'var(--font-size-sm)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          {(userRanksMap[user.id].current_rank || '').toLowerCase() === 'stone' && <><Circle size={14} /> Камень</>}
+                          {(userRanksMap[user.id].current_rank || '').toLowerCase() === 'bronze' && <>🥉 Бронза</>}
+                          {(userRanksMap[user.id].current_rank || '').toLowerCase() === 'silver' && <>🥈 Серебро</>}
+                          {(userRanksMap[user.id].current_rank || '').toLowerCase() === 'gold' && <>🥇 Золото</>}
+                          {(userRanksMap[user.id].current_rank || '').toLowerCase() === 'platinum' && <>💎 Платина</>}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="user-card__meta">
@@ -697,9 +837,12 @@ export default function UsersPage() {
                       <h3 className="user-card__name">{user.first_name || 'Без имени'}</h3>
                       <p className="user-card__username">@{user.username || 'нет username'}</p>
                     </div>
-                    <span className={`badge ${user.status === 'active' ? 'badge--success' : 'badge--error'}`}>
-                      {user.status === 'active' ? 'Активен' : 'Заблокирован'}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
+                      {userRanksMap?.[user.id] && getRankBadge(userRanksMap[user.id].current_rank)}
+                      <span className={`badge ${user.status === 'active' ? 'badge--success' : 'badge--error'}`}>
+                        {user.status === 'active' ? 'Активен' : 'Заблокирован'}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="user-card__stats">
@@ -718,6 +861,19 @@ export default function UsersPage() {
                       <span className="user-card__stat-label">Заданий:</span>
                       <span className="user-card__stat-value">{user.tasks_completed || 0}</span>
                     </div>
+                    {userRanksMap?.[user.id] && (
+                      <div className="user-card__stat">
+                        <Award size={16} />
+                        <span className="user-card__stat-label">Ранг:</span>
+                        <span className="user-card__stat-value" style={{ fontSize: 'var(--font-size-sm)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          {(userRanksMap[user.id].current_rank || '').toLowerCase() === 'stone' && <><Circle size={14} /> Камень</>}
+                          {(userRanksMap[user.id].current_rank || '').toLowerCase() === 'bronze' && <>🥉 Бронза</>}
+                          {(userRanksMap[user.id].current_rank || '').toLowerCase() === 'silver' && <>🥈 Серебро</>}
+                          {(userRanksMap[user.id].current_rank || '').toLowerCase() === 'gold' && <>🥇 Золото</>}
+                          {(userRanksMap[user.id].current_rank || '').toLowerCase() === 'platinum' && <>💎 Платина</>}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="user-card__meta">
@@ -849,6 +1005,34 @@ export default function UsersPage() {
                     <span className="user-details__label">Статус:</span>
                     <span className={`badge ${selectedUser.status === 'active' ? 'badge--success' : 'badge--error'}`}>
                       {selectedUser.status}
+                    </span>
+                  </div>
+                  <div className="user-details__row">
+                    <span className="user-details__label">Ранг:</span>
+                    <span className="user-details__value" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {selectedUserRank ? (
+                        <>
+                          {selectedUserRank.current_rank === 'platinum' && <span style={{ fontSize: '20px' }}>💎</span>}
+                          {selectedUserRank.current_rank === 'gold' && <span style={{ fontSize: '20px' }}>🥇</span>}
+                          {selectedUserRank.current_rank === 'silver' && <span style={{ fontSize: '20px' }}>🥈</span>}
+                          {selectedUserRank.current_rank === 'bronze' && <span style={{ fontSize: '20px' }}>🥉</span>}
+                          {selectedUserRank.current_rank === 'stone' && <Circle size={16} />}
+                          <span style={{ fontWeight: 'var(--font-weight-semibold)' }}>
+                            {selectedUserRank.current_rank === 'platinum' && 'Платина'}
+                            {selectedUserRank.current_rank === 'gold' && 'Золото'}
+                            {selectedUserRank.current_rank === 'silver' && 'Серебро'}
+                            {selectedUserRank.current_rank === 'bronze' && 'Бронза'}
+                            {selectedUserRank.current_rank === 'stone' && 'Камень'}
+                          </span>
+                          {selectedUserRank.bonus_percentage > 0 && (
+                            <span className="badge badge--success" style={{ marginLeft: '4px' }}>
+                              +{selectedUserRank.bonus_percentage}% бонус
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span style={{ color: 'var(--text-tertiary)' }}>Загрузка...</span>
+                      )}
                     </span>
                   </div>
                 </div>

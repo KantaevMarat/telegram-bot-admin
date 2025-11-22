@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tasksApi } from '../api/client';
-import { CheckSquare, Plus, Edit, Trash2, X, Upload, TrendingUp, DollarSign, Check, XCircle, LayoutGrid, LayoutList } from 'lucide-react';
+import { CheckSquare, Plus, Edit, Trash2, X, Upload, TrendingUp, DollarSign, Check, XCircle, LayoutGrid, LayoutList, List, AlertCircle, Link as LinkIcon, Clock, Target } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSyncRefetch } from '../hooks/useSync';
 
@@ -15,14 +15,25 @@ interface Task {
   media_url?: string;
   channel_id?: string;
   task_type?: string;
+  command?: string;
+  min_completion_time?: number;
   active: boolean;
   completions_count: number;
+  available_for?: string;
+  target_ranks?: string;
+  rank_stats?: {
+    stone: number;
+    bronze: number;
+    silver: number;
+    gold: number;
+    platinum: number;
+  };
 }
 
 export default function TasksPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'list' | 'cards'>('table');
   
   const [formData, setFormData] = useState({
     title: '',
@@ -33,8 +44,13 @@ export default function TasksPage() {
     media_url: '',
     channel_id: '',
     task_type: 'subscription',
+    command: '',
+    min_completion_time: 0,
     active: true,
+    available_for: 'all',
+    target_ranks: '',
   });
+  const [selectedRanks, setSelectedRanks] = useState<string[]>([]);
 
   const queryClient = useQueryClient();
 
@@ -86,13 +102,27 @@ export default function TasksPage() {
       media_url: '',
       channel_id: '',
       task_type: 'subscription',
+      command: '',
+      min_completion_time: 0,
       active: true,
+      available_for: 'all',
+      target_ranks: '',
     });
+    setSelectedRanks([]);
     setShowModal(true);
   };
 
   const handleEditTask = (task: Task) => {
     setEditingTask(task);
+    let ranks: string[] = [];
+    if (task.target_ranks) {
+      try {
+        ranks = JSON.parse(task.target_ranks);
+      } catch (e) {
+        ranks = [];
+      }
+    }
+    setSelectedRanks(ranks);
     setFormData({
       title: task.title,
       description: task.description,
@@ -102,7 +132,11 @@ export default function TasksPage() {
       media_url: task.media_url || '',
       channel_id: task.channel_id || '',
       task_type: task.task_type || 'subscription',
+      command: task.command || '',
+      min_completion_time: task.min_completion_time || 0,
       active: task.active,
+      available_for: task.available_for || 'all',
+      target_ranks: task.target_ranks || '',
     });
     setShowModal(true);
   };
@@ -119,18 +153,48 @@ export default function TasksPage() {
       media_url: '',
       channel_id: '',
       task_type: 'subscription',
+      command: '',
+      min_completion_time: 0,
       active: true,
+      available_for: 'all',
+      target_ranks: '',
     });
+    setSelectedRanks([]);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (editingTask) {
-      updateMutation.mutate({ id: editingTask.id, data: formData });
-    } else {
-      createMutation.mutate(formData);
+    // Валидация: если выбрано "ranks", должен быть выбран хотя бы один ранг
+    if (formData.available_for === 'ranks' && selectedRanks.length === 0) {
+      toast.error('Выберите хотя бы один ранг для задания');
+      return;
     }
+    
+    const submitData = { ...formData };
+    
+    // Если выбраны ранги, сохраняем их как JSON
+    if (formData.available_for === 'ranks' && selectedRanks.length > 0) {
+      submitData.target_ranks = JSON.stringify(selectedRanks);
+    } else {
+      submitData.target_ranks = '';
+    }
+    
+    if (editingTask) {
+      updateMutation.mutate({ id: editingTask.id, data: submitData });
+    } else {
+      createMutation.mutate(submitData);
+    }
+  };
+
+  const toggleRank = (rank: string) => {
+    setSelectedRanks(prev => {
+      if (prev.includes(rank)) {
+        return prev.filter(r => r !== rank);
+      } else {
+        return [...prev, rank];
+      }
+    });
   };
 
   const handleDelete = (id: string) => {
@@ -176,6 +240,13 @@ export default function TasksPage() {
               title="Табличный вид"
             >
               <LayoutList size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`btn btn--secondary btn--sm btn--icon ${viewMode === 'list' ? 'btn--active' : ''}`}
+              title="Списочный вид"
+            >
+              <List size={18} />
             </button>
             <button
               onClick={() => setViewMode('cards')}
@@ -242,7 +313,7 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Tasks Table or Cards */}
+      {/* Tasks Table, List or Cards */}
       {viewMode === 'table' ? (
         <div className="table-responsive">
           <div className="table-container">
@@ -252,6 +323,7 @@ export default function TasksPage() {
                 <th className="table__cell">Задание</th>
                 <th className="table__cell">Награда</th>
                 <th className="table__cell">Выполнений</th>
+                <th className="table__cell">Ранги</th>
                 <th className="table__cell table__cell--center">Статус</th>
                 <th className="table__cell table__cell--center">Действия</th>
               </tr>
@@ -259,7 +331,7 @@ export default function TasksPage() {
             <tbody className="table__body">
               {tasks.length === 0 ? (
                 <tr className="table__row">
-                  <td colSpan={5} className="table__cell table__cell--empty">
+                  <td colSpan={6} className="table__cell table__cell--empty">
                     Задания не найдены
                   </td>
                 </tr>
@@ -342,6 +414,89 @@ export default function TasksPage() {
                         {task.completions_count || 0}
                       </div>
                     </td>
+                    <td className="table__cell">
+                      {task.rank_stats ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                          {task.rank_stats.platinum > 0 && (
+                            <span style={{ 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '4px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                              color: 'white',
+                              fontSize: 'var(--font-size-xs)',
+                              fontWeight: 'var(--font-weight-semibold)'
+                            }}>
+                              💎 {task.rank_stats.platinum}
+                            </span>
+                          )}
+                          {task.rank_stats.gold > 0 && (
+                            <span style={{ 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '4px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: '#fbbf24',
+                              color: 'white',
+                              fontSize: 'var(--font-size-xs)',
+                              fontWeight: 'var(--font-weight-semibold)'
+                            }}>
+                              🥇 {task.rank_stats.gold}
+                            </span>
+                          )}
+                          {task.rank_stats.silver > 0 && (
+                            <span style={{ 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '4px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: '#9ca3af',
+                              color: 'white',
+                              fontSize: 'var(--font-size-xs)',
+                              fontWeight: 'var(--font-weight-semibold)'
+                            }}>
+                              🥈 {task.rank_stats.silver}
+                            </span>
+                          )}
+                          {task.rank_stats.bronze > 0 && (
+                            <span style={{ 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '4px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: '#cd7f32',
+                              color: 'white',
+                              fontSize: 'var(--font-size-xs)',
+                              fontWeight: 'var(--font-weight-semibold)'
+                            }}>
+                              🥉 {task.rank_stats.bronze}
+                            </span>
+                          )}
+                          {task.rank_stats.stone > 0 && (
+                            <span style={{ 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '4px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: '#6b7280',
+                              color: 'white',
+                              fontSize: 'var(--font-size-xs)',
+                              fontWeight: 'var(--font-weight-semibold)'
+                            }}>
+                              🪨 {task.rank_stats.stone}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-size-sm)' }}>—</span>
+                      )}
+                    </td>
                     <td className="table__cell table__cell--center">
                       <span className={`badge ${task.active ? 'badge--success' : 'badge--danger'}`}>
                         {task.active ? <><Check size={14} /> Активно</> : <><XCircle size={14} /> Неактивно</>}
@@ -372,6 +527,65 @@ export default function TasksPage() {
             </tbody>
           </table>
           </div>
+        </div>
+      ) : viewMode === 'list' ? (
+        <div className="list-container">
+          {tasks.length === 0 ? (
+            <div className="empty-state">
+              <CheckSquare size={48} />
+              <p>Задания не найдены</p>
+            </div>
+          ) : (
+            tasks.map((task) => (
+              <div key={task.id} className="list-item">
+                <div className="list-item__icon">
+                  <CheckSquare size={20} />
+                </div>
+                <div className="list-item__content">
+                  <div className="list-item__header">
+                    <h3 className="list-item__title">{task.title}</h3>
+                    <span className={`badge ${task.active ? 'badge--success' : 'badge--danger'}`}>
+                      {task.active ? <><Check size={14} /> Активно</> : <><XCircle size={14} /> Неактивно</>}
+                    </span>
+                  </div>
+                  <p className="list-item__description">{task.description}</p>
+                  <div className="list-item__meta">
+                    <span className="list-item__meta-item">
+                      <DollarSign size={14} />
+                      ${task.reward_min || 0} - ${task.reward_max || 0}
+                    </span>
+                    <span className="list-item__meta-item">
+                      <TrendingUp size={14} />
+                      {task.completions_count || 0} выполнений
+                    </span>
+                    {task.rank_stats && (
+                      <span className="list-item__meta-item">
+                        <Target size={14} />
+                        Ранги: {(Object.values(task.rank_stats) as number[]).reduce((sum, val) => sum + val, 0)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="list-item__actions">
+                  <button
+                    onClick={() => handleEditTask(task)}
+                    className="btn btn--secondary btn--icon btn--sm"
+                    title="Редактировать"
+                  >
+                    <Edit size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(task.id)}
+                    className="btn btn--danger btn--icon btn--sm"
+                    title="Удалить"
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       ) : (
         <div className="cards-grid">
@@ -427,6 +641,101 @@ export default function TasksPage() {
                   )}
                 </div>
 
+                {task.rank_stats && (
+                  <div className="task-card__ranks" style={{ 
+                    marginTop: '12px', 
+                    paddingTop: '12px', 
+                    borderTop: '1px solid var(--border-color)',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '6px',
+                    alignItems: 'center'
+                  }}>
+                    <span style={{ 
+                      fontSize: 'var(--font-size-xs)', 
+                      color: 'var(--text-secondary)',
+                      marginRight: '4px'
+                    }}>
+                      Ранги:
+                    </span>
+                    {task.rank_stats.platinum > 0 && (
+                      <span style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        color: 'white',
+                        fontSize: 'var(--font-size-xs)',
+                        fontWeight: 'var(--font-weight-semibold)'
+                      }}>
+                        💎 {task.rank_stats.platinum}
+                      </span>
+                    )}
+                    {task.rank_stats.gold > 0 && (
+                      <span style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: '#fbbf24',
+                        color: 'white',
+                        fontSize: 'var(--font-size-xs)',
+                        fontWeight: 'var(--font-weight-semibold)'
+                      }}>
+                        🥇 {task.rank_stats.gold}
+                      </span>
+                    )}
+                    {task.rank_stats.silver > 0 && (
+                      <span style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: '#9ca3af',
+                        color: 'white',
+                        fontSize: 'var(--font-size-xs)',
+                        fontWeight: 'var(--font-weight-semibold)'
+                      }}>
+                        🥈 {task.rank_stats.silver}
+                      </span>
+                    )}
+                    {task.rank_stats.bronze > 0 && (
+                      <span style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: '#cd7f32',
+                        color: 'white',
+                        fontSize: 'var(--font-size-xs)',
+                        fontWeight: 'var(--font-weight-semibold)'
+                      }}>
+                        🥉 {task.rank_stats.bronze}
+                      </span>
+                    )}
+                    {task.rank_stats.stone > 0 && (
+                      <span style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: '#6b7280',
+                        color: 'white',
+                        fontSize: 'var(--font-size-xs)',
+                        fontWeight: 'var(--font-weight-semibold)'
+                      }}>
+                        🪨 {task.rank_stats.stone}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 <div className="task-card__actions">
                   <button
                     onClick={() => handleEditTask(task)}
@@ -469,139 +778,397 @@ export default function TasksPage() {
             </div>
             
             <div className="modal__body">
-              <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div className="form-group">
-                  <label className="form-label">Название задания *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={formData.title}
-                    onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                    placeholder="Введите название задания"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Описание *</label>
-                  <textarea
-                    className="form-textarea"
-                    value={formData.description}
-                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="Опишите задание для пользователей"
-                    rows={4}
-                    required
-                  />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div className="form-group">
-                    <label className="form-label">Минимальная награда (USDT) *</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={formData.reward_min}
-                      onChange={(e) => setFormData(prev => ({ ...prev, reward_min: parseFloat(e.target.value) || 0 }))}
-                      placeholder="0.00"
-                      min="0"
-                      step="0.01"
-                      required
-                    />
+              <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                
+                {/* Секция 1: Основная информация */}
+                <div style={{ 
+                  padding: '16px', 
+                  background: 'var(--card-bg)', 
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid var(--border)'
+                }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    marginBottom: '16px',
+                    color: 'var(--accent)'
+                  }}>
+                    <Target size={20} />
+                    <h3 style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-semibold)' }}>
+                      Основная информация
+                    </h3>
                   </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Максимальная награда (USDT) *</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={formData.reward_max}
-                      onChange={(e) => setFormData(prev => ({ ...prev, reward_max: parseFloat(e.target.value) || 0 }))}
-                      placeholder="0.00"
-                      min="0"
-                      step="0.01"
-                      required
-                    />
-                  </div>
-                </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div className="form-group">
+                      <label className="form-label">Название задания *</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={formData.title}
+                        onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                        placeholder="Например: Подпишись на наш канал"
+                        required
+                      />
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        Краткое и понятное название, которое увидят пользователи
+                      </div>
+                    </div>
 
-                <div className="form-group">
-                  <label className="form-label">Ссылка на действие</label>
-                  <input
-                    type="url"
-                    className="form-input"
-                    value={formData.action_url}
-                    onChange={(e) => setFormData(prev => ({ ...prev, action_url: e.target.value }))}
-                    placeholder="https://example.com"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">URL медиафайла</label>
-                  <div className="search-input">
-                    <Upload size={18} className="search-input__icon" />
-                    <input
-                      type="url"
-                      className="search-input__field"
-                      value={formData.media_url}
-                      onChange={(e) => setFormData(prev => ({ ...prev, media_url: e.target.value }))}
-                      placeholder="https://example.com/image.jpg"
-                    />
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div className="form-group">
-                    <label className="form-label">ID канала Telegram</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={formData.channel_id}
-                      onChange={(e) => setFormData(prev => ({ ...prev, channel_id: e.target.value }))}
-                      placeholder="@channel или -1001234567890"
-                    />
-                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                      Для проверки подписки. Бот должен быть админом канала!
+                    <div className="form-group">
+                      <label className="form-label">Описание *</label>
+                      <textarea
+                        className="form-textarea"
+                        value={formData.description}
+                        onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                        placeholder="Опишите, что нужно сделать пользователю для выполнения задания"
+                        rows={4}
+                        required
+                      />
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        Детальное описание задания и инструкции для пользователя
+                      </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Секция 2: Тип задания и настройки */}
+                <div style={{ 
+                  padding: '16px', 
+                  background: 'var(--card-bg)', 
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid var(--border)'
+                }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    marginBottom: '16px',
+                    color: 'var(--info)'
+                  }}>
+                    <CheckSquare size={20} />
+                    <h3 style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-semibold)' }}>
+                      Тип и настройки задания
+                    </h3>
+                  </div>
 
                   <div className="form-group">
-                    <label className="form-label">Тип задания</label>
+                    <label className="form-label">Тип задания *</label>
                     <select
                       className="form-input"
                       value={formData.task_type}
                       onChange={(e) => setFormData(prev => ({ ...prev, task_type: e.target.value }))}
+                      style={{ cursor: 'pointer' }}
                     >
-                      <option value="subscription">Подписка на канал</option>
-                      <option value="action">Действие (без проверки)</option>
-                      <option value="manual">Ручная проверка</option>
+                      <option value="subscription">📢 Подписка на канал (автопроверка)</option>
+                      <option value="action">⚡ Простое действие (без проверки)</option>
+                      <option value="manual">✋ Ручная проверка админом</option>
                     </select>
+                    <div style={{ 
+                      fontSize: 'var(--font-size-xs)', 
+                      color: 'var(--text-tertiary)', 
+                      marginTop: '6px',
+                      padding: '8px 12px',
+                      background: 'var(--warning-light)',
+                      borderRadius: 'var(--radius-md)',
+                      display: 'flex',
+                      gap: '8px',
+                      alignItems: 'flex-start'
+                    }}>
+                      <AlertCircle size={14} style={{ marginTop: '2px', flexShrink: 0 }} />
+                      <div>
+                        {formData.task_type === 'subscription' && 
+                          'Бот автоматически проверит подписку на канал. Укажите ID канала ниже.'
+                        }
+                        {formData.task_type === 'action' && 
+                          'Задание завершается сразу после нажатия кнопки. Подходит для переходов по ссылкам.'
+                        }
+                        {formData.task_type === 'manual' && 
+                          'Требуется ручное подтверждение администратором. Для сложных заданий.'
+                        }
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Условные поля для подписки */}
+                  {formData.task_type === 'subscription' && (
+                    <div className="form-group" style={{ marginTop: '16px' }}>
+                      <label className="form-label">ID канала Telegram *</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={formData.channel_id}
+                        onChange={(e) => setFormData(prev => ({ ...prev, channel_id: e.target.value }))}
+                        placeholder="@channel или -1001234567890"
+                        required={formData.task_type === 'subscription'}
+                      />
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        ⚠️ Важно: Бот должен быть администратором канала для проверки подписки!
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Целевая аудитория */}
+                  <div className="form-group" style={{ marginTop: '16px' }}>
+                    <label className="form-label">Доступно для *</label>
+                    <select
+                      className="form-input"
+                      value={formData.available_for}
+                      onChange={(e) => {
+                        setFormData(prev => ({ ...prev, available_for: e.target.value }));
+                        if (e.target.value !== 'ranks') {
+                          setSelectedRanks([]);
+                        }
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <option value="all">👥 Для всех пользователей</option>
+                      <option value="platinum">💎 Только платиновая подписка</option>
+                      <option value="ranks">🏆 По рангам (выбрать конкретные)</option>
+                    </select>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                      {formData.available_for === 'all' && 'Задание будет доступно всем пользователям'}
+                      {formData.available_for === 'platinum' && 'Задание будет доступно только пользователям с активной платиновой подпиской'}
+                      {formData.available_for === 'ranks' && 'Выберите ранги, для которых будет доступно задание'}
+                    </div>
+                  </div>
+
+                  {/* Выбор рангов */}
+                  {formData.available_for === 'ranks' && (
+                    <div className="form-group" style={{ marginTop: '16px' }}>
+                      <label className="form-label">Выберите ранги *</label>
+                      <div style={{ 
+                        display: 'flex', 
+                        flexWrap: 'wrap', 
+                        gap: '8px',
+                        padding: '12px',
+                        background: 'var(--bg-secondary)',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border)'
+                      }}>
+                        {[
+                          { value: 'stone', label: '🪨 Камень', color: '#6b7280' },
+                          { value: 'bronze', label: '🥉 Бронза', color: '#cd7f32' },
+                          { value: 'silver', label: '🥈 Серебро', color: '#9ca3af' },
+                          { value: 'gold', label: '🥇 Золото', color: '#fbbf24' },
+                        ].map((rank) => (
+                          <button
+                            key={rank.value}
+                            type="button"
+                            onClick={() => toggleRank(rank.value)}
+                            style={{
+                              padding: '8px 16px',
+                              borderRadius: 'var(--radius-md)',
+                              border: `2px solid ${selectedRanks.includes(rank.value) ? rank.color : 'var(--border)'}`,
+                              background: selectedRanks.includes(rank.value) ? rank.color : 'transparent',
+                              color: selectedRanks.includes(rank.value) ? 'white' : 'var(--text-primary)',
+                              cursor: 'pointer',
+                              fontSize: 'var(--font-size-sm)',
+                              fontWeight: selectedRanks.includes(rank.value) ? 'var(--font-weight-semibold)' : 'var(--font-weight-normal)',
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            {rank.label}
+                          </button>
+                        ))}
+                      </div>
+                      {selectedRanks.length === 0 && (
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--error)', marginTop: '4px' }}>
+                          ⚠️ Выберите хотя бы один ранг
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="form-group" style={{ marginTop: '16px' }}>
+                    <label className="form-label">Ссылка для перехода {formData.task_type === 'action' ? '*' : ''}</label>
+                    <div className="search-input">
+                      <LinkIcon size={18} className="search-input__icon" />
+                      <input
+                        type="url"
+                        className="search-input__field"
+                        value={formData.action_url}
+                        onChange={(e) => setFormData(prev => ({ ...prev, action_url: e.target.value }))}
+                        placeholder="https://t.me/yourchannel"
+                        required={formData.task_type === 'action'}
+                      />
+                    </div>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                      Куда перенаправить пользователя (канал, группа, веб-сайт)
+                    </div>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    type="checkbox"
-                    id="active"
-                    checked={formData.active}
-                    onChange={(e) => setFormData(prev => ({ ...prev, active: e.target.checked }))}
-                  />
-                  <label htmlFor="active" className="form-label" style={{ margin: 0 }}>
-                    Активное задание
-                  </label>
+                {/* Секция 3: Награда */}
+                <div style={{ 
+                  padding: '16px', 
+                  background: 'var(--card-bg)', 
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid var(--border)'
+                }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    marginBottom: '16px',
+                    color: 'var(--success)'
+                  }}>
+                    <DollarSign size={20} />
+                    <h3 style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-semibold)' }}>
+                      Награда за выполнение
+                    </h3>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group">
+                      <label className="form-label">Минимум (USDT) *</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={formData.reward_min}
+                        onChange={(e) => setFormData(prev => ({ ...prev, reward_min: parseFloat(e.target.value) || 0 }))}
+                        placeholder="0.00"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Максимум (USDT) *</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={formData.reward_max}
+                        onChange={(e) => setFormData(prev => ({ ...prev, reward_max: parseFloat(e.target.value) || 0 }))}
+                        placeholder="0.00"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '8px' }}>
+                    💡 Награда будет начислена случайным образом в указанном диапазоне
+                  </div>
                 </div>
 
+                {/* Секция 4: Дополнительные настройки */}
+                <div style={{ 
+                  padding: '16px', 
+                  background: 'var(--card-bg)', 
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid var(--border)'
+                }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    marginBottom: '16px',
+                    color: 'var(--text-secondary)'
+                  }}>
+                    <Clock size={20} />
+                    <h3 style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-semibold)' }}>
+                      Дополнительные настройки
+                    </h3>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div className="form-group">
+                      <label className="form-label">⏱️ Минимальное время выполнения (минуты)</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        min="0"
+                        value={formData.min_completion_time}
+                        onChange={(e) => setFormData(prev => ({ ...prev, min_completion_time: parseInt(e.target.value) || 0 }))}
+                        placeholder="0"
+                      />
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        Кнопка подтверждения станет доступна через указанное время (0 = мгновенно)
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">📷 URL медиафайла (изображение/видео)</label>
+                      <div className="search-input">
+                        <Upload size={18} className="search-input__icon" />
+                        <input
+                          type="url"
+                          className="search-input__field"
+                          value={formData.media_url}
+                          onChange={(e) => setFormData(prev => ({ ...prev, media_url: e.target.value }))}
+                          placeholder="https://example.com/image.jpg"
+                        />
+                      </div>
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        Изображение или видео, которое будет показано в боте вместе с заданием
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">⌨️ Команда для активации</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={formData.command}
+                        onChange={(e) => setFormData(prev => ({ ...prev, command: e.target.value }))}
+                        placeholder="/tasks или task_123"
+                      />
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                        Команда бота, по которой откроется это задание (необязательно)
+                      </div>
+                    </div>
+
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '12px',
+                      padding: '12px',
+                      background: formData.active ? 'var(--success-light)' : 'var(--error-light)',
+                      borderRadius: 'var(--radius-md)'
+                    }}>
+                      <input
+                        type="checkbox"
+                        id="active"
+                        checked={formData.active}
+                        onChange={(e) => setFormData(prev => ({ ...prev, active: e.target.checked }))}
+                        style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                      />
+                      <label htmlFor="active" className="form-label" style={{ margin: 0, cursor: 'pointer', flex: 1 }}>
+                        <span style={{ fontWeight: 'var(--font-weight-semibold)' }}>
+                          {formData.active ? '✅ Активное задание' : '❌ Неактивное задание'}
+                        </span>
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                          {formData.active 
+                            ? 'Задание доступно для выполнения пользователям' 
+                            : 'Задание скрыто и недоступно для пользователей'
+                          }
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Кнопки действий */}
                 <div style={{ 
                   display: 'flex', 
                   gap: '12px', 
                   paddingTop: '16px',
-                  borderTop: '1px solid var(--border)'
+                  borderTop: '2px solid var(--border)'
                 }}>
                   <button
                     type="submit"
                     className="btn btn--primary"
                     disabled={createMutation.isPending || updateMutation.isPending}
+                    style={{ flex: 1 }}
                   >
-                    {editingTask ? 'Обновить' : 'Создать'}
+                    {createMutation.isPending || updateMutation.isPending ? (
+                      <>⏳ Сохранение...</>
+                    ) : (
+                      <>{editingTask ? '💾 Сохранить изменения' : '✨ Создать задание'}</>
+                    )}
                   </button>
                   
                   <button

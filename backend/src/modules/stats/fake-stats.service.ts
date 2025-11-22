@@ -129,15 +129,59 @@ export class FakeStatsService {
     const previousFake = await this.getLatestFakeStats();
     this.logger.log(`Previous fake stats: online=${previousFake.online}, active=${previousFake.active}`);
 
-    // Configuration parameters
-    const maxDeltaPercent = this.configService.get<number>('FAKE_STATS_MAX_DELTA_PERCENT', 15);
-    const trendMin = this.configService.get<number>('FAKE_STATS_TREND_MIN', -0.02);
-    const trendMax = this.configService.get<number>('FAKE_STATS_TREND_MAX', 0.03);
-    const noiseStdDev = this.configService.get<number>('FAKE_STATS_NOISE_STDDEV', 0.01);
+    // If database is empty (no real users), use default values with large random variations
+    if (realStats.users_count === 0) {
+      const defaultValues = {
+        online: 1250 + Math.floor(Math.random() * 600 - 300), // ±300 (950-1550)
+        active: 8420 + Math.floor(Math.random() * 2000 - 1000), // ±1000 (7420-9420)
+        paid_usdt: 45678.5 + (Math.random() * 6000 - 3000), // ±3000 (42678-48678)
+      };
+
+      const newFakeStats = this.fakeStatsRepo.create({
+        online: Math.max(800, defaultValues.online), // minimum 800
+        active: Math.max(5000, defaultValues.active), // minimum 5000
+        paid_usdt: Math.max(35000, Math.round(defaultValues.paid_usdt * 100) / 100), // minimum 35000
+      });
+
+      await this.fakeStatsRepo.save(newFakeStats);
+      this.logger.log(`✅ Fake stats updated (default values): online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);
+      
+      return newFakeStats;
+    }
+
+    // Default values for fake stats
+    const defaultValues = {
+      online: 1250,
+      active: 8420,
+      paid_usdt: 45678.5,
+    };
+
+    // If previous fake stats are too small (corrupted/invalid), use default values
+    // This happens when database was initialized with wrong values
+    const useDefaultOnline = previousFake.online < 100;
+    const useDefaultActive = previousFake.active < 100;
+    const useDefaultPaid = previousFake.paid_usdt < 1000;
+
+    const baseOnline = useDefaultOnline ? defaultValues.online : previousFake.online;
+    const baseActive = useDefaultActive ? defaultValues.active : previousFake.active;
+    const basePaid = useDefaultPaid ? defaultValues.paid_usdt : previousFake.paid_usdt;
+
+    if (useDefaultOnline || useDefaultActive || useDefaultPaid) {
+      this.logger.warn(
+        `⚠️ Previous fake stats are too small (online=${previousFake.online}, active=${previousFake.active}, paid=${previousFake.paid_usdt}). ` +
+        `Using default values as base (online=${baseOnline}, active=${baseActive}, paid=${basePaid})`
+      );
+    }
+
+    // Configuration parameters - increased for more noticeable changes
+    const maxDeltaPercent = this.configService.get<number>('FAKE_STATS_MAX_DELTA_PERCENT', 30);
+    const trendMin = this.configService.get<number>('FAKE_STATS_TREND_MIN', -0.08);
+    const trendMax = this.configService.get<number>('FAKE_STATS_TREND_MAX', 0.12);
+    const noiseStdDev = this.configService.get<number>('FAKE_STATS_NOISE_STDDEV', 0.05);
 
     // Generate new fake stats using smooth random walk
     const newFakeOnline = this.smoothRandomWalk(
-      previousFake.online,
+      baseOnline,
       realStats.users_count,
       maxDeltaPercent,
       trendMin,
@@ -146,7 +190,7 @@ export class FakeStatsService {
     );
 
     const newFakeActive = this.smoothRandomWalk(
-      previousFake.active,
+      baseActive,
       realStats.users_count,
       maxDeltaPercent,
       trendMin,
@@ -156,23 +200,49 @@ export class FakeStatsService {
 
     // For paid_usdt, prefer growth (70% chance of positive trend)
     const paidTrendMin = Math.random() < 0.7 ? 0 : trendMin;
-    const paidTrendMax = trendMax * 1.5; // Allow slightly higher growth for paid
+    const paidTrendMax = trendMax * 2; // Allow higher growth for paid (increased from 1.5 to 2)
 
     const newFakePaid = this.smoothRandomWalk(
-      previousFake.paid_usdt,
+      basePaid,
       realStats.total_earned,
       maxDeltaPercent,
       paidTrendMin,
       paidTrendMax,
-      noiseStdDev * 0.5, // Less volatility for money
+      noiseStdDev * 1.2, // Increased volatility for more noticeable changes
       true, // Only allow growth for paid stats
     );
 
+    // Log paid_usdt calculation details for debugging
+    const basePaidNum = Number(basePaid);
+    const newFakePaidNum = Number(newFakePaid);
+    const paidChangeBeforeRound = newFakePaidNum - basePaidNum;
+    const paidChangePercentBeforeRound = basePaidNum > 0 ? (paidChangeBeforeRound / basePaidNum * 100).toFixed(4) : '0.00';
+    this.logger.log(`💰 paid_usdt: base=${basePaidNum.toFixed(2)}, newBeforeRound=${newFakePaidNum.toFixed(4)}, change=${paidChangeBeforeRound.toFixed(4)} (${paidChangePercentBeforeRound}%)`);
+
     const newFakeStats = this.fakeStatsRepo.create({
-      online: Math.round(newFakeOnline),
-      active: Math.round(newFakeActive),
-      paid_usdt: Math.round(newFakePaid * 100) / 100,
+      online: Math.round(isNaN(newFakeOnline) ? defaultValues.online : newFakeOnline),
+      active: Math.round(isNaN(newFakeActive) ? defaultValues.active : newFakeActive),
+      paid_usdt: isNaN(newFakePaid) ? defaultValues.paid_usdt : Math.round(newFakePaid * 100) / 100,
     });
+
+    // Log after rounding
+    const paidAfterRound = Number(newFakeStats.paid_usdt);
+    const paidChangeAfterRound = paidAfterRound - basePaidNum;
+    const paidChangePercentAfterRound = basePaidNum > 0 ? (paidChangeAfterRound / basePaidNum * 100).toFixed(4) : '0.00';
+    this.logger.log(`💰 paid_usdt after round: ${paidAfterRound.toFixed(2)}, change=${paidChangeAfterRound.toFixed(2)} (${paidChangePercentAfterRound}%)`);
+
+    // Log changes for debugging (using base values for percentage calculation)
+    // Ensure all values are numbers (basePaidNum already declared above)
+    const previousPaidNum = Number(previousFake.paid_usdt);
+    const newPaidNum = Number(newFakeStats.paid_usdt);
+    
+    const onlineChangePercent = baseOnline > 0 ? ((newFakeStats.online - baseOnline) / baseOnline * 100).toFixed(2) : '0.00';
+    const activeChangePercent = baseActive > 0 ? ((newFakeStats.active - baseActive) / baseActive * 100).toFixed(2) : '0.00';
+    const paidChangePercent = basePaidNum > 0 ? ((newPaidNum - basePaidNum) / basePaidNum * 100).toFixed(2) : '0.00';
+    
+    this.logger.log(`📊 Base (used): online=${baseOnline}, active=${baseActive}, paid=${basePaidNum.toFixed(2)}`);
+    this.logger.log(`📊 Previous (from DB): online=${previousFake.online}, active=${previousFake.active}, paid=${previousPaidNum.toFixed(2)}`);
+    this.logger.log(`📊 New: online=${newFakeStats.online} (${onlineChangePercent}%), active=${newFakeStats.active} (${activeChangePercent}%), paid=${newPaidNum.toFixed(2)} (${paidChangePercent}%)`);
 
     await this.fakeStatsRepo.save(newFakeStats);
     this.logger.log(`✅ Fake stats updated: online=${newFakeStats.online}, active=${newFakeStats.active}, paid=${newFakeStats.paid_usdt}`);
@@ -192,28 +262,96 @@ export class FakeStatsService {
     noiseStdDev: number,
     onlyGrowth = false,
   ): number {
-    // Calculate target range (±maxDeltaPercent from real value)
-    const targetMin = realValue * (1 - maxDeltaPercent / 100);
-    const targetMax = realValue * (1 + maxDeltaPercent / 100);
+    // For fake stats, always use previousValue as base for variation
+    // Real value is only used as a reference, not as the base
+    const baseValue = previousValue;
+    
+    // Calculate variation range as percentage of previous value (not real value)
+    // This ensures we always get meaningful variations even when real stats are small
+    const variationPercent = maxDeltaPercent / 100;
+    const targetMin = baseValue * (1 - variationPercent);
+    const targetMax = baseValue * (1 + variationPercent);
 
-    // Generate trend (slight drift towards target)
+    // Generate trend (more significant drift)
     const trend = this.randomUniform(trendMin, trendMax);
-    const target = (targetMin + targetMax) / 2;
-    const drift = (target - previousValue) * 0.1; // Slow drift towards target
-
-    // Add noise
+    
+    // Add significant random variation (±5-15% of previous value)
+    const randomVariation = previousValue * this.randomUniform(-0.15, 0.15);
+    
+    // Add more significant noise
     const noise = this.randomGaussian(0, noiseStdDev * previousValue);
-
-    // Calculate new value
-    let newValue = previousValue + drift + trend * previousValue + noise;
+    
+    // Calculate new value with multiple sources of variation
+    let newValue = previousValue + trend * previousValue + randomVariation + noise;
 
     // Clamp to target range
     newValue = this.clamp(newValue, targetMin, targetMax);
 
-    // If only growth, ensure it's not less than previous
-    if (onlyGrowth && newValue < previousValue) {
-      newValue = previousValue * (1 + Math.abs(noise) * 0.5); // Small growth
-      newValue = this.clamp(newValue, previousValue, targetMax);
+    // ALWAYS ensure minimum change of at least 3-8% to make it VERY noticeable
+    const minChange = previousValue * 0.03; // 3% minimum
+    const actualChange = Math.abs(newValue - previousValue);
+    
+    if (actualChange < minChange && !onlyGrowth) {
+      // Force a noticeable change (3-8% of previous value)
+      const direction = Math.random() > 0.5 ? 1 : -1;
+      const forcedChange = previousValue * this.randomUniform(0.03, 0.08);
+      newValue = previousValue + direction * forcedChange;
+      newValue = this.clamp(newValue, targetMin, targetMax);
+    }
+
+    // If only growth, ensure it's not less than previous AND has noticeable change
+    if (onlyGrowth) {
+      if (newValue < previousValue) {
+        // Force growth (3-8% increase) if value decreased
+        const growth = previousValue * this.randomUniform(0.03, 0.08);
+        newValue = previousValue + growth;
+        newValue = this.clamp(newValue, previousValue, targetMax);
+      } else {
+        // Even if value increased, ensure minimum change for onlyGrowth (3-8%)
+        const actualChange = newValue - previousValue;
+        const minChangeForGrowth = previousValue * 0.03; // 3% minimum
+        if (actualChange < minChangeForGrowth) {
+          // Force a noticeable growth (3-8% increase)
+          const growth = previousValue * this.randomUniform(0.03, 0.08);
+          newValue = previousValue + growth;
+          newValue = this.clamp(newValue, previousValue, targetMax);
+        }
+      }
+    }
+
+    // Final check: if change is still too small, force a larger change
+    const finalChange = Math.abs(newValue - previousValue);
+    if (finalChange < previousValue * 0.02 && !onlyGrowth) {
+      const direction = Math.random() > 0.5 ? 1 : -1;
+      newValue = previousValue * (1 + direction * this.randomUniform(0.02, 0.06));
+      newValue = this.clamp(newValue, targetMin, targetMax);
+    }
+    
+    // For onlyGrowth, final check to ensure noticeable change
+    if (onlyGrowth) {
+      const finalChangeForGrowth = newValue - previousValue;
+      const absoluteMinChange = previousValue * 0.02; // 2% absolute minimum
+      if (finalChangeForGrowth < absoluteMinChange) {
+        // Force minimum growth
+        const forcedValue = previousValue * 1.02; // At least 2% growth
+        newValue = this.clamp(forcedValue, previousValue, targetMax);
+        // Log if we had to force growth
+        if (Math.abs(newValue - forcedValue) > 0.01) {
+          // This would indicate targetMax was too restrictive
+        }
+      }
+    }
+
+    // Final safety check: if newValue is NaN or invalid, use safe fallback
+    if (!isFinite(newValue) || isNaN(newValue)) {
+      // Fallback: simple growth for onlyGrowth, or simple variation otherwise
+      if (onlyGrowth) {
+        newValue = previousValue * 1.03; // 3% growth as fallback
+      } else {
+        newValue = previousValue * (1 + this.randomUniform(-0.05, 0.05)); // ±5% variation
+      }
+      // Ensure it's within bounds
+      newValue = this.clamp(newValue, targetMin, targetMax);
     }
 
     return newValue;
@@ -227,7 +365,7 @@ export class FakeStatsService {
 
     const totalEarnedResult = await this.userRepo
       .createQueryBuilder('user')
-      .select('COALESCE(SUM(user.earned), 0)', 'total')
+      .select('COALESCE(SUM(user.total_earned), 0)', 'total')
       .getRawOne();
 
     const totalEarned = parseFloat(totalEarnedResult?.total || '0');
@@ -261,10 +399,27 @@ export class FakeStatsService {
    * Generate Gaussian (normal) random number using Box-Muller transform
    */
   private randomGaussian(mean: number, stdDev: number): number {
-    const u1 = Math.random();
+    // Ensure u1 is not too close to 0 to avoid log(0) = -Infinity
+    let u1 = Math.random();
+    while (u1 <= 0 || u1 >= 1) {
+      u1 = Math.random();
+    }
+    // Ensure u1 is not too small to avoid numerical issues
+    if (u1 < 1e-10) {
+      u1 = 1e-10;
+    }
+    
     const u2 = Math.random();
     const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-    return mean + z0 * stdDev;
+    const result = mean + z0 * stdDev;
+    
+    // Validate result is not NaN or Infinity
+    if (!isFinite(result)) {
+      // Fallback to uniform distribution if Gaussian fails
+      return mean + (Math.random() - 0.5) * stdDev * 2;
+    }
+    
+    return result;
   }
 
   /**
@@ -274,3 +429,4 @@ export class FakeStatsService {
     return Math.max(min, Math.min(max, value));
   }
 }
+

@@ -11,13 +11,13 @@ export class Button {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar' })
+  @Column({ type: 'varchar', nullable: true })
   label: string;
 
   @Column({ type: 'varchar' })
-  action_type: string; // open_url, send_message, open_scenario, play_media, command
+  action_type: string; // command, message, url, scenario
 
-  @Column({ type: 'jsonb' })
+  @Column({ type: 'jsonb', nullable: true })
   action_payload: any;
 
   @Column({ type: 'int', default: 0 })
@@ -29,8 +29,14 @@ export class Button {
   @Column({ type: 'text', nullable: true })
   media_url: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  command: string; // Command to execute when button is clicked (e.g., /start)
+
   @Column({ type: 'boolean', default: true })
   active: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  admin_only: boolean; // If true, button is only visible to admins
 
   @CreateDateColumn()
   created_at: Date;

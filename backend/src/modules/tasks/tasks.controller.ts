@@ -49,4 +49,24 @@ export class TasksController {
   async remove(@Param('id') id: string) {
     return await this.tasksService.remove(id);
   }
+
+  // 📋 MODERATION ENDPOINTS
+
+  @Get('moderation/pending')
+  @ApiOperation({ summary: 'Get tasks pending review' })
+  async getPendingReview(@Query('status') status?: string, @Query('search') search?: string) {
+    return await this.tasksService.getPendingReview(status, search);
+  }
+
+  @Post('moderation/:userTaskId/approve')
+  @ApiOperation({ summary: 'Approve task submission' })
+  async approveTask(@Param('userTaskId') userTaskId: string) {
+    return await this.tasksService.approveTask(userTaskId);
+  }
+
+  @Post('moderation/:userTaskId/reject')
+  @ApiOperation({ summary: 'Reject task submission' })
+  async rejectTask(@Param('userTaskId') userTaskId: string, @Body() body?: { reason?: string }) {
+    return await this.tasksService.rejectTask(userTaskId, body?.reason);
+  }
 }

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { broadcastApi } from '../api/client';
+import { broadcastApi, mediaApi } from '../api/client';
 import toast from 'react-hot-toast';
-import { Send, Image, Clock, Users, BarChart, Calendar, Trash2, CheckCircle, XCircle, Loader, AlertCircle } from 'lucide-react';
+import { Send, Image, Clock, Users, BarChart, Calendar, Trash2, CheckCircle, XCircle, Loader, AlertCircle, Film, FileText, Upload, X } from 'lucide-react';
 
 interface Broadcast {
   id: string;
@@ -22,6 +22,8 @@ export default function BroadcastPage() {
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
   const [scheduledAt, setScheduledAt] = useState('');
   const [isScheduled, setIsScheduled] = useState(false);
 
@@ -42,6 +44,7 @@ export default function BroadcastPage() {
       }
       setText('');
       setMediaUrl('');
+      setSelectedFile(null);
       setScheduledAt('');
       setIsScheduled(false);
       queryClient.invalidateQueries({ queryKey: ['broadcasts'] });
@@ -66,10 +69,10 @@ export default function BroadcastPage() {
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!text.trim()) {
-      toast.error('Введите текст сообщения');
+    if (!text.trim() && !selectedFile) {
+      toast.error('Введите текст сообщения или выберите файл');
       return;
     }
     
@@ -78,9 +81,26 @@ export default function BroadcastPage() {
       return;
     }
 
+    let finalMediaUrl = mediaUrl;
+
+    // Загружаем файл если он выбран
+    if (selectedFile) {
+      try {
+        setUploadingFile(true);
+        const result = await mediaApi.uploadFile(selectedFile);
+        finalMediaUrl = result.url;
+      } catch (error) {
+        toast.error('Ошибка загрузки файла');
+        setUploadingFile(false);
+        return;
+      } finally {
+        setUploadingFile(false);
+      }
+    }
+
     createMutation.mutate({
       text,
-      media_urls: mediaUrl ? [mediaUrl] : [],
+      media_urls: finalMediaUrl ? [finalMediaUrl] : [],
       scheduled_at: isScheduled ? scheduledAt : undefined,
       batchSize: 30,
       throttle: 1000,
@@ -225,18 +245,168 @@ export default function BroadcastPage() {
 
             <div className="form-group">
               <label className="form-label">
-                URL медиафайла
+                Медиафайл (фото или видео)
               </label>
-              <div className="search-input">
-                <Image size={18} className="search-input__icon" />
-                <input
-                  type="url"
-                  className="search-input__field"
-                  value={mediaUrl}
-                  onChange={(e) => setMediaUrl(e.target.value)}
-                  placeholder="https://example.com/image.jpg"
-                />
+              
+              {/* Превью выбранного файла */}
+              {selectedFile && (
+                <div style={{
+                  marginBottom: '12px',
+                  padding: '12px',
+                  background: 'var(--bg-tertiary)',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                    {selectedFile.type.startsWith('image/') ? (
+                      <Image size={20} style={{ color: 'var(--accent)' }} />
+                    ) : selectedFile.type.startsWith('video/') ? (
+                      <Film size={20} style={{ color: 'var(--accent)' }} />
+                    ) : (
+                      <FileText size={20} style={{ color: 'var(--accent)' }} />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ 
+                        fontSize: 'var(--font-size-sm)', 
+                        fontWeight: 'var(--font-weight-medium)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {selectedFile.name}
+                      </div>
+                      <div style={{ 
+                        fontSize: 'var(--font-size-xs)', 
+                        color: 'var(--text-tertiary)',
+                        marginTop: '2px'
+                      }}>
+                        {(selectedFile.size / 1024 / 1024).toFixed(2)} МБ • {selectedFile.type.startsWith('image/') ? 'Фото' : selectedFile.type.startsWith('video/') ? 'Видео' : 'Файл'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedFile(null);
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      color: 'var(--text-tertiary)',
+                    }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+
+              {/* Кнопки выбора файла */}
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+                {/* Кнопка загрузки фото */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    input.onchange = (e: any) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        if (file.size > 50 * 1024 * 1024) {
+                          toast.error('Файл слишком большой (максимум 50 МБ)');
+                          return;
+                        }
+                        setSelectedFile(file);
+                        setMediaUrl('');
+                      }
+                    };
+                    input.click();
+                  }}
+                  disabled={uploadingFile || createMutation.isPending}
+                  className="btn btn--secondary"
+                  style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '12px 20px',
+                    minWidth: '180px',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <Image size={18} />
+                  <span>Загрузить фото</span>
+                </button>
+
+                {/* Кнопка загрузки видео */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'video/*';
+                    input.onchange = (e: any) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        if (file.size > 50 * 1024 * 1024) {
+                          toast.error('Файл слишком большой (максимум 50 МБ)');
+                          return;
+                        }
+                        setSelectedFile(file);
+                        setMediaUrl('');
+                      }
+                    };
+                    input.click();
+                  }}
+                  disabled={uploadingFile || createMutation.isPending}
+                  className="btn btn--secondary"
+                  style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '12px 20px',
+                    minWidth: '180px',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <Film size={18} />
+                  <span>Загрузить видео</span>
+                </button>
               </div>
+
+              {/* Или ввести URL */}
+              {!selectedFile && (
+                <div style={{ marginTop: '12px' }}>
+                  <div className="search-input">
+                    <Image size={18} className="search-input__icon" />
+                    <input
+                      type="url"
+                      className="search-input__field"
+                      value={mediaUrl}
+                      onChange={(e) => {
+                        setMediaUrl(e.target.value);
+                        setSelectedFile(null);
+                      }}
+                      placeholder="Или введите URL медиафайла..."
+                    />
+                  </div>
+                </div>
+              )}
+
+              <p style={{ 
+                margin: '8px 0 0 0', 
+                fontSize: 'var(--font-size-xs)', 
+                color: 'var(--text-tertiary)' 
+              }}>
+                📷 Фото: JPG, PNG, GIF • 🎬 Видео: MP4, MOV, AVI • Максимум 50 МБ
+              </p>
             </div>
 
             {/* Scheduled Checkbox */}
@@ -296,10 +466,10 @@ export default function BroadcastPage() {
               <button
                 type="submit"
                 className="btn btn--primary"
-                disabled={createMutation.isPending || !text.trim()}
+                disabled={createMutation.isPending || uploadingFile || (!text.trim() && !selectedFile)}
               >
                 <Send size={16} />
-                {createMutation.isPending ? 'Отправка...' : isScheduled ? 'Запланировать' : 'Отправить сейчас'}
+                {uploadingFile ? 'Загрузка...' : createMutation.isPending ? 'Отправка...' : isScheduled ? 'Запланировать' : 'Отправить сейчас'}
               </button>
               
               <button
@@ -307,11 +477,12 @@ export default function BroadcastPage() {
                 onClick={() => {
                   setText('');
                   setMediaUrl('');
+                  setSelectedFile(null);
                   setScheduledAt('');
                   setIsScheduled(false);
                 }}
                 className="btn btn--secondary"
-                disabled={createMutation.isPending}
+                disabled={createMutation.isPending || uploadingFile}
               >
                 Очистить
               </button>

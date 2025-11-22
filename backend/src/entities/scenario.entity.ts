@@ -23,11 +23,11 @@ export class Scenario {
   @Column({ type: 'jsonb', nullable: true })
   steps?: any[]; // Array of steps with conditions, messages, etc.
 
-  @Column({ type: 'boolean', default: true })
+  @Column({ type: 'boolean', default: true, name: 'active' })
   active: boolean;
 
-  @Column({ type: 'boolean', default: true, name: 'is_active' })
-  is_active: boolean;
+  @Column({ type: 'varchar', nullable: true })
+  media_url?: string;
 
   @CreateDateColumn()
   created_at: Date;

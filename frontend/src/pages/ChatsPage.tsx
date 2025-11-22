@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { chatsApi, mediaApi } from '../api/client';
 import { 
   MessageSquare, Send, User, Clock, Search, Filter, Image, Paperclip, 
-  X, FileText, Film, Check, CheckCheck, ArrowLeft, Loader2 
+  X, FileText, Film, Check, CheckCheck, ArrowLeft, Loader2, FileImage, Video, Trash
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSyncRefetch } from '../hooks/useSync';
@@ -23,6 +24,7 @@ interface Chat {
     from_admin: boolean;
   };
   unread_count: number;
+  media_count?: number;
 }
 
 interface Message {
@@ -48,6 +50,7 @@ const QUICK_REPLIES = [
 ];
 
 export default function ChatsPage() {
+  const [searchParams] = useSearchParams();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [messageText, setMessageText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -56,8 +59,11 @@ export default function ChatsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(true);
+  const [filterMediaOnly, setFilterMediaOnly] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -67,6 +73,18 @@ export default function ChatsPage() {
     queryFn: () => chatsApi.getChats(),
     refetchInterval: 5000,
   });
+
+  // Автоматически открыть чат если указан в URL
+  useEffect(() => {
+    const userId = searchParams.get('user');
+    if (userId && chats) {
+      const chat = chats.find((c: Chat) => c.user_id === userId);
+      if (chat) {
+        setSelectedUserId(userId);
+        setShowMobileSidebar(false);
+      }
+    }
+  }, [searchParams, chats]);
 
   // 🔄 Auto-refresh chats on new messages
   useSyncRefetch(['messages.created'], refetchChats);
@@ -153,15 +171,31 @@ export default function ChatsPage() {
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type?: 'photo' | 'video') => {
     const file = e.target.files?.[0];
-    if (file) {
-      // Проверка размера файла (макс 10 МБ)
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error('Файл слишком большой (максимум 10 МБ)');
-        return;
-      }
-      setSelectedFile(file);
+    if (!file) return;
+
+    // Проверка размера файла (макс 50 МБ)
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error('Файл слишком большой (максимум 50 МБ)');
+      return;
+    }
+
+    // Валидация типа файла
+    if (type === 'photo' && !file.type.startsWith('image/')) {
+      toast.error('Выберите файл изображения');
+      return;
+    }
+    if (type === 'video' && !file.type.startsWith('video/')) {
+      toast.error('Выберите видео файл');
+      return;
+    }
+
+    setSelectedFile(file);
+    
+    // Очистка input для возможности повторного выбора того же файла
+    if (e.target) {
+      e.target.value = '';
     }
   };
 
@@ -233,7 +267,33 @@ export default function ChatsPage() {
   };
 
   const getUserDisplayName = (chat: Chat) => {
-    return chat.user?.username || chat.user?.first_name || `User ${chat.user?.tg_id || chat.user_id}`;
+    const user = chat.user;
+    if (!user) return `ID: ${chat.user_id}`;
+    
+    if (user.username) {
+      return `@${user.username}`;
+    }
+    
+    const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ');
+    if (fullName) {
+      return fullName;
+    }
+    
+    return `ID: ${user.tg_id}`;
+  };
+  
+  const getUserSubtitle = (chat: Chat) => {
+    const user = chat.user;
+    if (!user) return null;
+    
+    // If username is shown, show name as subtitle
+    if (user.username) {
+      const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ');
+      return fullName || `ID: ${user.tg_id}`;
+    }
+    
+    // If name is shown, show ID as subtitle
+    return `ID: ${user.tg_id}`;
   };
 
   if (chatsLoading) {
@@ -319,6 +379,22 @@ export default function ChatsPage() {
                         </span>
                       )}
                     </div>
+                    <div className="chat-item__subtitle">
+                      <span>{getUserSubtitle(chat)}</span>
+                      {chat.media_count && chat.media_count > 0 && (
+                        <span style={{ 
+                          marginLeft: '8px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          color: 'var(--info)',
+                          fontSize: 'var(--font-size-xs)'
+                        }}>
+                          <Image size={12} />
+                          {chat.media_count}
+                        </span>
+                      )}
+                    </div>
                     {chat.last_message && (
                       <div className="chat-item__last-message">
                         {chat.last_message.from_admin && <span className="chat-item__you">Вы: </span>}
@@ -361,8 +437,29 @@ export default function ChatsPage() {
                   </div>
                   <div className="chat-window__user-id">
                     ID: {selectedChat?.user?.tg_id || selectedChat?.user_id}
+                    {selectedChat?.media_count && selectedChat.media_count > 0 && (
+                      <span style={{ 
+                        marginLeft: '8px',
+                        color: 'var(--info)',
+                      }}>
+                        • <Image size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> {selectedChat.media_count}
+                      </span>
+                    )}
                   </div>
                 </div>
+                
+                {/* Кнопка фильтрации медиафайлов */}
+                {selectedChat?.media_count && selectedChat.media_count > 0 && (
+                  <button
+                    className={`btn ${filterMediaOnly ? 'btn--primary' : 'btn--secondary'} btn--sm`}
+                    onClick={() => setFilterMediaOnly(!filterMediaOnly)}
+                    title={filterMediaOnly ? 'Показать все сообщения' : 'Показать только медиа'}
+                    style={{ marginLeft: 'auto' }}
+                  >
+                    <Image size={16} />
+                    {filterMediaOnly ? 'Все' : 'Медиа'}
+                  </button>
+                )}
               </div>
 
               {/* Сообщения */}
@@ -379,7 +476,9 @@ export default function ChatsPage() {
                     <p>Начните диалог с пользователем</p>
                   </div>
                 ) : (
-                  messages.map((msg: Message) => {
+                  messages
+                    .filter((msg: Message) => !filterMediaOnly || msg.media_url)
+                    .map((msg: Message) => {
                     const isFromAdmin = msg.from_admin_tg_id !== null && msg.from_admin_tg_id !== undefined;
                     return (
                     <div
@@ -461,49 +560,103 @@ export default function ChatsPage() {
 
               {/* Предпросмотр файла */}
               {selectedFile && (
-                <div className="file-preview">
-                  <div className="file-preview__content">
+                <div className="file-preview" style={{
+                  padding: '12px',
+                  background: 'var(--bg-secondary)',
+                  borderRadius: 'var(--radius-md)',
+                  marginBottom: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
                     {selectedFile.type.startsWith('image/') ? (
-                      <Image size={20} className="file-preview__icon" />
+                      <FileImage size={24} style={{ color: 'var(--accent)' }} />
                     ) : selectedFile.type.startsWith('video/') ? (
-                      <Film size={20} className="file-preview__icon" />
+                      <Video size={24} style={{ color: 'var(--accent)' }} />
                     ) : (
-                      <FileText size={20} className="file-preview__icon" />
+                      <FileText size={24} style={{ color: 'var(--accent)' }} />
                     )}
-                    <span className="file-preview__name">
-                      {selectedFile.name} <span className="file-preview__size">({(selectedFile.size / 1024).toFixed(1)} КБ)</span>
-                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 'var(--font-weight-semibold)', fontSize: 'var(--font-size-sm)' }}>
+                        {selectedFile.name}
+                      </div>
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
+                        {(selectedFile.size / 1024 / 1024).toFixed(2)} МБ
+                      </div>
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setSelectedFile(null)}
-                    className="btn btn--icon file-preview__remove"
+                    className="btn btn--danger btn--icon btn--sm"
                     title="Удалить файл"
                   >
-                    <X size={16} />
+                    <Trash size={16} />
                   </button>
                 </div>
               )}
 
               {/* Форма отправки */}
               <form onSubmit={handleSendMessage} className="chat-input">
+                {/* Скрытые input'ы для файлов */}
                 <input
                   ref={fileInputRef}
                   type="file"
-                  onChange={handleFileSelect}
+                  onChange={(e) => handleFileSelect(e)}
                   className="chat-input__file-input"
                   accept="image/*,video/*,.pdf,.doc,.docx,.txt"
+                  style={{ display: 'none' }}
+                />
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleFileSelect(e, 'photo')}
+                  className="chat-input__file-input"
+                  style={{ display: 'none' }}
+                />
+                <input
+                  ref={videoInputRef}
+                  type="file"
+                  accept="video/*"
+                  onChange={(e) => handleFileSelect(e, 'video')}
+                  className="chat-input__file-input"
+                  style={{ display: 'none' }}
                 />
                 
-                <button
-                  type="button"
-                  className="btn btn--icon chat-input__btn"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={sendMutation.isPending || uploadingFile}
-                  title="Прикрепить файл"
-                >
-                  <Paperclip size={20} />
-                </button>
+                {/* Кнопки для загрузки медиа */}
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button
+                    type="button"
+                    className="btn btn--icon chat-input__btn"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={sendMutation.isPending || uploadingFile}
+                    title="Загрузить фото"
+                  >
+                    <FileImage size={20} />
+                  </button>
+                  
+                  <button
+                    type="button"
+                    className="btn btn--icon chat-input__btn"
+                    onClick={() => videoInputRef.current?.click()}
+                    disabled={sendMutation.isPending || uploadingFile}
+                    title="Загрузить видео"
+                  >
+                    <Video size={20} />
+                  </button>
+                  
+                  <button
+                    type="button"
+                    className="btn btn--icon chat-input__btn"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sendMutation.isPending || uploadingFile}
+                    title="Прикрепить файл (документ)"
+                  >
+                    <Paperclip size={20} />
+                  </button>
+                </div>
 
                 <button
                   type="button"

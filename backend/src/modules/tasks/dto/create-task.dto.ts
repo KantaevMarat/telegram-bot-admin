@@ -57,6 +57,19 @@ export class CreateTaskDto {
   @IsString()
   task_type?: string;
 
+  @ApiProperty({ description: 'Command to execute task (e.g., /start_task)', required: false })
+  @IsOptional()
+  @IsString()
+  command?: string;
+
+  @ApiProperty({ description: 'Minimum completion time in minutes', required: false })
+  @IsOptional()
+  @Transform(({ value }) => (value !== undefined && typeof value === 'string' ? parseInt(value) : value))
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  min_completion_time?: number;
+
   @ApiProperty({ description: 'Cooldown in hours', required: false })
   @IsOptional()
   @Transform(({ value }) => (value !== undefined && typeof value === 'string' ? parseInt(value) : value))
@@ -68,4 +81,14 @@ export class CreateTaskDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiProperty({ description: 'Available for: all, platinum, ranks', required: false })
+  @IsOptional()
+  @IsString()
+  available_for?: string;
+
+  @ApiProperty({ description: 'Target ranks (JSON array) if available_for = ranks', required: false })
+  @IsOptional()
+  @IsString()
+  target_ranks?: string;
 }

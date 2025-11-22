@@ -28,7 +28,7 @@ export class AuthService {
   validateTelegramWebAppData(initData: string): any {
     this.logger.debug('Validating Telegram Web App data');
 
-    const botToken = this.configService.get('TELEGRAM_BOT_TOKEN');
+    const botToken = this.configService.get('CLIENT_TG_BOT_TOKEN') || this.configService.get('CLIENT_BOT_TOKEN');
 
     if (!botToken) {
       this.logger.error('Bot token not configured');
@@ -91,7 +91,7 @@ export class AuthService {
   }
 
   /**
-   * Login as admin (using ADMIN_BOT_TOKEN or TELEGRAM_BOT_TOKEN)
+   * Login as admin (using ADMIN_TG_BOT_TOKEN or CLIENT_TG_BOT_TOKEN for validation)
    */
   async loginAdmin(initData: string) {
     this.logger.log('🔐 Admin login attempt');
@@ -185,6 +185,11 @@ export class AuthService {
       });
       await this.userRepo.save(user);
     } else {
+      // Check if user is blocked
+      if (user.status === 'blocked') {
+        throw new UnauthorizedException('Ваш аккаунт заблокирован. Обратитесь к администратору.');
+      }
+
       // Update user info
       user.username = userData.username || user.username;
       user.first_name = userData.first_name || user.first_name;
@@ -207,6 +212,7 @@ export class AuthService {
         first_name: user.first_name,
         balance_usdt: user.balance_usdt,
         tasks_completed: user.tasks_completed,
+        status: user.status,
       },
     };
   }
@@ -215,10 +221,13 @@ export class AuthService {
    * Validate JWT token and get admin
    */
   async validateAdmin(tg_id: string) {
+    this.logger.debug(`🔍 Validating admin with tg_id: ${tg_id}`);
     const admin = await this.adminRepo.findOne({ where: { tg_id } });
     if (!admin) {
+      this.logger.error(`❌ Admin not found with tg_id: ${tg_id}`);
       throw new UnauthorizedException('Admin not found');
     }
+    this.logger.debug(`✅ Admin found: ${admin.tg_id}, id: ${admin.id}`);
     return admin;
   }
 
@@ -234,6 +243,51 @@ export class AuthService {
   }
 
   /**
+   * Get user status by Telegram initData
+   */
+  async getUserStatus(initData: string) {
+    try {
+      // Validate Telegram initData
+      const telegramData = this.telegramAuthService.validateInitData(initData);
+      const userData = telegramData.user;
+
+      if (!userData || !userData.id) {
+        return {
+          exists: false,
+          status: null,
+          blocked: false,
+        };
+      }
+
+      // Find user in database
+      const user = await this.userRepo.findOne({ where: { tg_id: userData.id.toString() } });
+      
+      if (!user) {
+        return {
+          exists: false,
+          status: null,
+          blocked: false,
+        };
+      }
+
+      return {
+        exists: true,
+        status: user.status,
+        blocked: user.status === 'blocked',
+        user: {
+          id: user.id,
+          tg_id: user.tg_id,
+          username: user.username,
+          first_name: user.first_name,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error getting user status: ${error.message}`);
+      throw new UnauthorizedException('Invalid Telegram data');
+    }
+  }
+
+  /**
    * Development login - bypass Telegram authentication for development
    */
   async devLogin(adminId: number) {
@@ -245,9 +299,17 @@ export class AuthService {
     this.logger.log(`Total admins in DB: ${allAdmins.length}`);
     allAdmins.forEach(a => this.logger.log(`  - Admin: tg_id="${a.tg_id}", role=${a.role}`));
 
-    const admin = await this.adminRepo.findOne({
+    // Try to find admin - tg_id is stored as bigint in DB but string in entity
+    let admin = await this.adminRepo.findOne({
       where: { tg_id: adminId.toString() },
     });
+    
+    // If not found, try with number (TypeORM might convert it)
+    if (!admin) {
+      admin = await this.adminRepo.findOne({
+        where: { tg_id: adminId as any },
+      });
+    }
 
     if (!admin) {
       this.logger.warn(`Admin not found for TG ID: ${adminId}`);

@@ -21,7 +21,7 @@ export class AuthController {
     // Check if this is a development request (no initData or special format)
     if (!loginDto.initData || loginDto.initData === 'dev') {
       this.logger.log('🔧 Development mode login detected');
-      return await this.authService.devLogin(697184435);
+      return await this.authService.devLogin(6971844353); // Use superadmin ID
     }
     
     try {
@@ -38,6 +38,12 @@ export class AuthController {
   @ApiOperation({ summary: 'Login or register user using Telegram Web App data' })
   async loginUser(@Body() loginDto: LoginDto) {
     return await this.authService.loginUser(loginDto.initData);
+  }
+
+  @Post('telegram/user/status')
+  @ApiOperation({ summary: 'Check user status (blocked/active) using Telegram Web App data' })
+  async getUserStatus(@Body() loginDto: LoginDto) {
+    return await this.authService.getUserStatus(loginDto.initData);
   }
 
   @Get('test-admins')

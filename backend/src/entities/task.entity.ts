@@ -43,11 +43,23 @@ export class Task {
   @Column({ type: 'varchar', default: 'subscription' })
   task_type: string; // subscription, action, manual
 
+  @Column({ type: 'varchar', nullable: true })
+  command: string; // Команда для выполнения задания (например, /start_task)
+
+  @Column({ type: 'int', default: 0 })
+  min_completion_time: number; // Минимальное время выполнения задания в минутах
+
   @Column({ type: 'int', default: 0 })
   cooldown_hours: number;
 
   @Column({ type: 'boolean', default: true })
   active: boolean;
+
+  @Column({ type: 'varchar', default: 'all' })
+  available_for: string; // 'all' - для всех, 'platinum' - только платиновая подписка, 'ranks' - по рангам
+
+  @Column({ type: 'text', nullable: true })
+  target_ranks: string; // JSON массив рангов: ['stone', 'bronze', 'silver', 'gold'] если available_for = 'ranks'
 
   @OneToMany(() => UserTask, (userTask) => userTask.task)
   user_tasks: UserTask[];

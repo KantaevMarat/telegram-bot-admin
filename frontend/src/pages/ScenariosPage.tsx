@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { scenariosApi } from '../api/client';
-import { MessageCircle, Plus, Edit2, Trash2, X, Check, XCircle, LayoutGrid, LayoutList } from 'lucide-react';
+import { scenariosApi, mediaApi } from '../api/client';
+import { MessageCircle, Plus, Edit2, Trash2, X, Check, XCircle, LayoutGrid, LayoutList, FileImage, Video, Upload, Trash, Link, Image } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSyncRefetch } from '../hooks/useSync';
 
@@ -11,6 +11,7 @@ interface Scenario {
   trigger: string;
   response: string;
   is_active: boolean;
+  media_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -19,10 +20,15 @@ export default function ScenariosPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingScenario, setEditingScenario] = useState<Scenario | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     name: '',
     trigger: '',
     response: '',
+    media_url: '',
     is_active: true,
   });
 
@@ -31,7 +37,14 @@ export default function ScenariosPage() {
   // Получение списка сценариев
   const { data: scenarios, isLoading, refetch } = useQuery({
     queryKey: ['scenarios'],
-    queryFn: () => scenariosApi.getScenarios(),
+    queryFn: async () => {
+      const data = await scenariosApi.getScenarios();
+      // Преобразуем active -> is_active для совместимости с интерфейсом
+      return data.map((scenario: any) => ({
+        ...scenario,
+        is_active: scenario.active !== undefined ? scenario.active : scenario.is_active ?? true,
+      }));
+    },
   });
 
   // 🔄 Auto-refresh on sync events
@@ -39,7 +52,23 @@ export default function ScenariosPage() {
 
   // Создание сценария
   const createMutation = useMutation({
-    mutationFn: (data: any) => scenariosApi.createScenario(data),
+    mutationFn: (data: any) => {
+      console.log('🚀 createMutation.mutationFn CALLED!', new Date().toISOString());
+      // КРИТИЧЕСКИ ВАЖНО: создаем новый объект БЕЗ is_active
+      console.log('🔧 Mutation: Original data:', JSON.stringify(data, null, 2));
+      const cleanData: any = {
+        name: data.name,
+        trigger: data.trigger,
+      };
+      if (data.response) cleanData.response = data.response;
+      if (data.media_url) cleanData.media_url = data.media_url;
+      // Преобразуем is_active в active
+      cleanData.active = data.active !== undefined ? data.active : (data.is_active !== undefined ? data.is_active : true);
+      // Явно НЕ копируем is_active
+      console.log('🔧 Mutation: Clean data:', JSON.stringify(cleanData, null, 2));
+      console.log('🔧 Mutation: Has is_active?', 'is_active' in cleanData);
+      return scenariosApi.createScenario(cleanData);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scenarios'] });
       handleCloseModal();
@@ -50,7 +79,14 @@ export default function ScenariosPage() {
 
   // Обновление сценария
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) => scenariosApi.updateScenario(id, data),
+    mutationFn: ({ id, data }: { id: string; data: any }) => {
+      // КРИТИЧЕСКИ ВАЖНО: убеждаемся, что is_active не отправляется
+      const cleanData = { ...data };
+      delete cleanData.is_active;
+      console.log('🔧 Update Mutation: Original data:', data);
+      console.log('🔧 Update Mutation: Clean data:', cleanData);
+      return scenariosApi.updateScenario(id, cleanData);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scenarios'] });
       handleCloseModal();
@@ -76,28 +112,127 @@ export default function ScenariosPage() {
         name: scenario.name || '',
         trigger: scenario.trigger || '',
         response: scenario.response || '',
-        is_active: scenario.is_active ?? true,
+        media_url: scenario.media_url || '',
+        is_active: scenario.is_active ?? (scenario as any).active ?? true,
       });
     } else {
       setEditingScenario(null);
-      setFormData({ name: '', trigger: '', response: '', is_active: true });
+      setFormData({ name: '', trigger: '', response: '', media_url: '', is_active: true });
     }
+    setSelectedFile(null);
     setShowModal(true);
   };
 
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingScenario(null);
-    setFormData({ name: '', trigger: '', response: '', is_active: true });
+    setSelectedFile(null);
+    setFormData({ name: '', trigger: '', response: '', media_url: '', is_active: true });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'photo' | 'video') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size (max 50MB)
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error('Файл слишком большой (максимум 50 МБ)');
+      return;
+    }
+
+    // Validate file type
+    if (type === 'photo' && !file.type.startsWith('image/')) {
+      toast.error('Выберите файл изображения');
+      return;
+    }
+    if (type === 'video' && !file.type.startsWith('video/')) {
+      toast.error('Выберите видео файл');
+      return;
+    }
+
+    setSelectedFile(file);
+    
+    // Clear the input so the same file can be selected again
+    if (e.target) {
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveFile = () => {
+    setSelectedFile(null);
+    setFormData(prev => ({ ...prev, media_url: '' }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Валидация обязательных полей
+    if (!formData.name || !formData.name.trim()) {
+      toast.error('Пожалуйста, укажите название сценария');
+      return;
+    }
+    if (!formData.trigger || !formData.trigger.trim()) {
+      toast.error('Пожалуйста, укажите триггер (команду или ID кнопки)');
+      return;
+    }
+
+    // Upload file if selected
+    let mediaUrl = formData.media_url;
+    if (selectedFile) {
+      setUploadingFile(true);
+      try {
+        const result = await mediaApi.uploadFile(selectedFile);
+        mediaUrl = result.url;
+        toast.success('Файл загружен успешно!');
+      } catch (error: any) {
+        toast.error(`Ошибка загрузки файла: ${error.response?.data?.message || error.message}`);
+        setUploadingFile(false);
+        return;
+      }
+      setUploadingFile(false);
+    }
+
+    // Преобразуем is_active -> active для backend
+    // ВАЖНО: создаем новый объект ТОЛЬКО с нужными полями, без is_active
+    const submitData: {
+      name: string;
+      trigger: string;
+      response?: string;
+      media_url?: string;
+      active: boolean;
+    } = {
+      name: formData.name.trim(),
+      trigger: formData.trigger.trim(),
+      active: formData.is_active, // Преобразуем is_active в active
+    };
+    
+    // Добавляем опциональные поля только если они есть и не пустые
+    if (formData.response?.trim()) {
+      submitData.response = formData.response.trim();
+    }
+    // Не добавляем media_url если он пустой
+    if (mediaUrl && mediaUrl.trim()) {
+      submitData.media_url = mediaUrl.trim();
+    }
+
+    // КРИТИЧЕСКИ ВАЖНО: убеждаемся, что is_active НЕ попадает в объект
+    // Создаем финальный объект без is_active
+    const finalData = {
+      name: submitData.name,
+      trigger: submitData.trigger,
+      active: submitData.active,
+      ...(submitData.response && { response: submitData.response }),
+      ...(submitData.media_url && { media_url: submitData.media_url }),
+    };
+
+    console.log('📤 Sending scenario data:', JSON.stringify(finalData, null, 2));
+    console.log('📤 Has is_active?', 'is_active' in finalData);
+    console.log('📤 Final data keys:', Object.keys(finalData));
+
     if (editingScenario) {
-      updateMutation.mutate({ id: editingScenario.id, data: formData });
+      updateMutation.mutate({ id: editingScenario.id, data: finalData });
     } else {
-      createMutation.mutate(formData);
+      createMutation.mutate(finalData);
     }
   };
 
@@ -359,6 +494,125 @@ export default function ScenariosPage() {
                 </div>
 
                 <div className="form-group">
+                  <label className="form-label">Медиафайл (фото или видео)</label>
+                  
+                  {/* File upload buttons */}
+                  <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+                    <label style={{ flex: 1 }}>
+                      <input
+                        ref={photoInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleFileSelect(e, 'photo')}
+                        style={{ display: 'none' }}
+                      />
+                      <div className="btn btn--secondary" style={{ width: '100%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                        <FileImage size={18} />
+                        Загрузить фото
+                      </div>
+                    </label>
+                    
+                    <label style={{ flex: 1 }}>
+                      <input
+                        ref={videoInputRef}
+                        type="file"
+                        accept="video/*"
+                        onChange={(e) => handleFileSelect(e, 'video')}
+                        style={{ display: 'none' }}
+                      />
+                      <div className="btn btn--secondary" style={{ width: '100%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                        <Video size={18} />
+                        Загрузить видео
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Selected file preview */}
+                  {selectedFile && (
+                    <div style={{
+                      padding: '12px',
+                      background: 'var(--bg-secondary)',
+                      borderRadius: 'var(--radius-md)',
+                      marginBottom: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px'
+                    }}>
+                      {selectedFile.type.startsWith('image/') ? (
+                        <FileImage size={24} style={{ color: 'var(--accent)' }} />
+                      ) : (
+                        <Video size={24} style={{ color: 'var(--accent)' }} />
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 'var(--font-weight-semibold)', fontSize: 'var(--font-size-sm)' }}>
+                          {selectedFile.name}
+                        </div>
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
+                          {(selectedFile.size / 1024 / 1024).toFixed(2)} МБ
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRemoveFile}
+                        className="btn btn--danger btn--icon btn--sm"
+                        title="Удалить файл"
+                      >
+                        <Trash size={16} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Existing media URL preview */}
+                  {formData.media_url && !selectedFile && (
+                    <div style={{
+                      padding: '12px',
+                      background: 'var(--bg-secondary)',
+                      borderRadius: 'var(--radius-md)',
+                      marginBottom: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px'
+                    }}>
+                      <Image size={24} style={{ color: 'var(--info)' }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', wordBreak: 'break-all' }}>
+                          {formData.media_url}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, media_url: '' }))}
+                        className="btn btn--danger btn--icon btn--sm"
+                        title="Удалить URL"
+                      >
+                        <Trash size={16} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Manual URL input */}
+                  <div style={{ marginTop: '12px' }}>
+                    <label className="form-label" style={{ fontSize: 'var(--font-size-sm)', marginBottom: '8px' }}>
+                      Или введите URL вручную
+                    </label>
+                    <div className="search-input">
+                      <Link size={18} className="search-input__icon" />
+                      <input
+                        type="url"
+                        className="search-input__field"
+                        value={selectedFile ? '' : formData.media_url}
+                        onChange={(e) => {
+                          setFormData(prev => ({ ...prev, media_url: e.target.value }));
+                          setSelectedFile(null);
+                        }}
+                        placeholder="https://example.com/image.jpg"
+                        disabled={!!selectedFile}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-group">
                   <label className="form-label" htmlFor="response">
                     Ответ <span style={{ color: 'var(--error)' }}>*</span>
                   </label>
@@ -399,10 +653,19 @@ export default function ScenariosPage() {
                 <button
                   type="submit"
                   className="btn btn--primary"
-                  disabled={createMutation.isPending || updateMutation.isPending}
+                  disabled={createMutation.isPending || updateMutation.isPending || uploadingFile}
                 >
-                  <MessageCircle size={16} />
-                  {editingScenario ? 'Обновить' : 'Добавить'}
+                  {uploadingFile ? (
+                    <>
+                      <Upload size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                      Загрузка...
+                    </>
+                  ) : (
+                    <>
+                      <MessageCircle size={16} />
+                      {editingScenario ? 'Обновить' : 'Добавить'}
+                    </>
+                  )}
                 </button>
               </div>
             </form>

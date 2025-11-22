@@ -9,6 +9,9 @@ import { SyncService } from '../sync/sync.service';
 
 @Injectable()
 export class SettingsService {
+  private settingsCache: Map<string, { value: string; timestamp: number }> = new Map();
+  private readonly CACHE_TTL = 60000; // 60 seconds cache
+
   constructor(
     @InjectRepository(Settings)
     private settingsRepository: Repository<Settings>,
@@ -71,6 +74,9 @@ export class SettingsService {
         value,
         oldValue,
       });
+
+      // Clear cache for this key
+      this.settingsCache.delete(key);
     }
 
     return savedSetting;
@@ -109,6 +115,16 @@ export class SettingsService {
         ipAddress,
         userAgent,
       );
+
+      // Emit sync event
+      await this.syncService.emitEntityEvent('settings', 'updated', {
+        key,
+        value,
+        oldValue,
+      });
+
+      // Clear cache for this key
+      this.settingsCache.delete(key);
     }
 
     return updated;
@@ -128,16 +144,26 @@ export class SettingsService {
       const setting = await this.findOne(dto.key);
       if (setting) {
         const oldValue = setting.value;
-        setting.value = dto.value;
+        // Ensure value is a string and not empty/undefined
+        // Handle empty strings as valid values (user might want to clear a setting)
+        const newValue = dto.value !== undefined && dto.value !== null ? String(dto.value) : oldValue;
+        
+        console.log(`🔧 Updating setting ${dto.key}:`, {
+          oldValue: oldValue?.substring(0, 50),
+          newValue: newValue?.substring(0, 50),
+          newValueLength: newValue?.length,
+        });
+        
+        setting.value = newValue;
         setting.updated_by_admin_tg_id = adminTgId;
         const updated = await this.settingsRepository.save(setting);
 
         // Record history if value changed
-        if (oldValue !== dto.value) {
+        if (oldValue !== newValue) {
           await this.recordHistory(
             dto.key,
             oldValue,
-            dto.value,
+            newValue,
             changeReason,
             adminTgId,
             adminUsername,
@@ -145,6 +171,16 @@ export class SettingsService {
             ipAddress,
             userAgent,
           );
+
+          // Emit sync event
+          await this.syncService.emitEntityEvent('settings', 'updated', {
+            key: dto.key,
+            value: newValue,
+            oldValue,
+          });
+
+          // Clear cache for this key
+          this.settingsCache.delete(dto.key);
         }
 
         updatedSettings.push(updated);
@@ -154,14 +190,29 @@ export class SettingsService {
   }
 
   async getValue(key: string, defaultValue: string = ''): Promise<string> {
+    // Check cache first
+    const cached = this.settingsCache.get(key);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.value;
+    }
+
+    // Fetch from DB
     const setting = await this.settingsRepository.findOne({ where: { key } });
-    return setting?.value || defaultValue;
+    // Use setting value if it exists and is not empty, otherwise use defaultValue
+    const value = (setting?.value && setting.value.trim() !== '') ? setting.value : defaultValue;
+
+    // Update cache
+    this.settingsCache.set(key, { value, timestamp: Date.now() });
+
+    return value;
   }
 
   async remove(key: string) {
     const setting = await this.settingsRepository.findOne({ where: { key } });
     if (setting) {
       await this.settingsRepository.remove(setting);
+      // Clear cache for this key
+      this.settingsCache.delete(key);
     }
     return { success: true };
   }

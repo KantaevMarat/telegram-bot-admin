@@ -515,6 +515,11 @@ a:hover {
   font-size: var(--font-size-sm);
   min-height: 40px;
   transition: all var(--transition-fast);
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .form-input:focus,
@@ -534,6 +539,37 @@ a:hover {
   min-height: auto;
   padding: var(--spacing-md);
   line-height: 1.5;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  resize: vertical;
+}
+
+/* Ensure all textarea elements have proper text wrapping */
+textarea.form-input,
+textarea {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  white-space: pre-wrap !important;
+  box-sizing: border-box !important;
+  resize: vertical;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
+/* Fix textarea in form groups */
+.form-group textarea,
+.form-group textarea.form-input {
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  white-space: pre-wrap !important;
+  overflow-x: hidden !important;
 }
 
 /* Touch-friendly sizing for mobile */
@@ -4207,6 +4243,17 @@ input, textarea, select {
   color: var(--text-primary);
   transition: all 0.2s ease;
   width: 100%;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+textarea {
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  white-space: pre-wrap !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  min-width: 0 !important;
 }
 
 input:focus, textarea:focus, select:focus {
@@ -6743,5 +6790,45 @@ select:focus-visible {
 
   .balance-form__actions {
     gap: 0.25rem;
+  }
+}
+
+/* Dashboard Charts Mobile Adaptation */
+@media (max-width: 768px) {
+  /* Reduce chart container padding on mobile */
+  .card > div[style*="padding: '16px'"] {
+    padding: 12px !important;
+  }
+  
+  /* Make charts more compact on mobile */
+  .recharts-wrapper {
+    font-size: 11px;
+  }
+  
+  /* Adjust chart margins for mobile */
+  .recharts-surface {
+    overflow: visible;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Further reduce chart sizes on small mobile */
+  .card > div[style*="padding: '16px'"] {
+    padding: 8px !important;
+  }
+  
+  /* Smaller pie chart on very small screens */
+  .recharts-pie {
+    font-size: 10px;
+  }
+}
+
+/* Spinner animation for loading states */
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
   }
 }

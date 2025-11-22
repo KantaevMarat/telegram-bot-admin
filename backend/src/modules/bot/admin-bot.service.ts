@@ -19,13 +19,13 @@ export class AdminBotService implements OnModuleInit, OnModuleDestroy {
     @InjectRepository(Admin)
     private adminRepo: Repository<Admin>,
   ) {
-    this.botToken = this.configService.get('ADMIN_BOT_TOKEN') || '';
+    this.botToken = this.configService.get('ADMIN_TG_BOT_TOKEN') || this.configService.get('ADMIN_BOT_TOKEN') || '';
     this.webAppUrl = this.configService.get('TELEGRAM_WEB_APP_URL') || '';
     
     this.isConfigured = !!(this.botToken && this.webAppUrl);
     
     if (!this.isConfigured) {
-      this.logger.warn('⚠️ Admin bot is not configured (missing ADMIN_BOT_TOKEN or TELEGRAM_WEB_APP_URL)');
+      this.logger.warn('⚠️ Admin bot is not configured (missing ADMIN_TG_BOT_TOKEN or TELEGRAM_WEB_APP_URL)');
     } else {
       this.logger.log(`✅ Admin bot configured with token: ${this.botToken.substring(0, 10)}...`);
       this.logger.log(`✅ Web App URL: ${this.webAppUrl}`);
