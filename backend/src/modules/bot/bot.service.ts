@@ -1352,9 +1352,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     try {
       // Determine media type from URL if not provided
       if (!mediaType) {
-        if (mediaUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+        const urlWithoutQuery = mediaUrl.split('?')[0];
+        if (urlWithoutQuery.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
           mediaType = 'photo';
-        } else if (mediaUrl.match(/\.(mp4|webm|ogg)$/i)) {
+        } else if (urlWithoutQuery.match(/\.(mp4|webm|ogg|mov|avi)$/i)) {
           mediaType = 'video';
         } else {
           mediaType = 'document';
@@ -1380,14 +1381,39 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
           break;
       }
 
-      const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
+      // Download file from MinIO/internal URL
+      this.logger.debug(`📥 Downloading media from: ${mediaUrl}`);
+      const fileResponse = await axios.get(mediaUrl, {
+        responseType: 'stream',
+        timeout: 30000, // 30 seconds timeout
+      });
 
-      // Send media by URL
-      await axios.post(url, {
-        chat_id: chatId,
-        [mediaField]: mediaUrl,
-        caption: text || undefined,
-        parse_mode: text ? 'HTML' : undefined,
+      // Get file extension
+      const urlWithoutQuery = mediaUrl.split('?')[0];
+      const ext = urlWithoutQuery.split('.').pop()?.toLowerCase() || '';
+
+      // Create form data
+      const FormData = require('form-data');
+      const formData = new FormData();
+      formData.append('chat_id', chatId);
+      formData.append(mediaField, fileResponse.data, {
+        filename: `file.${ext}`,
+        contentType: fileResponse.headers['content-type'] || 'application/octet-stream',
+      });
+
+      // Add caption if provided (and not empty)
+      if (text && text.trim()) {
+        formData.append('caption', text);
+        formData.append('parse_mode', 'HTML');
+      }
+
+      const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
+      this.logger.debug(`📤 Sending to Telegram API: ${url} (multipart/form-data)`);
+
+      // Send media as multipart/form-data
+      await axios.post(url, formData, {
+        headers: formData.getHeaders(),
+        timeout: 60000, // 60 seconds timeout for file upload
       });
 
       this.logger.log(`✅ Sent ${mediaType} message to ${chatId}`);
@@ -1395,7 +1421,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       // Log error but don't send fallback message - it reveals technical details
       this.logger.error(`❌ Failed to send media message to ${chatId}:`, {
         error: error.response?.data || error.message,
-        mediaUrl,
+        mediaUrl: mediaUrl.substring(0, 100),
         mediaType,
         status: error.response?.status,
       });
