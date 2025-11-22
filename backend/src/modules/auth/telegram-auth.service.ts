@@ -30,11 +30,11 @@ export class TelegramAuthService {
   private readonly userBotToken: string;
 
   constructor(private configService: ConfigService) {
-    this.adminBotToken = this.configService.get('ADMIN_BOT_TOKEN') || '';
-    this.userBotToken = this.configService.get('TELEGRAM_BOT_TOKEN') || '';
+    this.adminBotToken = this.configService.get('ADMIN_TG_BOT_TOKEN') || this.configService.get('ADMIN_BOT_TOKEN') || '';
+    this.userBotToken = this.configService.get('CLIENT_TG_BOT_TOKEN') || this.configService.get('TELEGRAM_BOT_TOKEN') || '';
     
     if (!this.adminBotToken) {
-      this.logger.warn('⚠️ ADMIN_BOT_TOKEN is not configured!');
+      this.logger.warn('⚠️ ADMIN_TG_BOT_TOKEN is not configured!');
     }
   }
 
@@ -68,8 +68,8 @@ export class TelegramAuthService {
 
       // Пробуем валидировать с обоими токенами (ADMIN и USER бот)
       const tokens = [
-        { name: 'ADMIN_BOT_TOKEN', token: this.adminBotToken },
-        { name: 'TELEGRAM_BOT_TOKEN', token: this.userBotToken },
+        { name: 'ADMIN_TG_BOT_TOKEN', token: this.adminBotToken },
+        { name: 'CLIENT_TG_BOT_TOKEN', token: this.userBotToken },
       ].filter(t => t.token); // Только те, что настроены
 
       let isValid = false;
