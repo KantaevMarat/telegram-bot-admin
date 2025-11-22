@@ -41,5 +41,5 @@ RUN npm install --omit=dev --legacy-peer-deps
 # Copy built files from builder stage
 COPY --from=builder /app/dist ./dist
 
-CMD ["node", "dist/src/main"]
+CMD ["node", "dist/src/main.js"]
 
