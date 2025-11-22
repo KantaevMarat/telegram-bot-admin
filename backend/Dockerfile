@@ -12,6 +12,20 @@ EXPOSE 3000
 
 CMD ["npm", "run", "start:dev"]
 
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+
+# Install all dependencies (including dev) for building
+RUN npm install --legacy-peer-deps
+
+COPY . .
+
+# Build the application
+RUN npm run build
+
 FROM node:18-alpine AS production
 
 ARG NODE_ENV=production
@@ -24,9 +38,8 @@ COPY package*.json ./
 # Install only production dependencies
 RUN npm install --omit=dev --legacy-peer-deps
 
-# Don't copy dist - use volume mount from docker-compose.yml instead
-# This allows updating backend without rebuilding the image
-# COPY dist ./dist
+# Copy built files from builder stage
+COPY --from=builder /app/dist ./dist
 
 CMD ["node", "dist/src/main"]
 
