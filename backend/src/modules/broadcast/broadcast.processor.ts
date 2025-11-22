@@ -3,6 +3,7 @@ import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import axios from 'axios';
+import FormData from 'form-data';
 import { BroadcastService } from './broadcast.service';
 
 @Processor('broadcast')
@@ -101,7 +102,7 @@ export class BroadcastProcessor extends WorkerHost {
       this.logger.debug(`📤 Sending media to ${chatId}: ${mediaUrl}`);
       
       // Determine media type from URL
-      const ext = mediaUrl.split('.').pop()?.toLowerCase() || '';
+      const ext = mediaUrl.split('.').pop()?.split('?')[0]?.toLowerCase() || '';
       let method = 'sendPhoto';
       let mediaField = 'photo';
 
@@ -115,22 +116,34 @@ export class BroadcastProcessor extends WorkerHost {
 
       this.logger.debug(`📤 Using method: ${method}, field: ${mediaField}`);
 
-      const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
+      // Download file from MinIO/internal URL
+      this.logger.debug(`📥 Downloading media from: ${mediaUrl}`);
+      const fileResponse = await axios.get(mediaUrl, {
+        responseType: 'stream',
+        timeout: 30000, // 30 seconds timeout
+      });
 
-      const payload: any = {
-        chat_id: chatId,
-        [mediaField]: mediaUrl,
-      };
+      // Create form data
+      const formData = new FormData();
+      formData.append('chat_id', chatId);
+      formData.append(mediaField, fileResponse.data, {
+        filename: `file.${ext}`,
+        contentType: fileResponse.headers['content-type'] || 'application/octet-stream',
+      });
 
       // Add caption if provided (and not empty)
       if (caption && caption.trim()) {
-        payload.caption = caption;
-        payload.parse_mode = 'HTML';
+        formData.append('caption', caption);
+        formData.append('parse_mode', 'HTML');
       }
 
-      this.logger.debug(`📤 Sending to Telegram API: ${url}, payload: ${JSON.stringify({ ...payload, [mediaField]: mediaUrl.substring(0, 50) + '...' })}`);
+      const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
+      this.logger.debug(`📤 Sending to Telegram API: ${url} (multipart/form-data)`);
 
-      const response = await axios.post(url, payload);
+      const response = await axios.post(url, formData, {
+        headers: formData.getHeaders(),
+        timeout: 60000, // 60 seconds timeout for file upload
+      });
       
       this.logger.log(`✅ Media sent successfully to ${chatId}: ${method}`);
       this.logger.debug(`📤 Response: ${JSON.stringify(response.data)}`);
